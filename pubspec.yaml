@@ -140,6 +140,12 @@ dependencies:
   # Meta (for @immutable, @protected, etc.)
   meta: ^1.15.0
 
+# epubx pins image ^3 while media_kit requires image ^4.
+# epubx only uses image APIs that still exist in v4 (e.g. decodeImage),
+# so forcing v4 is safe and resolves the version solving conflict.
+dependency_overrides:
+  image: ^4.2.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
