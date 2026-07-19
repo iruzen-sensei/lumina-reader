@@ -26,54 +26,27 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
-      - name: Generate code (Isar, Riverpod)
+      - name: Generate code (Isar, Riverpod, Freezed, JSON)
         run: dart run build_runner build --delete-conflicting-outputs
-        continue-on-error: true
-
-      - name: Build APK
-        run: flutter build apk --release
 
       - name: Generate signing keystore
         run: |
-          mkdir -p .github
-          if [ -f .github/signing-keystore.jks ]; then
-            echo "Keystore already exists"
-          else
-            keytool -genkeypair -alias lumina -keyalg RSA -keysize 2048 -validity 36500 -keystore .github/signing-keystore.jks -storepass lumina2026 -keypass lumina2026 -dname "CN=Lumina,O=Lumina,C=US"
-          fi
+          keytool -genkeypair -alias lumina -keyalg RSA -keysize 2048 -validity 36500 \
+            -keystore android/signing-keystore.jks \
+            -storepass lumina2026 -keypass lumina2026 \
+            -dname "CN=Lumina,O=Lumina,C=US"
 
-      - name: Sign APK
+      - name: Build APK (signed by Gradle)
+        run: flutter build apk --release
+        env:
+          KEY_ALIAS: lumina
+          KEY_PASSWORD: lumina2026
+          KEYSTORE_PASSWORD: lumina2026
+
+      - name: Verify signature
         run: |
-          set -euo pipefail
-          APK="build/app/outputs/flutter-apk/app-release.apk"
-          
-          echo "=== Finding build-tools ==="
-          APKSIGNER=$(find $ANDROID_HOME -name "apksigner" -type f 2>/dev/null | head -1 || true)
-          ZIPALIGN=$(find $ANDROID_HOME -name "zipalign" -type f 2>/dev/null | head -1 || true)
-          
-          echo "apksigner: $APKSIGNER"
-          echo "zipalign: $ZIPALIGN"
-          
-          if [ -n "$ZIPALIGN" ]; then
-            echo "Zipaligning APK..."
-            "$ZIPALIGN" -f -v 4 "$APK" "${APK}.aligned" 2>&1 | tail -3
-            mv "${APK}.aligned" "$APK"
-            echo "Zipaligned."
-          else
-            echo "WARNING: zipalign not found, skipping alignment"
-          fi
-          
-          if [ -n "$APKSIGNER" ]; then
-            echo "Signing APK..."
-            "$APKSIGNER" sign --ks .github/signing-keystore.jks --ks-pass pass:lumina2026 --ks-key-alias lumina --key-pass pass:lumina2026 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true "$APK"
-            echo "Signed."
-            echo ""
-            echo "=== Verifying signature ==="
-            "$APKSIGNER" verify --verbose "$APK"
-          else
-            echo "ERROR: apksigner not found"
-            exit 1
-          fi
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
+          "$APKSIGNER" verify --verbose build/app/outputs/flutter-apk/app-release.apk
 
       - name: Upload signed APK
         uses: actions/upload-artifact@v4

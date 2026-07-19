@@ -2,6 +2,8 @@
 // Modified for Lumina Reader, Copyright 2024 Lumina Reader Contributors
 // Licensed under the Apache License, Version 2.0
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
