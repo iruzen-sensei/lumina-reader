@@ -1,9 +1,7 @@
 name: Extract source from zip and push
 
 on:
-  push:
-    paths:
-      - 'lumina-reader.zip'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -14,17 +12,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Unzip, commit and push
+      - name: Find zip, extract, commit and push
         run: |
-          if [ ! -f lumina-reader.zip ]; then
-            echo "No zip present — skipping."
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          unzip -q lumina-reader.zip
+          ZIP=$(find . -name '*.zip' -not -path './.git/*' | head -1)
+          if [ -z "$ZIP" ]; then echo "No zip found"; exit 1; fi
+          echo "Extracting: $ZIP"
+          unzip -q "$ZIP"
           rsync -a --exclude='.git' lumina-reader/ ./
-          rm -rf lumina-reader lumina-reader.zip
+          rm -rf lumina-reader "$ZIP"
           git add -A
-          git commit -m "Extract Lumina Reader source from uploaded zip" || { echo "Nothing to commit"; exit 0; }
+          git commit -m "Extract Lumina Reader source from zip" || { echo "Nothing to commit"; exit 0; }
           git push
