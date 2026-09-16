@@ -1,0 +1,30 @@
+name: Extract source from zip and push
+
+on:
+  push:
+    paths:
+      - 'lumina-reader.zip'
+
+permissions:
+  contents: write
+
+jobs:
+  extract-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip, commit and push
+        run: |
+          if [ ! -f lumina-reader.zip ]; then
+            echo "No zip present — skipping."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          unzip -q lumina-reader.zip
+          rsync -a --exclude='.git' lumina-reader/ ./
+          rm -rf lumina-reader lumina-reader.zip
+          git add -A
+          git commit -m "Extract Lumina Reader source from uploaded zip" || { echo "Nothing to commit"; exit 0; }
+          git push
