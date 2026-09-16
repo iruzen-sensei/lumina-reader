@@ -5,7 +5,6 @@ on:
 
 permissions:
   contents: write
-  workflows: write
 
 jobs:
   extract-and-push:
@@ -13,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Find zip, extract, commit and push
+      - name: Find zip, extract source, commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -21,10 +20,18 @@ jobs:
           if [ -z "$ZIP" ]; then echo "No zip found"; exit 1; fi
           echo "Extracting: $ZIP"
           unzip -q "$ZIP"
-          rsync -a --exclude='.git' lumina-reader/ ./
-          # Pin CI to the exact Flutter version this code was verified against
-          sed -i 's/channel: stable/flutter-version: "3.47.4"/' .github/workflows/build-android.yml
-          rm -rf lumina-reader "$ZIP"
+          # Copy source EXCLUDING .git and .github — GITHUB_TOKEN may not
+          # modify workflow files, so the commit stays workflow-free.
+          rsync -a --exclude='.git' --exclude='.github' lumina-reader/ ./
+          rm -rf lumina-reader
           git add -A
-          git commit -m "Extract Lumina Reader source from zip" || { echo "Nothing to commit"; exit 0; }
-          git push
+          git reset -q -- .github
+          if git status --porcelain | grep -q '^[AM]'; then
+            git commit -m "Extract Lumina Reader source from zip"
+            git push
+          else
+            echo "Nothing to commit"
+          fi
+          # Best-effort cleanup of the uploaded zip (safe to fail)
+          git rm -q "$ZIP" && git commit -qm "Remove uploaded zip" && git push \
+            || echo "Zip left in place — delete it via web UI if you want"
