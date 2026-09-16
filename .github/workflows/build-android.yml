@@ -1,0 +1,85 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.4"
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      # Quality gate #1: static audit (schema registration, import order,
+      # duplicate symbols, phantom APIs, mock-data regressions).
+      # FAILS the build — never continue-on-error.
+      - name: Static audit gate
+        run: python3 tool/audit.py
+
+      # Quality gate #2: codegen. Isar schemas / Riverpod / JSON serializers
+      # MUST generate or the build is broken. Previously hidden behind
+      # continue-on-error: true — that masked total codegen failure.
+      - name: Generate code (Isar, Riverpod, JSON)
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      # Quality gate #3: analyzer. Zero errors allowed.
+      - name: Analyze
+        run: flutter analyze --no-pub
+
+      # Quality gate #4: compile smoke test. Runs the whole app library
+      # graph through the real Dart kernel compiler — catches package-level
+      # compile breaks (e.g. upstream null-safety bugs under newer SDKs)
+      # that `flutter analyze` cannot see.
+      - name: Compile smoke test
+        run: flutter test test/compile_smoke_test.dart
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Generate signing keystore
+        run: |
+          mkdir -p .github
+          if [ -f .github/signing-keystore.jks ]; then
+            echo "Keystore already exists"
+          else
+            keytool -genkeypair -alias lumina -keyalg RSA -keysize 2048 -validity 36500 -keystore .github/signing-keystore.jks -storepass lumina2026 -keypass lumina2026 -dname "CN=Lumina,O=Lumina,C=US"
+          fi
+
+      - name: Sign APK
+        run: |
+          APKSIGNER=$(find $ANDROID_HOME -name "apksigner" -type f 2>/dev/null | head -1 || true)
+          ZIPALIGN=$(find $ANDROID_HOME -name "zipalign" -type f 2>/dev/null | head -1 || true)
+          APK="build/app/outputs/flutter-apk/app-release.apk"
+
+          if [ -n "$ZIPALIGN" ]; then
+            "$ZIPALIGN" -f -v 4 "$APK" "${APK}.aligned" 2>&1 | tail -3
+            mv "${APK}.aligned" "$APK"
+          fi
+
+          if [ -n "$APKSIGNER" ]; then
+            "$APKSIGNER" sign --ks .github/signing-keystore.jks --ks-pass pass:lumina2026 --ks-key-alias lumina --key-pass pass:lumina2026 "$APK"
+            "$APKSIGNER" verify --verbose "$APK"
+          fi
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumina-reader-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 90
