@@ -1,0 +1,44 @@
+# Lumina Reader — static analysis configuration
+#
+# Extends flutter_lints with the rules that matter most for this codebase:
+# null-safety discipline, no leftover debug prints in release paths, and
+# import hygiene (the skeleton shipped imports placed after declarations —
+# now guarded by scripts/audit.py check A1 AND by avoid_imports_late).
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  language:
+    strict-casts: true
+    strict-raw-types: true
+  errors:
+    # Treat these as hard errors — they were the exact class of bug that
+    # broke the original skeleton.
+    invalid_annotation_target: error
+    argument_type_not_assignable: error
+    missing_required_param: error
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+    - build/**
+    - android/**
+    # Vendored upstream snapshots with surgical patches — analyzed by their
+    # own upstream CI, not by this project.
+    - third_party/**
+
+linter:
+  rules:
+    # Correctness
+    avoid_print: warning
+    avoid_dynamic_calls: warning
+    cancel_subscriptions: error
+    close_sinks: error
+    unawaited_futures: warning
+    always_declare_return_types: warning
+    # `unnecessary_null_comparison` was removed from the lint corpus (it is a
+    # built-in analyzer diagnostic now); same for `unused_field`.
+
+    # Hygiene
+    prefer_single_quotes: warning
+    prefer_final_locals: warning
+    prefer_const_constructors: warning
+    avoid_unnecessary_containers: warning

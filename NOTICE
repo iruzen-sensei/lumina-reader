@@ -1,0 +1,27 @@
+Lumina Reader
+Copyright 2024 Lumina Reader Contributors
+
+This product is a fork of Mangayomi (https://github.com/kodjodevf/mangayomi)
+Copyright 2023 Moustapha Kodjo Amadou, licensed under Apache 2.0.
+
+Anime features inspired by Aniyomi (https://github.com/aniyomiorg/aniyomi)
+Copyright Aniyomi Contributors, licensed under Apache 2.0.
+
+Portions of this product incorporate code from:
+- Mangayomi (Apache 2.0) — extension system, manga reader, anime player, download manager, HTTP stack
+- Aniyomi (Apache 2.0) — anime player concepts, AniSkip, episode model, hoster abstraction
+- Flutter (BSD-3-Clause) — UI framework
+- Riverpod (MIT) — state management
+- Isar (Apache 2.0) — local database
+- GoRouter (BSD-3-Clause) — routing
+- flex_color_scheme (BSD-3-Clause) — theming
+- media_kit (MIT) — video player (libmpv)
+- extended_image (MIT) — image loading and gestures
+- photo_view (MIT) — pinch-zoom
+- flutter_html (MIT) — HTML rendering for novels
+
+Native libraries:
+- libmpv (LGPL-2.1+) — video playback engine
+- FFmpeg (LGPL/GPL) — media processing (dynamic linking)
+
+See THIRD_PARTY_LICENSES.md for full license texts.

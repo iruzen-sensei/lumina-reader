@@ -1,0 +1,656 @@
+// Copyright 2024 Lumina Reader Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import 'dart:collection';
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
+import 'package:flutter_html/flutter_html.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+
+import '../shared/widgets.dart';
+
+// ---------------------------------------------------------------------------
+// Provider contracts
+// ---------------------------------------------------------------------------
+
+/// Background color theme for the novel reader.
+enum NovelBackgroundTheme { black, grey, white, sepia }
+
+extension NovelBackgroundThemeX on NovelBackgroundTheme {
+  Color get color {
+    switch (this) {
+      case NovelBackgroundTheme.black:
+        return const Color(0xFF000000);
+      case NovelBackgroundTheme.grey:
+        return const Color(0xFF212121);
+      case NovelBackgroundTheme.white:
+        return const Color(0xFFFFFFFF);
+      case NovelBackgroundTheme.sepia:
+        return const Color(0xFFF5DEB3);
+    }
+  }
+
+  Color get foreground {
+    switch (this) {
+      case NovelBackgroundTheme.black:
+      case NovelBackgroundTheme.grey:
+        return Colors.white;
+      case NovelBackgroundTheme.white:
+      case NovelBackgroundTheme.sepia:
+        return Colors.black87;
+    }
+  }
+
+  String get label {
+    switch (this) {
+      case NovelBackgroundTheme.black:
+        return 'Black';
+      case NovelBackgroundTheme.grey:
+        return 'Grey';
+      case NovelBackgroundTheme.white:
+        return 'White';
+      case NovelBackgroundTheme.sepia:
+        return 'Sepia';
+    }
+  }
+}
+
+/// Text alignment options.
+enum NovelTextAlign { left, center, right, justify }
+
+extension NovelTextAlignX on NovelTextAlign {
+  TextAlign get value {
+    switch (this) {
+      case NovelTextAlign.left:
+        return TextAlign.left;
+      case NovelTextAlign.center:
+        return TextAlign.center;
+      case NovelTextAlign.right:
+        return TextAlign.right;
+      case NovelTextAlign.justify:
+        return TextAlign.justify;
+    }
+  }
+
+  String get label => name[0].toUpperCase() + name.substring(1);
+
+  IconData get icon {
+    switch (this) {
+      case NovelTextAlign.left:
+        return Icons.format_align_left;
+      case NovelTextAlign.center:
+        return Icons.format_align_center;
+      case NovelTextAlign.right:
+        return Icons.format_align_right;
+      case NovelTextAlign.justify:
+        return Icons.format_align_justify;
+    }
+  }
+}
+
+/// Configuration for the novel reader.
+class NovelReaderSettings {
+  NovelReaderSettings({
+    this.fontSize = 18.0,
+    this.lineHeight = 1.6,
+    this.fontFamily = 'serif',
+    this.align = NovelTextAlign.justify,
+    this.background = NovelBackgroundTheme.white,
+    this.keepScreenOn = true,
+    this.tapToNavigate = true,
+    this.showProgress = true,
+  });
+
+  final double fontSize;
+  final double lineHeight;
+  final String fontFamily;
+  final NovelTextAlign align;
+  final NovelBackgroundTheme background;
+  final bool keepScreenOn;
+  final bool tapToNavigate;
+  final bool showProgress;
+
+  NovelReaderSettings copyWith({
+    double? fontSize,
+    double? lineHeight,
+    String? fontFamily,
+    NovelTextAlign? align,
+    NovelBackgroundTheme? background,
+    bool? keepScreenOn,
+    bool? tapToNavigate,
+    bool? showProgress,
+  }) {
+    return NovelReaderSettings(
+      fontSize: fontSize ?? this.fontSize,
+      lineHeight: lineHeight ?? this.lineHeight,
+      fontFamily: fontFamily ?? this.fontFamily,
+      align: align ?? this.align,
+      background: background ?? this.background,
+      keepScreenOn: keepScreenOn ?? this.keepScreenOn,
+      tapToNavigate: tapToNavigate ?? this.tapToNavigate,
+      showProgress: showProgress ?? this.showProgress,
+    );
+  }
+}
+
+class NovelReaderSettingsNotifier
+    extends StateNotifier<NovelReaderSettings> {
+  NovelReaderSettingsNotifier() : super(NovelReaderSettings());
+
+  void setFontSize(double v) => state = state.copyWith(fontSize: v);
+  void setLineHeight(double v) => state = state.copyWith(lineHeight: v);
+  void setFontFamily(String f) => state = state.copyWith(fontFamily: f);
+  void setAlign(NovelTextAlign a) => state = state.copyWith(align: a);
+  void setBackground(NovelBackgroundTheme b) =>
+      state = state.copyWith(background: b);
+  void toggleKeepScreenOn() =>
+      state = state.copyWith(keepScreenOn: !state.keepScreenOn);
+  void toggleTapToNavigate() =>
+      state = state.copyWith(tapToNavigate: !state.tapToNavigate);
+  void toggleShowProgress() =>
+      state = state.copyWith(showProgress: !state.showProgress);
+}
+
+final novelReaderSettingsProvider = StateNotifierProvider<
+    NovelReaderSettingsNotifier, NovelReaderSettings>(
+  (ref) => NovelReaderSettingsNotifier(),
+);
+
+/// A single novel chapter.
+class NovelChapter {
+  NovelChapter({
+    required this.id,
+    required this.title,
+    required this.html,
+    required this.number,
+    this.author,
+  });
+
+  final int id;
+  final String title;
+  final String html;
+  final double number;
+  final String? author;
+}
+
+/// Per-chapter scroll position persistence (in-memory; persistence to disk
+/// would be added by the storage provider).
+class NovelScrollStore {
+  NovelScrollStore() : _map = HashMap<int, double>();
+
+  final HashMap<int, double> _map;
+
+  double get(int chapterId) => _map[chapterId] ?? 0;
+
+  void put(int chapterId, double offset) => _map[chapterId] = offset;
+
+  void clear() => _map.clear();
+}
+
+final novelScrollStoreProvider = Provider<NovelScrollStore>(
+  (ref) => NovelScrollStore(),
+);
+
+/// Chapters for a novel. Content is provided by novel-capable sources
+/// through the extension coordinator once installed; the map below is a
+/// lightweight cache the reader populates when a source delivers HTML.
+///
+/// This used to return hardcoded demo HTML — replaced with an honest empty
+/// list so the reader shows its empty state instead of fake content.
+final Map<int, List<NovelChapter>> _novelChapterCache = {};
+
+final novelChaptersProvider =
+    Provider.family<List<NovelChapter>, int>((ref, novelId) {
+  return _novelChapterCache[novelId] ?? const [];
+});
+
+/// Called by the data layer when a novel source delivers chapter content.
+void cacheNovelChapters(int novelId, List<NovelChapter> chapters) {
+  _novelChapterCache[novelId] = chapters;
+}
+
+class _NovelContent extends StatelessWidget {
+  const _NovelContent({
+    required this.chapter,
+    required this.settings,
+    required this.scrollController,
+    required this.ttsWords,
+    required this.ttsWordIndex,
+  });
+
+  final NovelChapter chapter;
+  final NovelReaderSettings settings;
+  final ScrollController scrollController;
+  final List<String> ttsWords;
+  final int? ttsWordIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomScrollView(
+      controller: scrollController,
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 24, 20, 80),
+          sliver: SliverList(
+            delegate: SliverChildListDelegate.fixed([
+              Html(
+                data: chapter.html,
+                style: {
+                  'body': Style(
+                    fontSize: FontSize(settings.fontSize),
+                    lineHeight: LineHeight(settings.lineHeight),
+                    fontFamily: settings.fontFamily,
+                    textAlign: settings.align.value,
+                    color: settings.background.foreground,
+                    margin: Margins.zero,
+                    padding: HtmlPaddings.zero,
+                  ),
+                  'h1': Style(
+                    fontSize: FontSize(settings.fontSize * 1.6),
+                    fontWeight: FontWeight.bold,
+                    color: settings.background.foreground,
+                    textAlign: settings.align.value,
+                    margin: Margins.only(bottom: 16),
+                  ),
+                  'h2': Style(
+                    fontSize: FontSize(settings.fontSize * 1.35),
+                    fontWeight: FontWeight.bold,
+                    color: settings.background.foreground,
+                    textAlign: settings.align.value,
+                    margin: Margins.only(bottom: 12, top: 16),
+                  ),
+                  'p': Style(
+                    fontSize: FontSize(settings.fontSize),
+                    lineHeight: LineHeight(settings.lineHeight),
+                    color: settings.background.foreground,
+                    textAlign: settings.align.value,
+                    margin: Margins.only(bottom: 12),
+                  ),
+                  'blockquote': Style(
+                    fontSize: FontSize(settings.fontSize * 0.95),
+                    fontStyle: FontStyle.italic,
+                    color: settings.background.foreground
+                        .withValues(alpha: 0.8),
+                    padding: HtmlPaddings.only(left: 16),
+                    border: Border(
+                      left: BorderSide(
+                        color: Theme.of(context).colorScheme.primary,
+                        width: 3,
+                      ),
+                    ),
+                    margin: Margins.symmetric(vertical: 12),
+                  ),
+                },
+              ),
+              const SizedBox(height: 24),
+              if (ttsWordIndex != null && ttsWordIndex! < ttsWords.length)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .primary
+                        .withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '🔊 ${ttsWords[ttsWordIndex!]}',
+                    style: TextStyle(
+                      color: settings.background.foreground,
+                      fontWeight: FontWeight.w600,
+                      fontSize: settings.fontSize,
+                    ),
+                  ),
+                ),
+            ]),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Settings sheet
+// ---------------------------------------------------------------------------
+
+class NovelReaderSettingsSheet extends ConsumerWidget {
+  const NovelReaderSettingsSheet({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(novelReaderSettingsProvider);
+    final notifier = ref.read(novelReaderSettingsProvider.notifier);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Reader settings',
+                  style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 16),
+              Text('Font size: ${settings.fontSize.toStringAsFixed(0)} pt'),
+              Slider(
+                value: settings.fontSize,
+                min: 12,
+                max: 32,
+                divisions: 20,
+                onChanged: notifier.setFontSize,
+              ),
+              const SizedBox(height: 8),
+              Text('Line height: ${settings.lineHeight.toStringAsFixed(2)}'),
+              Slider(
+                value: settings.lineHeight,
+                min: 1.0,
+                max: 2.2,
+                divisions: 24,
+                onChanged: notifier.setLineHeight,
+              ),
+              const SizedBox(height: 8),
+              const _SectionLabel('Font family'),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final f in const ['serif', 'sans-serif', 'monospace'])
+                    ChoiceChip(
+                      label: Text(f),
+                      selected: settings.fontFamily == f,
+                      onSelected: (_) => notifier.setFontFamily(f),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const _SectionLabel('Text alignment'),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final a in NovelTextAlign.values)
+                    ChoiceChip(
+                      avatar: Icon(a.icon),
+                      label: Text(a.label),
+                      selected: settings.align == a,
+                      onSelected: (_) => notifier.setAlign(a),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const _SectionLabel('Background'),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final b in NovelBackgroundTheme.values)
+                    ChoiceChip(
+                      label: Text(b.label),
+                      selected: settings.background == b,
+                      onSelected: (_) => notifier.setBackground(b),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Show reading progress'),
+                value: settings.showProgress,
+                onChanged: (_) => notifier.toggleShowProgress(),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Tap to navigate'),
+                value: settings.tapToNavigate,
+                onChanged: (_) => notifier.toggleTapToNavigate(),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Keep screen on'),
+                value: settings.keepScreenOn,
+                onChanged: (_) => notifier.toggleKeepScreenOn(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Strips HTML tags from [input] — used by TTS path.
+String stripHtml(String input) {
+  return input
+      .replaceAll(RegExp(r'<[^>]+>'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+}
+
+/// Estimates reading time in minutes for [html] at the given [wpm].
+int estimateReadingMinutes(String html, {int wpm = 250}) {
+  final text = stripHtml(html);
+  final words = text.split(RegExp(r'\s+')).where((w) => w.isNotEmpty);
+  return math.max(1, (words.length / wpm).ceil());
+}
+
+// ---------------------------------------------------------------------------
+// NovelReaderView — the interactive reader body
+// ---------------------------------------------------------------------------
+
+/// The interactive novel reader.
+///
+/// Renders the current chapter's HTML with the user's typography settings,
+/// restores per-chapter scroll positions via [NovelScrollStore], and offers
+/// chapter navigation plus a settings sheet. Chapter content arrives from
+/// [novelChaptersProvider], which the data layer populates when a
+/// novel-capable source delivers HTML.
+class NovelReaderView extends ConsumerStatefulWidget {
+  const NovelReaderView({
+    super.key,
+    required this.novelId,
+    this.initialChapterId,
+  });
+
+  final int novelId;
+  final int? initialChapterId;
+
+  @override
+  ConsumerState<NovelReaderView> createState() => _NovelReaderViewState();
+}
+
+class _NovelReaderViewState extends ConsumerState<NovelReaderView> {
+  final ScrollController _scrollController = ScrollController();
+  NovelChapter? _chapter;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialChapterId;
+    if (initial != null) {
+      // Resolve lazily in build once the provider cache is visible.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final chapters = ref.read(novelChaptersProvider(widget.novelId));
+        final match = chapters.where((c) => c.id == initial).firstOrNull;
+        if (match != null) _setChapter(match, restoreScroll: true);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _setChapter(NovelChapter chapter, {bool restoreScroll = false}) {
+    final store = ref.read(novelScrollStoreProvider);
+    if (_chapter != null) {
+      store.put(_chapter!.id, _scrollController.hasClients
+          ? _scrollController.offset
+          : 0);
+    }
+    setState(() => _chapter = chapter);
+    final target = restoreScroll ? store.get(chapter.id) : 0.0;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      _scrollController.jumpTo(
+        math.min(target, _scrollController.position.maxScrollExtent),
+      );
+    });
+  }
+
+  void _openSettings() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => const NovelReaderSettingsSheet(),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = ref.watch(novelReaderSettingsProvider);
+    final chapters = ref.watch(novelChaptersProvider(widget.novelId));
+
+    // Keep-screen-on is honoured for the duration of the reader.
+    WakelockPlus.toggle(enable: settings.keepScreenOn);
+
+    if (chapters.isEmpty) {
+      return Scaffold(
+        backgroundColor: settings.background.color,
+        appBar: AppBar(
+          title: const Text('Novel'),
+          backgroundColor: settings.background.color,
+        ),
+        body: emptyState(
+          context: context,
+          icon: Icons.auto_stories_outlined,
+          title: 'No chapters loaded',
+          subtitle: 'Install a novel-capable source and open a chapter '
+              'from its detail page.',
+        ),
+      );
+    }
+
+    final chapter =
+        _chapter ?? chapters.first; // latest chapter by default
+    final index = chapters.indexWhere((c) => c.id == chapter.id);
+
+    return Scaffold(
+      backgroundColor: settings.background.color,
+      appBar: AppBar(
+        title: Text(
+          chapter.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        backgroundColor: settings.background.color,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.tune),
+            tooltip: 'Reader settings',
+            onPressed: _openSettings,
+          ),
+        ],
+      ),
+      body: _NovelContent(
+        chapter: chapter,
+        settings: settings,
+        scrollController: _scrollController,
+        ttsWords: const [],
+        ttsWordIndex: null,
+      ),
+      bottomNavigationBar: _ChapterNavBar(
+        hasPrev: index >= 0 && index < chapters.length - 1,
+        hasNext: index > 0,
+        onPrev: index >= 0 && index < chapters.length - 1
+            ? () => _setChapter(chapters[index + 1])
+            : null,
+        onNext: index > 0 ? () => _setChapter(chapters[index - 1]) : null,
+        backgroundColor: settings.background.color,
+      ),
+    );
+  }
+}
+
+/// Minimal prev/next chapter bar.
+class _ChapterNavBar extends StatelessWidget {
+  const _ChapterNavBar({
+    required this.hasPrev,
+    required this.hasNext,
+    this.onPrev,
+    this.onNext,
+    this.backgroundColor,
+  });
+
+  final bool hasPrev;
+  final bool hasNext;
+  final VoidCallback? onPrev;
+  final VoidCallback? onNext;
+  final Color? backgroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: backgroundColor ?? Theme.of(context).colorScheme.surface,
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            Expanded(
+              child: TextButton.icon(
+                onPressed: hasPrev ? onPrev : null,
+                icon: const Icon(Icons.arrow_upward),
+                label: const Text('Previous'),
+              ),
+            ),
+            Expanded(
+              child: TextButton.icon(
+                onPressed: hasNext ? onNext : null,
+                icon: const Icon(Icons.arrow_downward),
+                label: const Text('Next'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
