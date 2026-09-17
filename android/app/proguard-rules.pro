@@ -1,6 +1,15 @@
 # Lumina Reader — ProGuard / R8 rules
-# Referenced by android/app/build.gradle.kts (was missing entirely, which
-# broke release builds with minifyEnabled=true).
+# Referenced by android/app/build.gradle.kts. Currently INERT: R8 shrinking
+# is disabled (isMinifyEnabled = false) while the release build is being
+# stabilized.
+#
+# Every rule below is namespace-verified against the actual dependency tree
+# (pubspec.lock + each plugin's android namespace in the pub cache). Entries
+# for packages that are NOT dependencies were deleted: d4rt (removed from the
+# project), flutter_qjs / com.ktoda, flutter_secure_storage,
+# shared_preferences, epubx / es.sitio (pure Dart), site.gemu (no such
+# package), io.github.vvb2060.mediainfo (no such package). When re-enabling
+# R8, test the release APK on a real device before shipping.
 
 # --- Flutter ---------------------------------------------------------------
 # Flutter ships its own rules via the engine AAR; keep the standard guard
@@ -12,38 +21,29 @@
 -keep class io.flutter.** { *; }
 -keep class io.flutter.plugins.** { *; }
 
-# --- Isar ------------------------------------------------------------------
+# --- Isar (namespace dev.isar.*) -------------------------------------------
 # Isar uses codegen + reflection-free accessors, but its native bridge and
 # generated schemas must survive shrinking.
 -keep class dev.isar.** { *; }
 -keep class isar.** { *; }
--keep class com.example.**.isar.** { *; }
 -keep class **.g.** { *; }
 -keep class **IsarCollection { *; }
 -dontwarn dev.isar.**
 
-# --- media_kit / libmpv ----------------------------------------------------
--keep class com.alexmercerind.media_kit.** { *; }
--keep class io.github.vvb2060.mediainfo.** { *; }
+# --- media_kit / libmpv (namespace com.alexmercerind.*) --------------------
+-keep class com.alexmercerind.** { *; }
 -dontwarn com.alexmercerind.**
 
-# --- QuickJS (flutter_qjs) -------------------------------------------------
--keep class com.ktoda.** { *; }
--dontwarn com.ktoda.**
+# --- flutter_inappwebview (namespace com.pichillilorenzo.*) ----------------
+-keep class com.pichillilorenzo.** { *; }
+-dontwarn com.pichillilorenzo.**
 
-# --- d4rt (Dart interpreter) ----------------------------------------------
--keep class d4rt.** { *; }
--dontwarn d4rt.**
+# --- flutter_web_auth_2 (namespace com.linusu.*) ---------------------------
+-keep class com.linusu.** { *; }
+-dontwarn com.linusu.**
 
-# --- epubx / archive -------------------------------------------------------
--keep class es.sitio.** { *; }
--dontwarn es.sitio.**
+# --- floating / PiP (namespace eu.wroblewscy.marcin.floating.*) ------------
+-keep class eu.wroblewscy.marcin.floating.** { *; }
+-dontwarn eu.wroblewscy.marcin.floating.**
 
-# --- Plugins with JNI bridges ---------------------------------------------
--keep class site.gemu.** { *; }          # flutter_inappwebview
--keep class com.pichillilorenzo.** { *; } # flutter_inappwebview (legacy id)
--dontwarn site.gemu.**
--keep class com.linusu.** { *; }          # flutter_web_auth_2
--keep class io.flutter.plugins.sharedpreferences.** { *; }
--keep class com.it_nomads.fluttersecurestorage.** { *; }
 -dontwarn javax.naming.**

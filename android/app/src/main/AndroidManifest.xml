@@ -1,17 +1,17 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- Network -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Storage (for downloads) -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="29" />
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
-        tools:ignore="ScopedStorage" />
+    <!-- Storage: deliberately NO storage permissions. User file access
+         (imports, backups) goes through the system picker (file_picker / SAF)
+         and every path the app writes itself — Isar DB, downloads, cache —
+         lives in app-scoped directories via path_provider. The previously
+         declared MANAGE_EXTERNAL_STORAGE is a restricted permission that
+         triggers Google Play review problems and was never requested at
+         runtime anyway; the legacy READ/WRITE_EXTERNAL_STORAGE +
+         requestLegacyExternalStorage entries were equally unused. -->
 
     <!-- Background service (for downloads - prevents HyperOS killing) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -31,9 +31,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:largeHeap="true"
         android:hardwareAccelerated="true"
-        android:forceDarkAllowed="false"
-        android:requestLegacyExternalStorage="true"
-        tools:targetApi="29">
+        android:forceDarkAllowed="false">
 
         <activity
             android:name=".MainActivity"

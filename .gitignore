@@ -23,3 +23,13 @@ build/
 # Misc
 .DS_Store
 *.log
+
+# Android (machine-specific / generated)
+android/local.properties
+android/.gradle/
+android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+
+# Signing (never commit release keys)
+android/key.properties
+*.jks
+*.keystore

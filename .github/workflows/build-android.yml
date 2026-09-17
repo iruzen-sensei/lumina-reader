@@ -20,7 +20,13 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.47.4"
+          # Pinned: all four quality gates and the Android build are verified
+          # against this exact toolchain. Floating `channel: stable` lets
+          # upstream Gradle-plugin changes (e.g. the AGP 9 `newDsl` migration)
+          # break plugin modules at random. Bump deliberately, with a green
+          # local run first.
+          flutter-version: 3.47.4
+          channel: stable
           cache: true
 
       - name: Get dependencies
@@ -49,35 +55,55 @@ jobs:
       - name: Compile smoke test
         run: flutter test test/compile_smoke_test.dart
 
-      - name: Build APK
-        run: flutter build apk --release
-
-      - name: Generate signing keystore
+      # The keystore MUST exist BEFORE `flutter build apk`: Gradle signs the
+      # release build itself (android/app/build.gradle.kts wires the release
+      # signingConfig), so a build-first-sign-later order can never produce a
+      # signed APK — and the separate zipalign+apksigner pass is unnecessary
+      # (re-signing after alignment can even invalidate the signature Gradle
+      # already applied).
+      #
+      # Stable signing (recommended): set these repository secrets —
+      #   LUMINA_KEYSTORE_BASE64    base64 of your .jks  (base64 -w0 key.jks)
+      #   LUMINA_KEYSTORE_PASSWORD  keystore password
+      #   LUMINA_KEY_ALIAS          key alias
+      #   LUMINA_KEY_PASSWORD       key password
+      # Without secrets an ephemeral key is generated per run; APKs from
+      # different runs then carry different signatures and will NOT install
+      # as updates over each other.
+      - name: Prepare signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.LUMINA_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.LUMINA_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.LUMINA_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.LUMINA_KEY_PASSWORD }}
         run: |
           mkdir -p .github
-          if [ -f .github/signing-keystore.jks ]; then
-            echo "Keystore already exists"
-          else
-            keytool -genkeypair -alias lumina -keyalg RSA -keysize 2048 -validity 36500 -keystore .github/signing-keystore.jks -storepass lumina2026 -keypass lumina2026 -dname "CN=Lumina,O=Lumina,C=US"
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "Using keystore from LUMINA_KEYSTORE_BASE64 secret"
+            printf '%s' "$KEYSTORE_BASE64" | base64 -d > .github/signing-keystore.jks
+          elif [ ! -f .github/signing-keystore.jks ]; then
+            echo "No keystore secret — generating ephemeral key"
+            keytool -genkeypair \
+              -alias "${KEY_ALIAS:-lumina}" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 36500 \
+              -keystore .github/signing-keystore.jks \
+              -storepass "${KEYSTORE_PASSWORD:-lumina2026}" \
+              -keypass "${KEY_PASSWORD:-lumina2026}" \
+              -dname "CN=Lumina,O=Lumina"
           fi
 
-      - name: Sign APK
-        run: |
-          APKSIGNER=$(find $ANDROID_HOME -name "apksigner" -type f 2>/dev/null | head -1 || true)
-          ZIPALIGN=$(find $ANDROID_HOME -name "zipalign" -type f 2>/dev/null | head -1 || true)
-          APK="build/app/outputs/flutter-apk/app-release.apk"
+      # Signed by Gradle during the build (release signingConfig). There is
+      # deliberately NO manual zipalign/apksigner step afterwards.
+      - name: Build APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.LUMINA_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.LUMINA_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.LUMINA_KEY_PASSWORD }}
+        run: flutter build apk --release
 
-          if [ -n "$ZIPALIGN" ]; then
-            "$ZIPALIGN" -f -v 4 "$APK" "${APK}.aligned" 2>&1 | tail -3
-            mv "${APK}.aligned" "$APK"
-          fi
-
-          if [ -n "$APKSIGNER" ]; then
-            "$APKSIGNER" sign --ks .github/signing-keystore.jks --ks-pass pass:lumina2026 --ks-key-alias lumina --key-pass pass:lumina2026 "$APK"
-            "$APKSIGNER" verify --verbose "$APK"
-          fi
-
-      - name: Upload signed APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: lumina-reader-apk

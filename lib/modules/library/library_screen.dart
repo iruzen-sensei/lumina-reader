@@ -143,14 +143,17 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   Future<void> _importLocalFile() async {
     try {
-      // file_picker 13.x: pickFiles is a static on [FilePicker] (no
-      // `.platform`), always multi-select, and cancels with an empty list
-      // (never null).
-      final files = await FilePicker.pickFiles(
+      // file_picker 11.0.3 (EXACT PIN — 12.x+ federates to android_file_picker,
+      // whose 2.0.0 Gradle script breaks `flutter build apk` on our AGP 8.7
+      // toolchain): pickFiles is still a static, but multi-select is opt-in
+      // and cancelling yields a null result rather than an empty list.
+      final result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['epub', 'pdf', 'cbz', 'cbr', 'zip'],
+        allowMultiple: true,
       );
       if (!mounted) return;
+      final files = result?.files ?? const <PlatformFile>[];
       if (files.isEmpty) {
         showSnack(ref, context, 'No file selected');
         return;
