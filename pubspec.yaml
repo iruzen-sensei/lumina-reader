@@ -169,6 +169,11 @@ dependency_overrides:
   # Local fork of epubx 4.0.0 patched for image 4.x (see above).
   epubx:
     path: third_party/epubx
+  # Local fork of isar_flutter_libs 3.1.0+1: upstream is abandoned and its
+  # Android module has no `namespace`, which AGP 8 (Flutter 3.47.4's minimum
+  # supported line) hard-fails on. Only the android/ build files differ.
+  isar_flutter_libs:
+    path: third_party/isar_flutter_libs
   # Local fork of pdfrx_engine 0.4.5 with a two-character null-safety patch
   # (pdf_file_cache.dart): upstream uses `cache.blockSize` / `cache.read(...)`
   # on a `PdfFileCache?` without `!`, which fails to COMPILE under the Dart
