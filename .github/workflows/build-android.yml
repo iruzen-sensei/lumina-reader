@@ -17,6 +17,12 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      # Caches the Gradle distribution + dependency artifacts downloaded by
+      # `flutter build apk` (AGP 9.1, KGP 2.4, plugin AARs). First run stays
+      # cold; subsequent runs skip ~1GB of downloads.
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:

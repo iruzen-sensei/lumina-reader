@@ -1,8 +1,9 @@
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-
 plugins {
     id("com.android.application")
-    id("kotlin-android")
+    // The Flutter Gradle Plugin must be applied after the Android and Kotlin
+    // Gradle plugins. Do NOT add `kotlin-android` here: with
+    // `android.builtInKotlin=false` the Flutter plugin applies KGP itself to
+    // every subproject that needs it (app + plugin modules).
     id("dev.flutter.flutter-gradle-plugin")
 }
 
@@ -23,24 +24,25 @@ val releaseKeystore: File? =
 
 android {
     namespace = "com.lumina.reader"
-    compileSdk = 35
-    ndkVersion = "27.0.12077973"
+    // flutter.* values come from the Flutter Gradle plugin and track the
+    // pinned Flutter toolchain (3.47.4: compileSdk 36, NDK 28.2.13676358,
+    // targetSdk 36) instead of hardcoding SDK versions that drift.
+    compileSdk = flutter.compileSdkVersion
+    ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     defaultConfig {
         applicationId = "com.lumina.reader"
+        // Deliberately above flutter.minSdkVersion (24): the background
+        // service + workmanager code paths rely on API 26+ behavior.
         minSdk = 26
-        targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        targetSdk = flutter.targetSdkVersion
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
     }
 
     signingConfigs {
@@ -80,6 +82,15 @@ android {
         debug {
             signingConfig = signingConfigs.getByName("debug")
         }
+    }
+}
+
+// KGP 2.x DSL (kotlinOptions {} was removed in Kotlin 2.4). The `kotlin`
+// extension exists because the Flutter plugin applies KGP before this
+// script body runs.
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
 }
 
