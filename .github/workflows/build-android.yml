@@ -107,7 +107,20 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.LUMINA_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.LUMINA_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.LUMINA_KEY_PASSWORD }}
-        run: flutter build apk --release
+        run: |
+          set +e
+          flutter build apk --release
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -ne 0 ]; then
+            echo "::group::Gradle stacktrace (debug — remove after fixing)"
+            cd android && ./gradlew assembleRelease --stacktrace \
+              -Ptarget=lib/main.dart \
+              -Ptarget-platform=android-arm,android-arm64,android-x64 \
+              -Pbuild-mode=release || true
+            echo "::endgroup::"
+            exit 1
+          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
