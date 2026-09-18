@@ -67,11 +67,22 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
   SkipRange? _activeSkip;
   StreamSubscription<Duration>? _positionSub;
 
-  late Chapter _episode;
+  /// Nullable: assigned by the async _loadEpisode resolve after the first
+  /// frame — every access must be guarded (the previous `late` variant
+  /// crashed the overlay build with LateInitializationError on first open).
+  Chapter? _episode;
 
   Manga? _manga;
   bool _notFound = false;
-  bool _videoOpened = false;
+
+  /// Episode the player is currently bound to. Differs from
+  /// [widget.episodeId] after a next/prev switch; the build watch follows
+  /// this so the auto-open logic targets the CURRENT episode's sources.
+  late int _currentEpisodeId = widget.episodeId;
+
+  /// Episode id whose sources were already opened — prevents re-opening on
+  /// every rebuild while still allowing a fresh open after a switch.
+  int? _openedEpisodeId;
 
   @override
   void initState() {
@@ -121,13 +132,14 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
 
   /// Called from build when sources are available (and not yet opened).
   void _tryOpenVideo(List<VideoQuality> sources) {
-    if (_videoOpened || _notFound || sources.isEmpty) return;
-    _videoOpened = true;
+    if (_notFound || sources.isEmpty) return;
+    if (_openedEpisodeId == _currentEpisodeId) return;
+    _openedEpisodeId = _currentEpisodeId;
     _openVideo();
   }
 
   Future<void> _openVideo() async {
-    final sources = ref.read(videoSourcesProvider(widget.episodeId));
+    final sources = ref.read(videoSourcesProvider(_currentEpisodeId));
     final url = sources.isNotEmpty ? sources.first.url : '';
     if (url.isEmpty) return;
     await _player.open(Media(url));
@@ -267,46 +279,48 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
 
   Future<void> _nextEpisode() async {
     final manga = _manga;
-    if (manga == null) return;
-    final idx = manga.chapters.indexWhere((c) => c.id == _episode.id);
+    final episode = _episode;
+    if (manga == null || episode == null) return;
+    final idx = manga.chapters.indexWhere((c) => c.id == episode.id);
     if (idx <= 0) {
       showSnack(ref, context, 'No next episode');
       return;
     }
-    final next = manga.chapters[idx - 1];
-    final sources = ref.read(videoSourcesProvider(next.id));
-    if (sources.isEmpty) {
-      showSnack(ref, context, 'No stream available for this episode');
-      return;
-    }
-    setState(() {
-      _episode = next;
-      _isLoading = true;
-      _qualityIndex = _qualityIndex.clamp(0, sources.length - 1);
-    });
-    await _player.open(Media(sources[_qualityIndex].url));
-    _maybeStartAniSkipWatch();
+    await _switchToEpisode(manga.chapters[idx - 1]);
   }
 
   Future<void> _prevEpisode() async {
     final manga = _manga;
-    if (manga == null) return;
-    final idx = manga.chapters.indexWhere((c) => c.id == _episode.id);
+    final episode = _episode;
+    if (manga == null || episode == null) return;
+    final idx = manga.chapters.indexWhere((c) => c.id == episode.id);
     if (idx >= manga.chapters.length - 1) {
       showSnack(ref, context, 'No previous episode');
       return;
     }
-    final prev = manga.chapters[idx + 1];
-    final sources = ref.read(videoSourcesProvider(prev.id));
+    await _switchToEpisode(manga.chapters[idx + 1]);
+  }
+
+  /// Loads the target episode's sources (awaiting the async notifier — the
+  /// old code read the provider synchronously so it ALWAYS saw the empty
+  /// initial state and refused to switch), then rebinds the player.
+  Future<void> _switchToEpisode(Chapter target) async {
+    showSnack(ref, context, 'Loading ${target.name}…');
+    final notifier = ref.read(videoSourcesProvider(target.id).notifier);
+    await notifier.reload();
+    final sources = ref.read(videoSourcesProvider(target.id));
+    if (!mounted) return;
     if (sources.isEmpty) {
       showSnack(ref, context, 'No stream available for this episode');
       return;
     }
     setState(() {
-      _episode = prev;
+      _episode = target;
+      _currentEpisodeId = target.id;
       _isLoading = true;
       _qualityIndex = _qualityIndex.clamp(0, sources.length - 1);
     });
+    _openedEpisodeId = target.id;
     await _player.open(Media(sources[_qualityIndex].url));
     _maybeStartAniSkipWatch();
   }
@@ -326,8 +340,9 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
       );
     }
 
-    // Open the video as soon as the (auto-loaded) sources arrive.
-    final sources = ref.watch(videoSourcesProvider(widget.episodeId));
+    // Open the video as soon as the (auto-loaded) sources arrive for the
+    // episode the player is currently bound to.
+    final sources = ref.watch(videoSourcesProvider(_currentEpisodeId));
     if (sources.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _tryOpenVideo(sources);
@@ -377,7 +392,7 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
       children: [
         _GradientTop(
           title: manga?.title ?? '',
-          subtitle: _episode.name,
+          subtitle: _episode?.name ?? '',
           onBack: () => Navigator.maybePop(context),
           onPip: _togglePip,
         ),

@@ -78,6 +78,18 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
           ),
           SliverToBoxAdapter(child: _TagsRow(manga: manga)),
           SliverToBoxAdapter(child: _ActionRow(manga: manga, onContinue: () {
+            // Imported books (epub / pdf) open their dedicated readers;
+            // manga/anime continue into the first unread chapter. The old
+            // code crashed with StateError on empty chapter lists.
+            final route = _bookReaderRoute(manga);
+            if (route != null) {
+              context.push(route);
+              return;
+            }
+            if (manga.chapters.isEmpty) {
+              showSnack(ref, context, 'No chapters available yet');
+              return;
+            }
             final first = manga.chapters.firstWhere(
               (c) => !c.isRead,
               orElse: () => manga.chapters.first,
@@ -109,6 +121,16 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         ],
       ),
     );
+  }
+
+  /// Returns the dedicated reader route for imported book files
+  /// (epub / pdf), or null for regular manga/anime entries.
+  String? _bookReaderRoute(Manga manga) {
+    if (manga.itemType != ItemType.book) return null;
+    final url = manga.url.toLowerCase();
+    if (url.endsWith('.epub')) return '/epubReader/${manga.id}';
+    if (url.endsWith('.pdf')) return '/pdfReader/${manga.id}';
+    return null;
   }
 
   void _toggleFavorite(Manga manga) {

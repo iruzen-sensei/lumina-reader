@@ -147,6 +147,14 @@ class DownloadsRepository {
     });
   }
 
+  /// Deletes EVERY download row (any state). Wired to Settings → Delete all
+  /// downloads; the caller also removes the on-disk files.
+  Future<void> clearAll() async {
+    await _isar.writeTxn(() async {
+      await _isar.downloads.clear();
+    });
+  }
+
   Stream<void> watch() {
     return _isar.downloads.watchLazy(fireImmediately: true);
   }

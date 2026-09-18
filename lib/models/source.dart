@@ -202,6 +202,28 @@ class Source {
   /// Inline source code (used by local / custom sources).
   String? sourceCode;
 
+  /// Remote URL of the extension's source code (multisrc templates point
+  /// every site at one shared template file).
+  String? sourceCodeUrl;
+
+  /// Date format string the site uses for chapter timestamps (Madara-style
+  /// WordPress sites, e.g. `MMMM dd, yyyy`).
+  String? dateFormat;
+
+  /// Locale for [dateFormat] parsing (e.g. `en_us`, `pt-br`).
+  String? dateFormatLocale;
+
+  /// Opaque per-site configuration blob forwarded to the source template
+  /// (mirrors the Mangayomi extension repo field of the same name).
+  String? additionalParams;
+
+  /// Minimum app version required by the extension (from the repo index).
+  String? appMinVerReq;
+
+  /// Latest version offered by the repo (differs from [version] when an
+  /// update is available but not yet installed).
+  String? versionLast;
+
   /// Language of the inline source code. Defaults to `null` for legacy
   /// sources that did not declare a language.
   @Enumerated(EnumType.name)
@@ -360,6 +382,12 @@ class Source {
     this.supportsVideo,
     this.mangaCount,
     this.animeCount,
+    this.sourceCodeUrl,
+    this.dateFormat,
+    this.dateFormatLocale,
+    this.additionalParams,
+    this.appMinVerReq,
+    this.versionLast,
   });
 
   /// Returns the effective display name (honouring [customName]).

@@ -43,7 +43,12 @@ import '../models/models.dart';
 import '../services/anichart.dart' as anichart;
 import '../services/aniskip.dart' as aniskip;
 import '../services/extension_coordinator.dart';
+import '../services/extension_repo_service.dart';
+import '../models/mappers.dart' as map;
 import '../services/library_updater.dart';
+
+export '../services/extension_repo_service.dart'
+    show ExtensionRepo, RepoExtension, kDefaultRepoUrl;
 
 // Media DTOs moved to models.dart — re-exported here so existing screen
 // imports (`import '../providers/providers.dart'`) keep resolving.
@@ -502,6 +507,8 @@ class DownloadsNotifier extends StateNotifier<List<DownloadTask>> {
 
   Future<void> clearCompleted() => _repo.clearCompleted();
 
+  Future<void> clearAll() => _repo.clearAll();
+
   Future<void> remove(int id) => _repo.remove(id);
 
   /// Enqueues a chapter download for a library item.
@@ -628,25 +635,107 @@ class ReaderSettings {
       backgroundColor: backgroundColor ?? this.backgroundColor,
     );
   }
+
+  // Value equality — syncFromAppSettings compares old vs. mapped state to
+  // avoid announcing no-op rebuilds.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ReaderSettings &&
+          other.mode == mode &&
+          other.direction == direction &&
+          other.fit == fit &&
+          other.tapToNavigate == tapToNavigate &&
+          other.showPageNumber == showPageNumber &&
+          other.keepScreenOn == keepScreenOn &&
+          other.backgroundColor == backgroundColor;
+
+  @override
+  int get hashCode =>
+      Object.hash(mode, direction, fit, tapToNavigate, showPageNumber,
+          keepScreenOn, backgroundColor);
 }
 
+/// Reader session settings.
+///
+/// Hydrated from the PERSISTED app settings ([appSettingsProvider]) on
+/// construction and re-synced whenever those settings change (e.g. edited
+/// from the Settings screen). In-reader changes are written THROUGH to the
+/// persisted defaults so they survive app restarts — previously this
+/// notifier was a bare in-memory StateNotifier, so every reader preference
+/// silently reset on relaunch.
 class ReaderSettingsNotifier extends StateNotifier<ReaderSettings> {
-  ReaderSettingsNotifier() : super(ReaderSettings());
+  ReaderSettingsNotifier(this._ref) : super(ReaderSettings()) {
+    syncFromAppSettings(_ref.read(appSettingsProvider), initial: true);
+  }
 
-  void setMode(ReaderMode m) => state = state.copyWith(mode: m);
-  void setDirection(ReaderDirection d) => state = state.copyWith(direction: d);
+  final Ref _ref;
+
+  /// Updates local state from the persisted app settings WITHOUT writing
+  /// back (prevents feedback loops with the write-through setters).
+  void syncFromAppSettings(SettingsState s, {bool initial = false}) {
+    final mapped = ReaderSettings(
+      mode: s.defaultReaderMode,
+      direction: s.defaultReaderDirection,
+      fit: state.fit,
+      tapToNavigate: s.tapToNavigate,
+      showPageNumber: s.showPageNumber,
+      keepScreenOn: s.keepScreenOn,
+      backgroundColor: s.readerBgColor.color,
+    );
+    // Only announce when something actually changed — avoids useless
+    // rebuilds on every unrelated settings mutation.
+    if (initial || mapped != state) state = mapped;
+  }
+
+  void setMode(ReaderMode m) {
+    state = state.copyWith(mode: m);
+    _ref.read(appSettingsProvider.notifier).setReaderMode(m);
+  }
+
+  void setDirection(ReaderDirection d) {
+    state = state.copyWith(direction: d);
+    _ref.read(appSettingsProvider.notifier).setReaderDirection(d);
+  }
+
   void setFit(ReaderFit f) => state = state.copyWith(fit: f);
-  void togglePageNumber() =>
-      state = state.copyWith(showPageNumber: !state.showPageNumber);
-  void toggleKeepScreenOn() =>
-      state = state.copyWith(keepScreenOn: !state.keepScreenOn);
-  void toggleTapToNavigate() =>
-      state = state.copyWith(tapToNavigate: !state.tapToNavigate);
+
+  void setBackgroundColor(Color c) {
+    state = state.copyWith(backgroundColor: c);
+    final bg = ReaderBgColor.values.firstWhere(
+      (b) => b.color == c,
+      orElse: () => ReaderBgColor.black,
+    );
+    _ref.read(appSettingsProvider.notifier).setReaderBg(bg);
+  }
+
+  void togglePageNumber() {
+    state = state.copyWith(showPageNumber: !state.showPageNumber);
+    _ref.read(appSettingsProvider.notifier).togglePageNumber();
+  }
+
+  void toggleKeepScreenOn() {
+    state = state.copyWith(keepScreenOn: !state.keepScreenOn);
+    _ref.read(appSettingsProvider.notifier).toggleKeepScreenOn();
+  }
+
+  void toggleTapToNavigate() {
+    state = state.copyWith(tapToNavigate: !state.tapToNavigate);
+    _ref.read(appSettingsProvider.notifier).toggleTapToNavigate();
+  }
 }
 
 final readerSettingsProvider =
     StateNotifierProvider<ReaderSettingsNotifier, ReaderSettings>(
-  (ref) => ReaderSettingsNotifier(),
+  (ref) {
+    final notifier = ReaderSettingsNotifier(ref);
+    // Keep the reader defaults aligned with persisted settings (Settings
+    // screen edits apply to the next reader session / open sessions).
+    ref.listen<SettingsState>(appSettingsProvider, (prev, next) {
+      notifier.syncFromAppSettings(next);
+    });
+    return notifier;
+  },
 );
 
 /// Auto-loading page cache for a chapter. Created on first access; fetches
@@ -1092,7 +1181,42 @@ class UpdatesListNotifier extends StateNotifier<List<UpdateItem>> {
         isDownloaded: u.isDownloaded ?? false,
         isAnime: u.isAnime ?? false,
         scanlator: u.scanlator,
+        chapterId: u.chapterId,
       );
+
+  /// Persists the read/seen flag of a single update row (previously the
+  /// tile only flipped a local `setState` copy that reset on rebuild).
+  Future<void> setRead(int updateId, {required bool read}) async {
+    try {
+      await _storage.isar.writeTxn(() async {
+        final row = await _storage.isar.updates.get(updateId);
+        if (row == null) return;
+        row.isRead = read;
+        await _storage.isar.updates.put(row);
+      });
+      // The Isar watch fires and reloads the list.
+    } catch (e) {
+      debugPrint('UpdatesListNotifier.setRead($updateId) failed: $e');
+    }
+  }
+
+  /// Marks every update row as read (wired to the "Mark all read" action;
+  /// previously a snackbar-only stub).
+  Future<void> markAllRead() async {
+    try {
+      await _storage.isar.writeTxn(() async {
+        final rows = await _storage.isar.updates.where().findAll();
+        for (final row in rows) {
+          if (row.isRead != true) {
+            row.isRead = true;
+            await _storage.isar.updates.put(row);
+          }
+        }
+      });
+    } catch (e) {
+      debugPrint('UpdatesListNotifier.markAllRead failed: $e');
+    }
+  }
 
   @override
   void dispose() {
@@ -1173,30 +1297,75 @@ final downloadedOnlyProvider = StateProvider<bool>((ref) => false);
 final wifiOnlyDownloadsProvider = StateProvider<bool>((ref) => true);
 
 // ---------------------------------------------------------------------------
-// Extension repositories (user-added source repositories)
+// Extension repositories (user-added source repositories) — REAL
 // ---------------------------------------------------------------------------
 
-class ExtensionRepo {
-  ExtensionRepo({
-    required this.url,
-    required this.name,
-    this.installedCount = 0,
-    this.lastUpdated,
-  });
+/// Isar watch-backed repo list. Repos are persisted as JSON on the Settings
+/// row and synced through [data.extensionRepoServiceProvider] (previously
+/// this was an in-memory StateProvider that forgot everything on restart —
+/// "I added a repository and it didn't display anything").
+class ExtensionReposNotifier
+    extends StateNotifier<List<ExtensionRepo>> {
+  ExtensionReposNotifier(this._service) : super(const []) {
+    _sub = _service.watchRepos().listen((_) => _reload());
+    _reload();
+  }
 
-  final String url;
-  final String name;
-  final int installedCount;
-  final DateTime? lastUpdated;
+  final ExtensionRepoService _service;
+  StreamSubscription<void>? _sub;
+
+  Future<void> _reload() async {
+    try {
+      state = await _service.getRepos();
+    } catch (e) {
+      debugPrint('ExtensionReposNotifier reload failed: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
 }
 
-/// User-added extension repositories. Empty on a fresh install — the
-/// built-in native sources (MangaDex) are registered in the Source table,
-/// not here. Repos listed here are fetched through the extension system
-/// when the repository browser opens.
-final extensionReposProvider = StateProvider<List<ExtensionRepo>>((ref) {
-  return [];
-});
+final extensionReposProvider =
+    StateNotifierProvider<ExtensionReposNotifier, List<ExtensionRepo>>(
+  (ref) => ExtensionReposNotifier(
+      ref.watch(data.extensionRepoServiceProvider)),
+);
+
+/// Extension catalog (installed + available), Isar watch-backed.
+class ExtensionCatalogNotifier extends StateNotifier<List<Source>> {
+  ExtensionCatalogNotifier(this._service) : super(const []) {
+    _sub = _service.watchCatalog().listen((_) => _reload());
+    _reload();
+  }
+
+  final ExtensionRepoService _service;
+  StreamSubscription<void>? _sub;
+
+  Future<void> _reload() async {
+    try {
+      final rows = await _service.catalog();
+      state = rows.map(map.sourceToDto).toList();
+    } catch (e) {
+      debugPrint('ExtensionCatalogNotifier reload failed: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+}
+
+final extensionCatalogProvider =
+    StateNotifierProvider<ExtensionCatalogNotifier, List<Source>>(
+  (ref) => ExtensionCatalogNotifier(
+      ref.watch(data.extensionRepoServiceProvider)),
+);
 
 // ---------------------------------------------------------------------------
 // Extension coordinator provider

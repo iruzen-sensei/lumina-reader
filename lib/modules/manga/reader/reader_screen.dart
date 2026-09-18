@@ -13,12 +13,14 @@
 // limitations under the License.
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:extended_image/extended_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../../data/providers.dart' as data;
 import '../../../models/models.dart';
@@ -62,8 +64,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   Timer? _progressSaveDebounce;
 
   // Current chapter pointer so chapter navigation can mutate it.
-  late Chapter _chapter;
+  // Nullable: the async Isar resolve in _loadChapter may not have finished
+  // when the first frame builds — every access must be guarded (the previous
+  // `late` variant crashed with LateInitializationError on first open).
+  Chapter? _chapter;
   Manga? _manga;
+
+  /// True once [_chapter] has been resolved and assigned.
+  bool get _chapterReady => _chapter != null;
 
   @override
   void initState() {
@@ -72,6 +80,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _itemPositionsListener.itemPositions.addListener(_onListPositionsChanged);
     _sessionStart = DateTime.now();
     _loadChapter();
+    // Honour the persisted keep-screen-on setting (previously a no-op in
+    // this screen — only the never-mounted ReaderView applied it).
+    if (ref.read(readerSettingsProvider).keepScreenOn) {
+      WakelockPlus.enable();
+    }
   }
 
   @override
@@ -82,6 +95,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _pageController.dispose();
     _hideTimer?.cancel();
     _itemPositionsListener.itemPositions.removeListener(_onListPositionsChanged);
+    WakelockPlus.disable();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }
@@ -136,17 +150,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   Future<void> _flushProgress() async {
-    if (_manga == null || _notFound) return;
+    final chapter = _chapter;
+    if (_manga == null || chapter == null || _notFound) return;
     final completed = _totalPages > 0 && _currentPage >= _totalPages - 1;
     try {
       await ref.read(data.libraryRepositoryProvider).saveChapterProgress(
-            _chapter.id,
+            chapter.id,
             lastPageRead: _currentPage,
-            isRead: completed || _chapter.isRead,
+            isRead: completed || chapter.isRead,
             pageCount: _totalPages,
           );
-      if (completed && !_chapter.isRead) {
-        _chapter.isRead = true;
+      if (completed && !chapter.isRead) {
+        chapter.isRead = true;
         await ref.read(data.statsRepositoryProvider).maybeMarkFinished(_manga!.id);
       }
     } catch (_) {
@@ -156,16 +171,19 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   Future<void> _recordHistoryRead(double progressOverride) async {
-    if (ref.read(incognitoModeProvider) || _manga == null) return;
+    final chapter = _chapter;
+    if (ref.read(incognitoModeProvider) || _manga == null || chapter == null) {
+      return;
+    }
     try {
       final progress = progressOverride > 0
           ? progressOverride
           : (_totalPages > 0 ? _currentPage / _totalPages : 0.0);
       await ref.read(data.historyRepositoryProvider).recordRead(
             mangaId: _manga!.id,
-            chapterId: _chapter.id,
-            chapterName: _chapter.name,
-            chapterNumber: _chapter.number,
+            chapterId: chapter.id,
+            chapterName: chapter.name,
+            chapterNumber: chapter.number,
             mangaTitle: _manga!.title,
             mangaCover: _manga!.thumbnailUrl,
             isAnime: false,
@@ -177,14 +195,19 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   Future<void> _recordSession() async {
-    if (ref.read(incognitoModeProvider) || _manga == null) return;
+    final chapter = _chapter;
+    if (ref.read(incognitoModeProvider) ||
+        _manga == null ||
+        chapter == null) {
+      return;
+    }
     final seconds = DateTime.now().difference(_sessionStart).inSeconds;
     if (seconds < 5) return;
     _sessionStart = DateTime.now();
     try {
       await ref.read(data.statsRepositoryProvider).recordSession(
         mangaId: _manga!.id,
-        chapterId: _chapter.id,
+        chapterId: chapter.id,
         pagesRead: 1,
         durationSeconds: seconds,
       );
@@ -233,8 +256,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   Future<void> _nextChapter() async {
     final manga = _manga;
-    if (manga == null) return;
-    final idx = manga.chapters.indexWhere((c) => c.id == _chapter.id);
+    final chapter = _chapter;
+    if (manga == null || chapter == null) return;
+    final idx = manga.chapters.indexWhere((c) => c.id == chapter.id);
     if (idx <= 0) {
       showSnack(ref, context, 'Already at the first chapter');
       return;
@@ -260,8 +284,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   Future<void> _prevChapter() async {
     final manga = _manga;
-    if (manga == null) return;
-    final idx = manga.chapters.indexWhere((c) => c.id == _chapter.id);
+    final chapter = _chapter;
+    if (manga == null || chapter == null) return;
+    final idx = manga.chapters.indexWhere((c) => c.id == chapter.id);
     if (idx >= manga.chapters.length - 1) {
       showSnack(ref, context, 'Already at the last chapter');
       return;
@@ -299,11 +324,27 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       );
     }
 
+    // Guard the async chapter resolve: `_chapter` is assigned by
+    // _loadChapter() after the first frame — watching a provider family with
+    // an uninitialized `late` id crashed the first open.
+    if (!_chapterReady) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     final settings = ref.watch(readerSettingsProvider);
-    final pages = ref.watch(readerPagesProvider(_chapter.id));
+    final pages = ref.watch(readerPagesProvider(_chapter!.id));
+
+    // Apply keep-screen-on changes made from the settings sheet live.
+    ref.listen(readerSettingsProvider.select((s) => s.keepScreenOn),
+        (prev, next) {
+      next ? WakelockPlus.enable() : WakelockPlus.disable();
+    });
 
     // React when the async page list arrives (or grows).
-    ref.listen(readerPagesProvider(_chapter.id), (prev, next) {
+    ref.listen(readerPagesProvider(_chapter!.id), (prev, next) {
       if (next.length != _totalPages) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
@@ -327,6 +368,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         // center toggle controls while left/right navigate.
         child: Stack(
           children: [
+            // RTL paged mode flips the PageView, so the tap zones must
+            // flip with it — previously tap-left always went backwards.
             _ReaderBody(
               settings: settings,
               pages: pages,
@@ -334,8 +377,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               itemScrollController: _itemScrollController,
               itemPositionsListener: _itemPositionsListener,
               initialPage: _currentPage,
-              onTapLeft: settings.tapToNavigate ? _prevPage : _toggleControls,
-              onTapRight: settings.tapToNavigate ? _nextPage : _toggleControls,
+              onTapLeft: settings.tapToNavigate
+                  ? (settings.direction == ReaderDirection.rightToLeft
+                      ? _nextPage
+                      : _prevPage)
+                  : _toggleControls,
+              onTapRight: settings.tapToNavigate
+                  ? (settings.direction == ReaderDirection.rightToLeft
+                      ? _prevPage
+                      : _nextPage)
+                  : _toggleControls,
               onTapCenter: _toggleControls,
               onPageChanged: _onPagedSwipe,
             ),
@@ -354,7 +405,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       children: [
         _TopBar(
           title: manga?.title ?? '',
-          chapterName: _chapter.name,
+          chapterName: _chapter?.name ?? '',
           onClose: () => Navigator.maybePop(context),
         ),
         Positioned(
@@ -569,51 +620,26 @@ class _ReaderPage extends StatelessWidget {
     return Stack(
       fit: isWebtoon ? StackFit.loose : StackFit.expand,
       children: [
-        ExtendedImage.network(
-          url,
-          fit: boxFit,
-          mode: ExtendedImageMode.gesture,
-          enableSlideOutPage: true,
-          cache: true,
-          loadStateChanged: (state) {
-            if (state.extendedImageLoadState == LoadState.loading) {
-              return _PagePlaceholder(
-                child: inlineLoader(context, size: 28),
-              );
-            }
-            if (state.extendedImageLoadState == LoadState.failed) {
-              return _PagePlaceholder(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.broken_image_outlined,
-                        size: 40, color: Colors.white54),
-                    const SizedBox(height: 8),
-                    TextButton(
-                      // extended_image 8.x: the retry hook is `reLoadImage`
-                      // (the old `reLoad` getter no longer exists).
-                      onPressed: state.reLoadImage,
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                ),
-              );
-            }
-            return state.completedWidget;
-          },
-          initGestureConfigHandler: (state) {
-            return GestureConfig(
-              minScale: 0.9,
-              animationMinScale: 0.7,
-              maxScale: 4.0,
-              animationMaxScale: 4.5,
-              speed: 1.0,
-              inertialSpeed: 100.0,
-              initialScale: 1.0,
-              inPageView: !isWebtoon,
-            );
-          },
-        ),
+        // Offline-first: downloaded chapters resolve to local file paths
+        // (written by the DownloadEngine); remote chapters stay network.
+        url.startsWith('file://')
+            ? ExtendedImage.file(
+                File.fromUri(Uri.parse(url)),
+                fit: boxFit,
+                mode: ExtendedImageMode.gesture,
+                enableSlideOutPage: true,
+                loadStateChanged: _pageLoadState,
+                initGestureConfigHandler: _gestureConfig,
+              )
+            : ExtendedImage.network(
+                url,
+                fit: boxFit,
+                mode: ExtendedImageMode.gesture,
+                enableSlideOutPage: true,
+                cache: true,
+                loadStateChanged: _pageLoadState,
+                initGestureConfigHandler: _gestureConfig,
+              ),
         if (onTapLeft != null)
           Row(
             children: [
@@ -626,6 +652,46 @@ class _ReaderPage extends StatelessWidget {
             ],
           ),
       ],
+    );
+  }
+
+  Widget _pageLoadState(ExtendedImageState state) {
+    if (state.extendedImageLoadState == LoadState.loading) {
+      return const _PagePlaceholder(
+        child: SizedBox.shrink(),
+      );
+    }
+    if (state.extendedImageLoadState == LoadState.failed) {
+      return _PagePlaceholder(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.broken_image_outlined,
+                size: 40, color: Colors.white54),
+            const SizedBox(height: 8),
+            TextButton(
+              // extended_image 8.x: the retry hook is `reLoadImage`
+              // (the old `reLoad` getter no longer exists).
+              onPressed: state.reLoadImage,
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+    return state.completedWidget;
+  }
+
+  GestureConfig _gestureConfig(ExtendedImageState state) {
+    return GestureConfig(
+      minScale: 0.9,
+      animationMinScale: 0.7,
+      maxScale: 4.0,
+      animationMaxScale: 4.5,
+      speed: 1.0,
+      inertialSpeed: 100.0,
+      initialScale: 1.0,
+      inPageView: !isWebtoon,
     );
   }
 }
@@ -757,14 +823,22 @@ class _BottomBar extends StatelessWidget {
                     onPressed: onPrevChapter,
                   ),
                   Expanded(
-                    child: Slider(
-                      value: currentPage.toDouble().clamp(1, totalPages).toDouble(),
-                      min: 1,
-                      max: totalPages.toDouble(),
-                      onChanged: onSliderChanged,
-                      activeColor: Theme.of(context).colorScheme.primary,
-                      inactiveColor: Colors.white24,
-                    ),
+                    child: totalPages > 0
+                        ? Slider(
+                            // Guarded: clamp(1, 0) is an invalid range and
+                            // threw ArgumentError while pages streamed in.
+                            value: currentPage
+                                .toDouble()
+                                .clamp(1, totalPages)
+                                .toDouble(),
+                            min: 1,
+                            max: totalPages.toDouble(),
+                            onChanged: onSliderChanged,
+                            activeColor:
+                                Theme.of(context).colorScheme.primary,
+                            inactiveColor: Colors.white24,
+                          )
+                        : const SizedBox(height: 48),
                   ),
                   IconButton(
                     tooltip: 'Next chapter',
@@ -866,6 +940,20 @@ class _ReaderSettingsSheet extends ConsumerWidget {
                     label: Text(_fitLabel(f)),
                     selected: settings.fit == f,
                     onSelected: (_) => notifier.setFit(f),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const _SectionLabel('Background'),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final bg in ReaderBgColor.values)
+                  ChoiceChip(
+                    label: Text(bg.label),
+                    selected: settings.backgroundColor == bg.color,
+                    onSelected: (_) =>
+                        ref.read(readerSettingsProvider.notifier).setBackgroundColor(bg.color),
                   ),
               ],
             ),

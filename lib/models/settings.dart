@@ -216,6 +216,11 @@ class Settings {
   /// List of hidden category IDs.
   List<int>? libraryHiddenCategories;
 
+  /// Extension repository list, JSON-encoded
+  /// (see services/extension_repo_service.dart). NULL/empty on first run —
+  /// the default Mangayomi repo is seeded by the bootstrap.
+  String? extensionReposJson;
+
   /// List of hidden source IDs.
   List<String>? libraryHiddenSources;
 
@@ -1612,6 +1617,7 @@ class Settings {
     this.libraryShowDownloadedCategory,
     this.libraryShowReadingCategory,
     this.libraryHiddenCategories,
+    this.extensionReposJson,
     this.libraryHiddenSources,
     // Reader
     this.readerDefaultMode,

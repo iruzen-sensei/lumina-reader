@@ -13,6 +13,8 @@ import 'data/downloads_repository.dart' as downloads_db;
 import 'data/library_repository.dart';
 import 'data/sources_repository.dart';
 import 'providers/storage_provider.dart';
+import 'services/download_engine.dart';
+import 'services/extension_repo_service.dart';
 
 void main() async {
   // Error boundary — NEVER crash to a black screen (the HyperOS lesson).
@@ -38,15 +40,33 @@ void main() async {
     }
 
     // First-run bootstrap: default categories, built-in sources (MangaDex),
-    // and download-queue recovery after an unclean shutdown.
+    // the default extension repository, and download-queue recovery after
+    // an unclean shutdown.
     if (storage.isAvailable) {
       try {
         final library = LibraryRepository(storage);
         final sources = SourcesRepository(storage);
         final downloads = downloads_db.DownloadsRepository(storage);
+        final repoService = ExtensionRepoService(storage.isar);
         await library.ensureDefaultCategories();
         await sources.ensureBuiltinSources();
         await downloads.recoverOrphans();
+        // Seed the official Mangayomi extension repo and sync its catalog so
+        // the Browse → Extensions sheet has ~360 entries on first open
+        // (previously the repo list was in-memory and always empty).
+        try {
+          await repoService.ensureDefaultRepo();
+          unawaited(repoService.syncAll());
+        } catch (e) {
+          debugPrint('Extension repo seed/sync failed (non-fatal): $e');
+        }
+        // Start the download engine — drains the queued download rows
+        // (previously enqueued chapters sat "queued" forever).
+        try {
+          DownloadEngine(storage).start();
+        } catch (e) {
+          debugPrint('Download engine start failed (non-fatal): $e');
+        }
       } catch (e) {
         debugPrint('Bootstrap failed (non-fatal): $e');
       }

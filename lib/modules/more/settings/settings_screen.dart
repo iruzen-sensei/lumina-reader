@@ -12,13 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme.dart';
+import '../../../data/providers.dart' as data;
+import '../../../services/backup.dart';
 import '../../../models/models.dart';
 import '../../../providers/providers.dart';
+import '../../../providers/storage_provider.dart';
 import '../../shared/widgets.dart';
 
 /// The settings screen.
@@ -276,14 +284,8 @@ class _AppearanceSection extends ConsumerWidget {
             showSnack(ref, context, 'Brand colour updated');
           }),
         ),
-        const _Divider(),
-        _SectionTile(
-          icon: Icons.font_download_outlined,
-          title: 'Font family',
-          subtitle: 'Roboto (Google Fonts)',
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => _showFontPicker(context),
-        ),
+        // NOTE: the "Font family" tile was removed — the picker never
+        // persisted anything (`_toDb` writes `customThemeFontFamily: null`).
       ],
     );
   }
@@ -385,35 +387,6 @@ class _AppearanceSection extends ConsumerWidget {
     );
   }
 
-  void _showFontPicker(BuildContext context) {
-    final fonts = ['Roboto', 'Inter', 'Lato', 'Merriweather', 'Source Serif'];
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text('Font family',
-                    style: Theme.of(context).textTheme.titleMedium),
-              ),
-              for (final f in fonts)
-                ListTile(
-                  title: Text(f,
-                      style: GoogleFonts.getFont(
-                        f.toLowerCase().replaceAll(' ', ''),
-                      )),
-                  onTap: () => Navigator.pop(context),
-                ),
-            ],
-          ),
-        );
-      },
-    );
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -685,7 +658,13 @@ class _BrowseSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // REAL repo list — Isar-backed (previously an in-memory list that
+    // vanished on restart, with snackbar-only actions).
     final repos = ref.watch(extensionReposProvider);
+    final installedCount = ref
+        .watch(extensionCatalogProvider)
+        .where((s) => s.isInstalled)
+        .length;
     return _SettingsSection(
       title: 'Browse',
       icon: Icons.explore_outlined,
@@ -694,27 +673,33 @@ class _BrowseSection extends ConsumerWidget {
         _SectionTile(
           icon: Icons.extension_outlined,
           title: 'Manage extensions',
-          subtitle: '${repos.fold<int>(0, (a, b) => a + b.installedCount)} '
-              'installed across ${repos.length} repos',
+          subtitle: '$installedCount installed across ${repos.length} repos',
           trailing: const Icon(Icons.chevron_right),
-          onTap: () => showSnack(ref, context, 'Open extensions'),
+          onTap: () => context.push('/browse'),
         ),
         const _Divider(),
         for (final r in repos)
           _SectionTile(
             icon: Icons.folder_outlined,
             title: r.name,
-            subtitle: r.url,
-            trailing: Text('${r.installedCount} ext'),
-            onTap: () => showSnack(ref, context, 'Open ${r.name}'),
+            subtitle: '${r.extensionCount} extensions'
+                '${r.lastError != null ? ' • last sync failed' : ''}',
+            trailing: IconButton(
+              icon: const Icon(Icons.delete_outline, size: 20),
+              onPressed: () async {
+                await ref
+                    .read(data.extensionRepoServiceProvider)
+                    .removeRepo(r.url);
+              },
+            ),
           ),
         const _Divider(),
         _SectionTile(
           icon: Icons.add_link,
           title: 'Add repository',
-          subtitle: 'Paste a Lumina / Tachiyomi / Aniyomi repo URL',
+          subtitle: 'Paste a Mangayomi extension repo URL',
           trailing: const Icon(Icons.chevron_right),
-          onTap: () => showSnack(ref, context, 'Add repository'),
+          onTap: () => context.push('/browse'),
         ),
       ],
     );
@@ -765,20 +750,145 @@ class _DownloadsSection extends ConsumerWidget {
           ),
         ),
         const _Divider(),
-        _SectionTile(
-          icon: Icons.cleaning_services_outlined,
-          title: 'Clear download cache',
-          subtitle: '248 MB used',
-          onTap: () => showSnack(ref, context, 'Cache cleared'),
-        ),
+        const _CacheSizeTile(),
         const _Divider(),
         _SectionTile(
           icon: Icons.folder_delete_outlined,
           title: 'Delete all downloads',
           subtitle: 'Removes offline content for every library entry',
-          onTap: () => showSnack(ref, context, 'All downloads removed'),
+          onTap: () => _confirmDeleteAllDownloads(context, ref),
         ),
       ],
+    );
+  }
+
+  Future<void> _confirmDeleteAllDownloads(
+      BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete all downloads?'),
+        content: const Text(
+            'This removes every downloaded chapter from the device. Your '
+            'library and reading progress are kept.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      // REAL deletion — clears every download row and the files under the
+      // app-scoped downloads directory (previously a snackbar-only stub).
+      await ref.read(downloadsProvider.notifier).clearAll();
+      final dir = Directory(await StorageProvider().getDownloadsDir());
+      if (await dir.exists()) {
+        await dir.delete(recursive: true);
+        await dir.create(recursive: true);
+      }
+      if (context.mounted) {
+        showSnack(ref, context, 'All downloads removed');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        showSnack(ref, context, 'Could not delete downloads');
+      }
+    }
+  }
+}
+
+/// Tile that computes and displays the REAL on-disk size of the downloads
+/// directory, and clears it on tap (previously hardcoded "248 MB used" + a
+/// snackbar-only "Cache cleared").
+class _CacheSizeTile extends ConsumerStatefulWidget {
+  const _CacheSizeTile();
+
+  @override
+  ConsumerState<_CacheSizeTile> createState() => _CacheSizeTileState();
+}
+
+class _CacheSizeTileState extends ConsumerState<_CacheSizeTile> {
+  int? _bytes;
+  bool _clearing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _compute();
+  }
+
+  Future<void> _compute() async {
+    try {
+      final dir = Directory(await StorageProvider().getDownloadsDir());
+      if (!await dir.exists()) {
+        if (mounted) setState(() => _bytes = 0);
+        return;
+      }
+      var total = 0;
+      await for (final f in dir.list(recursive: true, followLinks: false)) {
+        if (f is File) {
+          try {
+            total += await f.length();
+          } catch (_) {}
+        }
+      }
+      if (mounted) setState(() => _bytes = total);
+    } catch (_) {
+      if (mounted) setState(() => _bytes = 0);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _SectionTile(
+      icon: Icons.cleaning_services_outlined,
+      title: 'Clear download cache',
+      subtitle: _clearing
+          ? 'Clearing…'
+          : '${formatBytes(_bytes ?? 0)} used${_bytes == null ? '' : ''}',
+      trailing: _clearing
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.chevron_right),
+      onTap: () async {
+        if (_bytes == 0) {
+          showSnack(ref, context, 'Nothing to clear');
+          return;
+        }
+        setState(() => _clearing = true);
+        try {
+          final dir = Directory(await StorageProvider().getDownloadsDir());
+          if (await dir.exists()) {
+            await dir.delete(recursive: true);
+            await dir.create(recursive: true);
+          }
+          await ref.read(downloadsProvider.notifier).clearAll();
+          if (!mounted) return;
+          setState(() {
+            _clearing = false;
+            _bytes = 0;
+          });
+          // `this.context` (State.context) pairs with the State `mounted`
+          // guard above — using the build method's context param trips
+          // use_build_context_synchronously.
+          showSnack(ref, this.context, 'Cache cleared');
+        } catch (e) {
+          if (!mounted) return;
+          setState(() => _clearing = false);
+          showSnack(ref, this.context, 'Could not clear cache');
+        }
+      },
     );
   }
 }
@@ -837,14 +947,8 @@ class _SecuritySection extends ConsumerWidget {
               .read(incognitoModeProvider.notifier)
               .state = !incognito,
         ),
-        const _Divider(),
-        _SwitchTile(
-          icon: Icons.security_outlined,
-          title: 'Secure screen',
-          subtitle: 'Hide previews in the app switcher',
-          value: false,
-          onChanged: (_) {},
-        ),
+        // NOTE: the "Secure screen" switch was removed — it was a no-op
+        // (`value: false, onChanged: (_) {}`).
       ],
     );
   }
@@ -880,17 +984,22 @@ class _SyncSection extends ConsumerWidget {
           title: 'Sync now',
           subtitle: 'Push local changes to the cloud',
           onTap: () {
-            notifier.markSynced();
-            showSnack(ref, context, 'Synced with the cloud');
+            // HONEST messaging — no sync backend is configured in this
+            // build (the toggle only records the preference).
+            showSnack(
+                ref, context, 'No sync backend configured in this build');
           },
         ),
         const _Divider(),
         _SectionTile(
           icon: Icons.movie,
           title: 'MyAnimeList',
-          subtitle: 'Connected • syncs watch & read progress',
-          trailing: const Icon(Icons.link),
-          onTap: () => showSnack(ref, context, 'Manage MAL'),
+          // Previously claimed "Connected" — no tracker login flow exists
+          // in this build; don't lie to the user.
+          subtitle: 'Not connected • tracker login coming soon',
+          trailing: const Icon(Icons.link_off),
+          onTap: () => showSnack(
+              ref, context, 'Tracker login is not available in this build'),
         ),
         const _Divider(),
         _SectionTile(
@@ -898,7 +1007,8 @@ class _SyncSection extends ConsumerWidget {
           title: 'AniList',
           subtitle: 'Not connected',
           trailing: const Icon(Icons.link_off),
-          onTap: () => showSnack(ref, context, 'Connect AniList'),
+          onTap: () => showSnack(
+              ref, context, 'Tracker login is not available in this build'),
         ),
         const _Divider(),
         _SwitchTile(
@@ -937,17 +1047,14 @@ class _BackupSection extends ConsumerWidget {
           icon: Icons.file_upload_outlined,
           title: 'Create backup',
           subtitle: 'Export library, history and settings',
-          onTap: () {
-            notifier.markBackup();
-            showSnack(ref, context, 'Backup created');
-          },
+          onTap: () => _createBackup(context, ref),
         ),
         const _Divider(),
         _SectionTile(
           icon: Icons.file_download_outlined,
           title: 'Restore backup',
           subtitle: 'Import a previous Lumina backup file',
-          onTap: () => showSnack(ref, context, 'Pick a backup file'),
+          onTap: () => _restoreBackup(context, ref),
         ),
         const _Divider(),
         _SectionTile(
@@ -980,6 +1087,74 @@ class _BackupSection extends ConsumerWidget {
     return '${d.day}/${d.month}/${d.year} '
         '${d.hour.toString().padLeft(2, '0')}:'
         '${d.minute.toString().padLeft(2, '0')}';
+  }
+
+  /// REAL backup — exports the database through [data.backupServiceProvider]
+  /// to the app documents directory and hands the file to the system share
+  /// sheet (previously this only stamped `lastBackupAt` + a snackbar).
+  Future<void> _createBackup(BuildContext context, WidgetRef ref) async {
+    try {
+      final service = ref.read(data.backupServiceProvider);
+      final docs = await StorageProvider().getDownloadsDir();
+      final dir = Directory('$docs/../backups');
+      await dir.create(recursive: true);
+      final stamp = DateTime.now().toIso8601String().split('.').first;
+      final path = '${dir.path}/lumina-backup-$stamp.lumina';
+      await service.exportToFile(
+        path,
+        const BackupOptions(
+          includeLibrary: true,
+          includeNotes: true,
+          includeSettings: true,
+          includeSessions: true,
+          includeHistory: true,
+          includeCategories: true,
+        ),
+      );
+      ref.read(appSettingsProvider.notifier).markBackup();
+      if (context.mounted) {
+        await SharePlus.instance.share(
+          ShareParams(
+            files: [XFile(path)],
+            subject: 'Lumina Reader backup',
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        showSnack(ref, context, 'Backup failed: $e');
+      }
+    }
+  }
+
+  /// REAL restore — picks a .lumina backup file and merges it into the
+  /// database (previously a snackbar-only stub).
+  Future<void> _restoreBackup(BuildContext context, WidgetRef ref) async {
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['lumina', 'zip', 'json'],
+      );
+      final path = result?.files.single.path;
+      if (path == null) return;
+      final service = ref.read(data.backupServiceProvider);
+      final res = await service.importFromFile(
+        path,
+        strategy: ImportStrategy.merge,
+      );
+      if (context.mounted) {
+        showSnack(
+          ref,
+          context,
+          'Restored: ${res.mangaAdded} library items, '
+          '${res.chaptersAdded} chapters, ${res.historyAdded} history rows',
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        showSnack(ref, context, 'Restore failed: $e');
+      }
+    }
   }
 }
 
@@ -1018,24 +1193,35 @@ class _AboutSection extends ConsumerWidget {
           icon: Icons.copyright_outlined,
           title: 'Licence',
           subtitle: 'Apache License, Version 2.0',
-          onTap: () => showSnack(ref, context, 'Apache 2.0'),
+          onTap: () => _launchUrl(
+              'https://www.apache.org/licenses/LICENSE-2.0'),
         ),
         const _Divider(),
         _SectionTile(
           icon: Icons.code,
           title: 'Source code',
-          subtitle: 'github.com/lumina/lumina-reader',
-          onTap: () => showSnack(ref, context, 'Open GitHub'),
+          subtitle: 'github.com/iruzen-sensei/lumina-reader',
+          onTap: () =>
+              _launchUrl('https://github.com/iruzen-sensei/lumina-reader'),
         ),
         const _Divider(),
         _SectionTile(
           icon: Icons.bug_report_outlined,
           title: 'Report an issue',
           subtitle: 'Help us improve Lumina Reader',
-          onTap: () => showSnack(ref, context, 'Opening issue tracker…'),
+          onTap: () => _launchUrl(
+              'https://github.com/iruzen-sensei/lumina-reader/issues'),
         ),
       ],
     );
+  }
+
+  Future<void> _launchUrl(String url) async {
+    final uri = Uri.parse(url);
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok) {
+      debugPrint('Could not launch $url');
+    }
   }
 }
 

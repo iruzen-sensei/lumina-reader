@@ -197,6 +197,11 @@ class BackupService {
 
   final BackupDataSource _dataSource;
 
+  /// Old (export-device) chapter id → newly persisted chapter id, populated
+  /// by [_applyPayload] while importing chapters and consumed when remapping
+  /// session / history references.
+  Map<int?, int?> _chapterIdRemap = const {};
+
   /// Magic header written at the start of every backup file so we can detect
   /// the format quickly.
   static const String _kMagic = 'LUMINABACKUP';
@@ -390,6 +395,13 @@ class BackupService {
             .toList() ??
         <Manga>[];
 
+    // Original manga ids (from the exporting device) → stable manga key.
+    // Built BEFORE any id stripping so chapters / notes / sessions / history
+    // can be re-linked to their (newly assigned) parent rows after import.
+    final oldMangaIdToKey = <int?, String>{
+      for (final m in mangaList) m.id: _mangaKey(m),
+    };
+
     // Merge / replace manga.
     if (mangaList.isNotEmpty) {
       if (strategy == ImportStrategy.merge) {
@@ -432,11 +444,38 @@ class BackupService {
             .toList() ??
         <Chapter>[];
     if (chapters.isNotEmpty) {
-      for (final c in chapters) {
-        c.id = null;
+      // Original chapter ids → URL (chapters get fresh ids on import; the
+      // URL is the stable identity used to remap session/history refs).
+      final oldChapterIdToUrl = <int?, String>{
+        for (final c in chapters) c.id: c.url,
+      };
+      // Re-link each chapter to its persisted parent manga (matched via the
+      // stable manga key — previously imported chapters were orphaned with
+      // no parent, making them invisible in the library).
+      final persistedManga = await _dataSource.fetchManga();
+      final keyToPersistedManga = <String, Manga>{
+        for (final m in persistedManga) _mangaKey(m): m,
+      };
+      final chapterRaw = payload['chapters'] as List;
+      for (var i = 0; i < chapters.length; i++) {
+        final oldMangaId = (chapterRaw[i] as Map<String, dynamic>)['mangaId'] as int?;
+        final parent =
+            keyToPersistedManga[oldMangaIdToKey[oldMangaId]];
+        if (parent != null) chapters[i].manga.value = parent;
+        chapters[i].id = null;
       }
       await _dataSource.upsertChapters(chapters);
       chaptersAdded = chapters.length;
+      // Map old chapter ids → newly persisted ids (via URL identity) so
+      // sessions and history can be remapped below.
+      final persistedChapters = await _dataSource.fetchChapters();
+      final urlToNewChapterId = <String, int?>{
+        for (final c in persistedChapters) c.url: c.id,
+      };
+      _chapterIdRemap = {
+        for (final entry in oldChapterIdToUrl.entries)
+          entry.key: urlToNewChapterId[entry.value],
+      };
     }
 
     final tracks = (payload['tracks'] as List?)
@@ -456,8 +495,17 @@ class BackupService {
             .toList() ??
         <Note>[];
     if (notes.isNotEmpty) {
-      for (final n in notes) {
-        n.id = null;
+      // Re-link notes to their parent manga (see chapters above).
+      final persistedManga = await _dataSource.fetchManga();
+      final keyToPersistedManga = <String, Manga>{
+        for (final m in persistedManga) _mangaKey(m): m,
+      };
+      final noteRaw = payload['notes'] as List;
+      for (var i = 0; i < notes.length; i++) {
+        final oldMangaId = (noteRaw[i] as Map<String, dynamic>)['mangaId'] as int?;
+        final parent = keyToPersistedManga[oldMangaIdToKey[oldMangaId]];
+        if (parent != null) notes[i].manga.value = parent;
+        notes[i].id = null;
       }
       await _dataSource.upsertNotes(notes);
       notesAdded = notes.length;
@@ -468,8 +516,21 @@ class BackupService {
             .toList() ??
         <ReadingSession>[];
     if (sessions.isNotEmpty) {
-      for (final s in sessions) {
-        s.id = null;
+      // Re-link sessions to their parent manga + remap chapter refs.
+      final persistedManga = await _dataSource.fetchManga();
+      final keyToPersistedManga = <String, Manga>{
+        for (final m in persistedManga) _mangaKey(m): m,
+      };
+      final sessionRaw = payload['sessions'] as List;
+      for (var i = 0; i < sessions.length; i++) {
+        final oldMangaId =
+            (sessionRaw[i] as Map<String, dynamic>)['mangaId'] as int?;
+        final parent = keyToPersistedManga[oldMangaIdToKey[oldMangaId]];
+        if (parent != null) sessions[i].manga.value = parent;
+        if (sessions[i].chapterId != null) {
+          sessions[i].chapterId = _chapterIdRemap[sessions[i].chapterId];
+        }
+        sessions[i].id = null;
       }
       await _dataSource.upsertSessions(sessions);
       sessionsAdded = sessions.length;
@@ -480,7 +541,19 @@ class BackupService {
             .toList() ??
         <History>[];
     if (history.isNotEmpty) {
+      // Remap history rows to the new manga/chapter ids (matched via the
+      // stable manga key and chapter URL identity).
+      final persistedManga = await _dataSource.fetchManga();
+      final keyToPersistedMangaId = <String, int?>{
+        for (final m in persistedManga) _mangaKey(m): m.id,
+      };
       for (final h in history) {
+        if (h.mangaId != null) {
+          h.mangaId = keyToPersistedMangaId[oldMangaIdToKey[h.mangaId]];
+        }
+        if (h.chapterId != null) {
+          h.chapterId = _chapterIdRemap[h.chapterId];
+        }
         h.id = Isar.autoIncrement;
       }
       await _dataSource.upsertHistory(history);

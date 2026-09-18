@@ -33,9 +33,27 @@ class HistoryScreen extends ConsumerStatefulWidget {
 }
 
 class _HistoryScreenState extends ConsumerState<HistoryScreen> {
+  bool _searchVisible = false;
+  final _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final history = ref.watch(historyProvider);
+    final allHistory = ref.watch(historyProvider);
+    // Client-side search filter (title / chapter name).
+    final query = _searchController.text.trim().toLowerCase();
+    final history = query.isEmpty
+        ? allHistory
+        : allHistory
+            .where((e) =>
+                e.mangaTitle.toLowerCase().contains(query) ||
+                (e.chapterName.toLowerCase().contains(query)))
+            .toList();
     final groups = _groupByDay(history);
 
     return Scaffold(
@@ -55,8 +73,11 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
               actions: [
                 IconButton(
                   tooltip: 'Search history',
-                  icon: const Icon(Icons.search),
-                  onPressed: () => showMessage(context, 'Search history'),
+                  icon: Icon(_searchVisible ? Icons.close : Icons.search),
+                  onPressed: () => setState(() {
+                    _searchVisible = !_searchVisible;
+                    if (!_searchVisible) _searchController.clear();
+                  }),
                 ),
                 IconButton(
                   tooltip: 'Clear history',
@@ -65,6 +86,23 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                 ),
               ],
             ),
+            if (_searchVisible)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                  child: TextField(
+                    controller: _searchController,
+                    autofocus: true,
+                    onChanged: (v) => setState(() {}),
+                    decoration: const InputDecoration(
+                      hintText: 'Search history…',
+                      prefixIcon: Icon(Icons.search),
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+              ),
             if (history.isEmpty)
               SliverFillRemaining(
                 child: emptyState(
@@ -113,9 +151,17 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
           FilledButton(
             style: FilledButton.styleFrom(
                 backgroundColor: Theme.of(context).colorScheme.error),
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              showSnack(ref, context, 'History cleared');
+              // REAL clear — previously a snackbar-only stub.
+              try {
+                await ref.read(historyProvider.notifier).clearAll();
+                if (!mounted) return;
+                showSnack(ref, this.context, 'History cleared');
+              } catch (e) {
+                if (!mounted) return;
+                showSnack(ref, this.context, 'Could not clear history');
+              }
             },
             child: const Text('Clear'),
           ),
@@ -189,7 +235,16 @@ class _HistoryTile extends ConsumerWidget {
         color: theme.colorScheme.errorContainer,
         child: Icon(Icons.delete_outline, color: theme.colorScheme.error),
       ),
-      onDismissed: (_) => showSnack(ref, context, 'Removed from history'),
+      onDismissed: (_) async {
+        // REAL removal — the Isar watch drops the row (previously the
+        // snackbar fired but the entry resurrected on the next DB event).
+        try {
+          await ref.read(historyProvider.notifier).remove(entry.id);
+        } catch (_) {}
+        if (context.mounted) {
+          showSnack(ref, context, 'Removed from history');
+        }
+      },
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
         leading: SizedBox(

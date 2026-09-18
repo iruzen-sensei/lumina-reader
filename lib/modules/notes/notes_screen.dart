@@ -391,7 +391,14 @@ class _NoteCard extends ConsumerWidget {
                                 onTap: () async {
                                   if (await _confirmDelete(context) &&
                                       context.mounted) {
-                                    showSnack(ref, context, 'Note deleted');
+                                    // REAL deletion — the notifier watches
+                                    // the Isar collection so the list updates.
+                                    await ref
+                                        .read(notesProvider.notifier)
+                                        .delete(note.id);
+                                    if (context.mounted) {
+                                      showSnack(ref, context, 'Note deleted');
+                                    }
                                   }
                                 },
                               ),
@@ -594,10 +601,27 @@ class _CreateNoteSheetState extends ConsumerState<_CreateNoteSheet> {
                   child: const Text('Cancel')),
               const SizedBox(width: 8),
               FilledButton(
-                onPressed: () {
-                  if (_controller.text.trim().isEmpty) return;
+                onPressed: () async {
+                  final text = _controller.text.trim();
+                  if (text.isEmpty) return;
                   Navigator.pop(context);
-                  showSnack(ref, context, 'Note saved');
+                  // REAL persistence — general note (mangaId 0). The
+                  // notifier's Isar watch refreshes the list automatically.
+                  try {
+                    await ref.read(notesProvider.notifier).add(
+                          mangaId: 0,
+                          text: text,
+                          type: _type,
+                          color: _color,
+                        );
+                    if (context.mounted) {
+                      showSnack(ref, context, 'Note saved');
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      showSnack(ref, context, 'Could not save note');
+                    }
+                  }
                 },
                 child: const Text('Save'),
               ),
@@ -667,9 +691,26 @@ class _EditNoteSheetState extends ConsumerState<_EditNoteSheet> {
                   child: const Text('Cancel')),
               const SizedBox(width: 8),
               FilledButton(
-                onPressed: () {
+                onPressed: () async {
+                  final text = _controller.text.trim();
+                  if (text.isEmpty) return;
                   Navigator.pop(context);
-                  showSnack(ref, context, 'Note updated');
+                  // REAL update — persists text + colour through the
+                  // repository; the Isar watch refreshes the card list.
+                  try {
+                    await ref.read(notesProvider.notifier).update(
+                          widget.note.id,
+                          text: text,
+                          color: _color,
+                        );
+                    if (context.mounted) {
+                      showSnack(ref, context, 'Note updated');
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      showSnack(ref, context, 'Could not update note');
+                    }
+                  }
                 },
                 child: const Text('Save'),
               ),

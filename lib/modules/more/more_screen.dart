@@ -18,7 +18,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/theme.dart';
 import '../../providers/providers.dart';
-import '../shared/widgets.dart';
 
 /// The "More" screen — a hub of secondary destinations and settings entry
 /// points. Each tile navigates via [GoRouter] to its module route.
@@ -53,7 +52,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                     ),
               ),
             ),
-            _ProfileCard(),
+            const _ProfileCard(),
             _QuickTogglesCard(
               incognito: incognito,
               downloadedOnly: downloadedOnly,
@@ -115,114 +114,10 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
               subtitle: 'Appearance, reader, player, security…',
               onTap: () => context.push('/settings'),
             ),
-            const _SettingsCategory(
-              title: 'General',
-              icon: Icons.tune,
-              tiles: [
-                _SettingTile(
-                    title: 'App language',
-                    value: 'English',
-                    icon: Icons.language),
-                _SettingTile(
-                    title: 'Start screen',
-                    value: 'Library',
-                    icon: Icons.home_outlined),
-                _SettingTile(
-                    title: 'Date & time format',
-                    value: 'Relative',
-                    icon: Icons.schedule),
-              ],
-            ),
-            const _SettingsCategory(
-              title: 'Library & updates',
-              icon: Icons.library_books_outlined,
-              tiles: [
-                _SettingTile(
-                    title: 'Update interval',
-                    value: 'Every 6 hours',
-                    icon: Icons.update),
-                _SettingTile(
-                    title: 'Only update on Wi-Fi',
-                    value: 'On',
-                    icon: Icons.wifi),
-                _SettingTile(
-                    title: 'Download new chapters',
-                    value: 'Off',
-                    icon: Icons.download_for_offline_outlined),
-              ],
-            ),
-            const _SettingsCategory(
-              title: 'Reader',
-              icon: Icons.menu_book_outlined,
-              tiles: [
-                _SettingTile(
-                    title: 'Default reading mode',
-                    value: 'Paged (left → right)',
-                    icon: Icons.auto_stories_outlined),
-                _SettingTile(
-                    title: 'Keep screen on',
-                    value: 'On',
-                    icon: Icons.brightness_6_outlined),
-                _SettingTile(
-                    title: 'Reader theme',
-                    value: 'Black background',
-                    icon: Icons.contrast),
-              ],
-            ),
-            const _SettingsCategory(
-              title: 'Player',
-              icon: Icons.live_tv_outlined,
-              tiles: [
-                _SettingTile(
-                    title: 'Default quality',
-                    value: '1080p',
-                    icon: Icons.hd_outlined),
-                _SettingTile(
-                    title: 'Default subtitle',
-                    value: 'English',
-                    icon: Icons.subtitles_outlined),
-                _SettingTile(
-                    title: 'AniSkip',
-                    value: 'On',
-                    icon: Icons.fast_forward),
-              ],
-            ),
-            const _SettingsCategory(
-              title: 'Tracking',
-              icon: Icons.track_changes,
-              tiles: [
-                _SettingTile(
-                    title: 'MyAnimeList',
-                    value: 'Connected',
-                    icon: Icons.link),
-                _SettingTile(
-                    title: 'AniList',
-                    value: 'Not connected',
-                    icon: Icons.auto_awesome),
-                _SettingTile(
-                    title: 'Auto update progress',
-                    value: 'On',
-                    icon: Icons.sync),
-              ],
-            ),
-            const _SettingsCategory(
-              title: 'Data & storage',
-              icon: Icons.storage_outlined,
-              tiles: [
-                _SettingTile(
-                    title: 'Cache size',
-                    value: '248 MB',
-                    icon: Icons.cached),
-                _SettingTile(
-                    title: 'Clear cache',
-                    value: '',
-                    icon: Icons.cleaning_services_outlined),
-                _SettingTile(
-                    title: 'Backup library',
-                    value: '',
-                    icon: Icons.backup_outlined),
-              ],
-            ),
+            // NOTE: the five `_SettingsCategory` preview blocks that used to
+            // live here were removed — every tile was a decoration that
+            // showed a hardcoded value and a "tapped" snackbar. All real
+            // controls live in the Settings screen.
             const _SectionHeader('About'),
             _NavTile(
               icon: Icons.info_outline,
@@ -389,9 +284,16 @@ class _QuickTogglesCard extends ConsumerWidget {
   }
 }
 
-class _ProfileCard extends StatelessWidget {
+/// Reading summary card — REAL numbers computed from the stats repository
+/// (previously hardcoded "1,842 chapters • 412 episodes" with a fake Edit
+/// button).
+class _ProfileCard extends ConsumerWidget {
+  const _ProfileCard();
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final summary = ref.watch(statsSummaryProvider);
+    final libraryCount = ref.watch(mangaLibraryProvider).length;
     return Card(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Padding(
@@ -401,7 +303,7 @@ class _ProfileCard extends StatelessWidget {
             CircleAvatar(
               radius: 28,
               backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-              child: Icon(Icons.person,
+              child: Icon(Icons.auto_stories,
                   color: Theme.of(context).colorScheme.primary),
             ),
             const SizedBox(width: 16),
@@ -412,17 +314,18 @@ class _ProfileCard extends StatelessWidget {
                   Text('Reader',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold)),
-                  Text('1,842 chapters • 412 episodes',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color:
-                              Theme.of(context).colorScheme.onSurfaceVariant)),
+                  Text(
+                    '$libraryCount in library • ${summary['chaptersRead'] ?? 0} chapters read',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color:
+                            Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
                 ],
               ),
             ),
-            OutlinedButton.icon(
-              onPressed: () => showMessage(context, 'Open profile'),
-              icon: const Icon(Icons.edit_outlined, size: 18),
-              label: const Text('Edit'),
+            TextButton(
+              onPressed: () => context.push('/stats'),
+              child: const Text('Stats'),
             ),
           ],
         ),
@@ -485,89 +388,6 @@ class _NavTile extends StatelessWidget {
       subtitle: Text(subtitle),
       trailing: const Icon(Icons.chevron_right),
       onTap: onTap,
-    );
-  }
-}
-
-class _SettingTile {
-  const _SettingTile({
-    required this.title,
-    required this.value,
-    required this.icon,
-  });
-  final String title;
-  final String value;
-  final IconData icon;
-}
-
-class _SettingsCategory extends StatefulWidget {
-  const _SettingsCategory({
-    required this.title,
-    required this.icon,
-    required this.tiles,
-  });
-
-  final String title;
-  final IconData icon;
-  final List<_SettingTile> tiles;
-
-  @override
-  State<_SettingsCategory> createState() => _SettingsCategoryState();
-}
-
-class _SettingsCategoryState extends State<_SettingsCategory> {
-  bool _expanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: Column(
-        children: [
-          ListTile(
-            leading: Icon(widget.icon,
-                color: Theme.of(context).colorScheme.primary),
-            title: Text(widget.title,
-                style: const TextStyle(fontWeight: FontWeight.w600)),
-            trailing: AnimatedRotation(
-              turns: _expanded ? 0.25 : 0,
-              duration: const Duration(milliseconds: 180),
-              child: const Icon(Icons.chevron_right),
-            ),
-            onTap: () => setState(() => _expanded = !_expanded),
-          ),
-          AnimatedCrossFade(
-            duration: const Duration(milliseconds: 180),
-            crossFadeState: _expanded
-                ? CrossFadeState.showSecond
-                : CrossFadeState.showFirst,
-            firstChild: const SizedBox.shrink(),
-            secondChild: Column(
-              children: widget.tiles
-                  .map((t) => ListTile(
-                        dense: true,
-                        leading: Icon(t.icon,
-                            size: 20,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant),
-                        title: Text(t.title),
-                        trailing: t.value.isEmpty
-                            ? const Icon(Icons.chevron_right, size: 18)
-                            : Text(t.value,
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant)),
-                        onTap: () =>
-                            showMessage(context, '${t.title} tapped'),
-                      ))
-                  .toList(),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

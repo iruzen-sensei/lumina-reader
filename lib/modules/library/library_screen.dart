@@ -725,7 +725,7 @@ class _LibraryGridView extends ConsumerWidget {
             if (sel.isNotEmpty) {
               ref.read(librarySelectionProvider.notifier).toggle(manga.id);
             } else {
-              context.push('/mangaDetail/${manga.id}');
+              context.push(_routeFor(manga));
             }
           },
           onLongPress: () {
@@ -849,7 +849,7 @@ class _LibraryListView extends ConsumerWidget {
             if (sel.isNotEmpty) {
               ref.read(librarySelectionProvider.notifier).toggle(manga.id);
             } else {
-              context.push('/mangaDetail/${manga.id}');
+              context.push(_routeFor(manga));
             }
           },
           onLongPress: () =>
@@ -858,4 +858,16 @@ class _LibraryListView extends ConsumerWidget {
       },
     );
   }
+}
+
+/// Opens imported book files (epub / pdf) in their dedicated readers;
+/// everything else goes to the detail screen. Previously EVERY tap went to
+/// the detail screen, leaving the finished epub/pdf readers unreachable.
+String _routeFor(Manga manga) {
+  if (manga.itemType == ItemType.book) {
+    final url = manga.url.toLowerCase();
+    if (url.endsWith('.epub')) return '/epubReader/${manga.id}';
+    if (url.endsWith('.pdf')) return '/pdfReader/${manga.id}';
+  }
+  return '/mangaDetail/${manga.id}';
 }

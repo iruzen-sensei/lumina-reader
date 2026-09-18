@@ -12,6 +12,8 @@
 // Every network-content provider goes through here — screens never touch
 // extension services directly.
 
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 
 import 'package:lumina_reader/data/library_repository.dart';
@@ -20,6 +22,7 @@ import 'package:lumina_reader/eval/interface.dart';
 import 'package:lumina_reader/eval/lib.dart' as eval;
 import 'package:lumina_reader/eval/model/m_models.dart' as m;
 import 'package:lumina_reader/models/models.dart' as dto;
+import 'package:lumina_reader/providers/storage_provider.dart';
 
 class ExtensionCoordinator {
   ExtensionCoordinator({
@@ -133,9 +136,21 @@ class ExtensionCoordinator {
   // -----------------------------------------------------------------------
 
   /// Page image URLs for a chapter, resolved through its manga's source.
+  ///
+  /// Offline-first: when the chapter was downloaded (DownloadEngine writes
+  /// images to `<downloads>/chapters/<mangaId>/<chapterId>/`), the local
+  /// `file://` URIs are returned instead of hitting the network.
   Future<List<String>> pageList(int chapterId) async {
     final (manga, chapter) = await _library.resolveChapter(chapterId);
     if (manga == null || chapter == null) return const [];
+
+    // Downloaded chapters — serve from disk.
+    if (chapter.isDownloaded) {
+      final local = await _localChapterPages(manga.id, chapterId);
+      if (local.isNotEmpty) return local;
+      // Corrupt/emptied directory → fall through to the network path.
+    }
+
     if (manga.sourceId == 0) return const [];
     final service = await _serviceForSourceId(manga.sourceId);
     if (service == null) return const [];
@@ -143,6 +158,31 @@ class ExtensionCoordinator {
       return await service.getPageList(chapter.url);
     } catch (e) {
       debugPrint('ExtensionCoordinator.pageList($chapterId): $e');
+      return const [];
+    }
+  }
+
+  Future<List<String>> _localChapterPages(int mangaId, int chapterId) async {
+    try {
+      final base = await StorageProvider().getDownloadsDir();
+      final dir = Directory('$base/chapters/$mangaId/$chapterId');
+      if (!await dir.exists()) return const [];
+      final files = (await dir.list().toList())
+          .whereType<File>()
+          .where((f) =>
+              f.path.endsWith('.jpg') ||
+              f.path.endsWith('.jpeg') ||
+              f.path.endsWith('.png') ||
+              f.path.endsWith('.webp') ||
+              f.path.endsWith('.gif') ||
+              f.path.endsWith('.avif'))
+          .toList()
+        ..sort((a, b) => a.path.compareTo(b.path));
+      return [
+        for (final f in files) Uri.file(f.path).toString(),
+      ];
+    } catch (e) {
+      debugPrint('ExtensionCoordinator._localChapterPages($chapterId): $e');
       return const [];
     }
   }

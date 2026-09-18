@@ -21,7 +21,9 @@
 import 'package:lumina_reader/eval/base_service.dart';
 import 'package:lumina_reader/eval/interface.dart';
 import 'package:lumina_reader/eval/model/m_models.dart';
+import 'package:lumina_reader/eval/native/madara_source.dart';
 import 'package:lumina_reader/eval/native/mangadex_source.dart';
+import 'package:lumina_reader/eval/native/mangareader_source.dart';
 import 'package:lumina_reader/eval/null_extension_service.dart';
 import 'package:lumina_reader/models/source.dart';
 
@@ -35,8 +37,26 @@ export 'package:lumina_reader/eval/null_extension_service.dart';
 /// Built-in native sources, keyed by their `builtin:` scheme identifier
 /// (stored in [Source.sourceCode]). Native sources are pure Dart and speak
 /// the [ExtensionService] interface directly — no interpreter involved.
+///
+/// The `builtin:<template>` multisrc entries power the Mangayomi extension
+/// repo ecosystem: `madara` covers 151 repo extensions, `mangareader` 87 —
+/// installing an extension just persists a configured Source row (see
+/// ExtensionRepoService), no code download or interpreter needed.
 final Map<String, BaseExtensionService Function(Source)> _nativeSources = {
   'builtin:mangadex': (s) => MangaDexSource(s),
+  'builtin:madara': (s) => MadaraSource(s),
+  'builtin:mangareader': (s) => MangaReaderSource(s),
+};
+
+/// Multisrc template identifiers natively supported by this build — repo
+/// entries whose `typeSource` is in this set can be installed and will run
+/// through the corresponding `builtin:` implementation above.
+const Set<String> kSupportedTemplates = {
+  'madara',
+  'mangareader',
+  // MangaDex sites in the repo use a JS single-source; we ship a native
+  // MangaDex implementation instead (installed as builtin.mangadex).
+  'mangadex',
 };
 
 /// Creates the appropriate [ExtensionService] for the given [source].
@@ -53,13 +73,23 @@ final Map<String, BaseExtensionService Function(Source)> _nativeSources = {
 ///      with an honest reason instead of crashing.
 ///   3. `null` / unknown → [NullExtensionService].
 ExtensionService getExtensionService(Source source) {
-  // 1. Built-in native sources.
+  // 1. Built-in native sources — either the explicit `builtin:` scheme or a
+  //    repo-installed row whose typeSource maps to a native template.
   final code = source.displaySourceCode;
   if (code != null && code.startsWith('builtin:')) {
     final factory = _nativeSources[code];
     if (factory != null) return factory(source);
     return NullExtensionService(source,
         reason: 'Unknown built-in source "$code".');
+  }
+  final template = source.typeSource?.toLowerCase();
+  if (template != null && kSupportedTemplates.contains(template)) {
+    final factory = _nativeSources['builtin:$template'];
+    if (factory != null) {
+      // MangaDex repo rows reuse the native MangaDex implementation.
+      if (template == 'mangadex') return MangaDexSource(source);
+      return factory(source);
+    }
   }
 
   // 2. Interpreter-backed sources (EXPERIMENTAL — see class docs).

@@ -59,7 +59,7 @@ jobs:
       # compile breaks (e.g. upstream null-safety bugs under newer SDKs)
       # that `flutter analyze` cannot see.
       - name: Compile smoke test
-        run: flutter test test/compile_smoke_test.dart
+        run: flutter test test/compile_smoke_test.dart test/madara_fixture_test.dart
 
       # The keystore MUST exist BEFORE `flutter build apk`: Gradle signs the
       # release build itself (android/app/build.gradle.kts wires the release

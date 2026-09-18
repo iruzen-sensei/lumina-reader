@@ -309,6 +309,7 @@ db.Update updateFromDto(dto.UpdateItem u, {int? existingId}) {
 dto.Source sourceToDto(db.Source s) {
   return dto.Source(
     id: s.id,
+    idString: s.idString,
     name: s.displayName,
     lang: s.lang ?? '',
     baseUrl: s.displayBaseUrl,
@@ -317,6 +318,12 @@ dto.Source sourceToDto(db.Source s) {
     isNsfw: s.isNsfw ?? false,
     supportsLatest: s.supportsLatest ?? true,
     version: s.version ?? '1.0.0',
+    typeSource: s.typeSource,
+    dateFormat: s.dateFormat,
+    dateFormatLocale: s.dateFormatLocale,
+    additionalParams: s.additionalParams,
+    sourceCodeUrl: s.sourceCodeUrl,
+    versionLast: s.versionLast,
   );
 }
 

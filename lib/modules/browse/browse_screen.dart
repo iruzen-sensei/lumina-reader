@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme.dart';
+import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../shared/widgets.dart';
@@ -51,11 +52,62 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
 
   @override
   Widget build(BuildContext context) {
-    final sources = ref.watch(sourcesProvider);
+    // Only INSTALLED sources appear in the browse strip — the full catalog
+    // (installed + available) lives in the extensions sheet.
+    final allSources = ref.watch(sourcesProvider);
+    final sources = allSources.where((s) => s.isInstalled).toList();
     final activeSource = sources.firstWhere(
       (s) => s.id == _selectedSourceId,
       orElse: () => sources.first,
     );
+
+    if (sources.isEmpty) {
+      return Scaffold(
+        body: SafeArea(
+          child: CustomScrollView(
+            slivers: [
+              SliverAppBar(
+                pinned: false,
+                floating: true,
+                automaticallyImplyLeading: false,
+                title: Text(
+                  'Browse',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                actions: [
+                  IconButton(
+                    tooltip: 'Extensions',
+                    icon: const Icon(Icons.extension_outlined),
+                    onPressed: () => _showExtensionsSheet(context),
+                  ),
+                  IconButton(
+                    tooltip: 'Add repository',
+                    icon: const Icon(Icons.add_link),
+                    onPressed: () => _showAddRepoSheet(context),
+                  ),
+                ],
+              ),
+              SliverFillRemaining(
+                child: emptyState(
+                  context: context,
+                  icon: Icons.extension_outlined,
+                  title: 'No sources installed',
+                  subtitle: 'Add an extension repository and install a '
+                      'source to start browsing.',
+                  action: FilledButton.icon(
+                    onPressed: () => _showExtensionsSheet(context),
+                    icon: const Icon(Icons.extension),
+                    label: const Text('Browse extensions'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       body: SafeArea(
@@ -160,11 +212,12 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
   }
 
   // --------------------------------------------------------------------------
-  // Extensions sheet — also reachable from the "Extensions" link in the more
-  // screen. Lists every installed source with its version + install state.
+  // Extensions sheet — REAL catalog: every extension from every registered
+  // repository (installed + available), with working install / uninstall.
+  // Multisrc templates (madara / mangareader / mangadex) install natively;
+  // interpreter-only extensions are listed with an honest "not supported".
   // --------------------------------------------------------------------------
   void _showExtensionsSheet(BuildContext context) {
-    final sources = ref.read(sourcesProvider);
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -176,58 +229,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
           maxChildSize: 0.95,
           expand: false,
           builder: (context, controller) {
-            return Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Text('Installed extensions',
-                          style: Theme.of(context).textTheme.titleLarge),
-                      const Spacer(),
-                      FilledButton.tonalIcon(
-                        onPressed: () => _showAddRepoSheet(context),
-                        icon: const Icon(Icons.add_link, size: 18),
-                        label: const Text('Add repo'),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: ListView.separated(
-                    controller: controller,
-                    itemCount: sources.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (context, i) {
-                      final s = sources[i];
-                      return ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerHighest,
-                          child: Text(s.name.substring(0, 1)),
-                        ),
-                        title: Text(s.name),
-                        subtitle: Text('${s.lang} • v${s.version}'),
-                        trailing: s.isInstalled
-                            ? const Chip(
-                                label: Text('Installed'),
-                                visualDensity: VisualDensity.compact,
-                              )
-                            : FilledButton.tonal(
-                                onPressed: () {},
-                                child: const Text('Install'),
-                              ),
-                        onTap: () {
-                          setState(() => _selectedSourceId = s.id);
-                          Navigator.pop(context);
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ],
-            );
+            return const _ExtensionCatalogSheet();
           },
         );
       },
@@ -290,22 +292,8 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
                       child: const Text('Cancel')),
                   const SizedBox(width: 8),
                   FilledButton.icon(
-                    onPressed: () {
-                      final url = controller.text.trim();
-                      if (url.isEmpty) return;
-                      final repos = ref.read(extensionReposProvider.notifier);
-                      repos.state = [
-                        ...repos.state,
-                        ExtensionRepo(
-                          url: url,
-                          name: url.split('/').last,
-                          installedCount: 0,
-                          lastUpdated: DateTime.now(),
-                        ),
-                      ];
-                      Navigator.pop(sheetContext);
-                      showSnack(ref, context, 'Repository added');
-                    },
+                    onPressed: () => _submitRepoUrl(
+                        sheetContext, controller.text.trim()),
                     icon: const Icon(Icons.add),
                     label: const Text('Add'),
                   ),
@@ -316,6 +304,27 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
         );
       },
     );
+  }
+
+  /// REAL repository registration — fetches the index (with Mangayomi URL
+  /// normalization), persists the repo and upserts its extension catalog.
+  /// Shows a spinner while fetching and surfaces validation errors inline.
+  Future<void> _submitRepoUrl(BuildContext sheetContext, String url) async {
+    if (url.isEmpty) return;
+    Navigator.pop(sheetContext);
+    if (!mounted) return;
+    showSnack(ref, context, 'Fetching repository…');
+    try {
+      final service = ref.read(data.extensionRepoServiceProvider);
+      final count = await service.addRepo(url);
+      if (!mounted) return;
+      showSnack(ref, context,
+          count > 0 ? 'Repository added — $count extensions' : 'Repository added');
+    } catch (e) {
+      if (!mounted) return;
+      showSnack(
+          ref, context, 'Could not add repository: ${e.toString()}');
+    }
   }
 
   void _showGlobalSearch(BuildContext context) {
@@ -394,20 +403,210 @@ class _ExistingReposList extends ConsumerWidget {
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.folder_outlined, size: 22),
               title: Text(r.name, style: const TextStyle(fontSize: 13)),
-              subtitle: Text(r.url,
+              subtitle: Text(
+                  '${r.extensionCount} extensions${r.lastError != null ? ' • sync failed' : ''}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 11)),
               trailing: IconButton(
                 icon: const Icon(Icons.delete_outline, size: 20),
-                onPressed: () {
-                  final notifier = ref.read(extensionReposProvider.notifier);
-                  notifier.state =
-                      notifier.state.where((e) => e.url != r.url).toList();
+                onPressed: () async {
+                  // REAL removal — persists + uninstalls its extensions.
+                  await ref
+                      .read(data.extensionRepoServiceProvider)
+                      .removeRepo(r.url);
                 },
               ),
             )),
       ],
+    );
+  }
+}
+
+/// The full extension catalog: every entry from every registered repo with
+/// install / uninstall actions (previously a list of installed sources with
+/// a dead `onPressed: () {}` Install button).
+class _ExtensionCatalogSheet extends ConsumerStatefulWidget {
+  const _ExtensionCatalogSheet();
+
+  @override
+  ConsumerState<_ExtensionCatalogSheet> createState() =>
+      _ExtensionCatalogSheetState();
+}
+
+class _ExtensionCatalogSheetState extends ConsumerState<_ExtensionCatalogSheet> {
+  final _searchController = TextEditingController();
+  String _query = '';
+  bool _syncing = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final catalog = ref.watch(extensionCatalogProvider);
+    final query = _query.toLowerCase();
+    final entries = query.isEmpty
+        ? catalog
+        : catalog
+            .where((s) =>
+                s.name.toLowerCase().contains(query) ||
+                s.lang.toLowerCase().contains(query))
+            .toList();
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text('Extensions',
+                    style: Theme.of(context).textTheme.titleLarge),
+              ),
+              IconButton(
+                tooltip: 'Sync repositories',
+                icon: _syncing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.sync),
+                onPressed: _syncing ? null : _syncAll,
+              ),
+              FilledButton.tonalIcon(
+                onPressed: () {
+                  Navigator.pop(context);
+                },
+                icon: const Icon(Icons.add_link, size: 18),
+                label: const Text('Add repo'),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: TextField(
+            controller: _searchController,
+            onChanged: (v) => setState(() => _query = v),
+            decoration: const InputDecoration(
+              hintText: 'Search extensions…',
+              prefixIcon: Icon(Icons.search),
+              isDense: true,
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ),
+        Expanded(
+          child: entries.isEmpty
+              ? Center(
+                  child: Text(
+                    'No extensions found.\nAdd a repository to fill the catalog.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                )
+              : ListView.separated(
+                  itemCount: entries.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, i) =>
+                      _CatalogTile(entry: entries[i]),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _syncAll() async {
+    setState(() => _syncing = true);
+    try {
+      await ref.read(data.extensionRepoServiceProvider).syncAll();
+    } catch (_) {}
+    if (mounted) setState(() => _syncing = false);
+  }
+}
+
+class _CatalogTile extends ConsumerWidget {
+  const _CatalogTile({required this.entry});
+
+  final Source entry;
+
+  bool get _supported =>
+      const {'madara', 'mangareader', 'mangadex'}
+          .contains((entry.typeSource ?? '').toLowerCase());
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ListTile(
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          width: 40,
+          height: 40,
+          child: entry.iconUrl != null
+              ? Image.network(
+                  entry.iconUrl!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _fallbackIcon(context),
+                )
+              : _fallbackIcon(context),
+        ),
+      ),
+      title: Text(
+        entry.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        '${entry.lang} • v${entry.version} • ${(entry.typeSource ?? '').isEmpty ? 'unknown' : entry.typeSource}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: _trailing(context, ref),
+    );
+  }
+
+  Widget _fallbackIcon(BuildContext context) => Container(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        child: Icon(Icons.extension,
+            color: Theme.of(context).colorScheme.outline),
+      );
+
+  Widget _trailing(BuildContext context, WidgetRef ref) {
+    if (!_supported) {
+      return const Tooltip(
+        message: 'This extension needs the code interpreter, which is not '
+            'available in this build',
+        child: Chip(
+          label: Text('Not supported'),
+          visualDensity: VisualDensity.compact,
+        ),
+      );
+    }
+    final idString = entry.idString;
+    if (idString == null) return const SizedBox.shrink();
+    if (entry.isInstalled) {
+      return TextButton(
+        onPressed: () async {
+          await ref
+              .read(data.extensionRepoServiceProvider)
+              .uninstall(idString);
+        },
+        child: const Text('Uninstall'),
+      );
+    }
+    return FilledButton.tonal(
+      onPressed: () async {
+        await ref
+            .read(data.extensionRepoServiceProvider)
+            .install(idString);
+      },
+      child: const Text('Install'),
     );
   }
 }

@@ -183,6 +183,7 @@ class Source {
   Source({
     required this.id,
     required this.name,
+    this.idString,
     required this.lang,
     required this.baseUrl,
     this.iconUrl,
@@ -190,9 +191,19 @@ class Source {
     this.isNsfw = false,
     this.supportsLatest = true,
     this.version = '1.0.0',
+    this.typeSource,
+    this.dateFormat,
+    this.dateFormatLocale,
+    this.additionalParams,
+    this.sourceCodeUrl,
+    this.versionLast,
   });
 
   final int id;
+
+  /// Stable identifier (repo rows: `repo-<name>-<indexId>`; builtins:
+  /// `builtin.<key>`). Used for install / uninstall actions.
+  final String? idString;
   final String name;
   final String lang;
   final String baseUrl;
@@ -201,6 +212,25 @@ class Source {
   final bool isNsfw;
   final bool supportsLatest;
   final String version;
+
+  /// Template identifier (`madara`, `mangareader`, …) — decides which native
+  /// implementation powers this source (see eval/lib.dart).
+  final String? typeSource;
+
+  /// Site-specific chapter date format (Madara-family templates).
+  final String? dateFormat;
+
+  /// Locale for [dateFormat] parsing.
+  final String? dateFormatLocale;
+
+  /// Opaque per-site configuration blob for the template.
+  final String? additionalParams;
+
+  /// Remote template source URL (multisrc extensions share one file).
+  final String? sourceCodeUrl;
+
+  /// Latest version in the repo (update available when > [version]).
+  final String? versionLast;
 }
 
 /// A user created shelf such as "Reading" or "Watch list".
@@ -400,10 +430,16 @@ class UpdateItem {
     required this.isAnime,
     this.chapterNumber,
     this.scanlator,
+    this.chapterId,
   });
 
   final int id;
   final int mangaId;
+
+  /// Chapter/episode row id — lets the download action enqueue the real
+  /// chapter (previously the tile faked a 700 ms "download" animation).
+  final int? chapterId;
+
   final String mangaTitle;
   final String? thumbnailUrl;
   final String chapterName;

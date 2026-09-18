@@ -8,6 +8,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/storage_provider.dart';
+import '../services/backup.dart';
+import '../services/extension_repo_service.dart';
+import 'backup_data_source.dart';
 import 'downloads_repository.dart';
 import 'history_repository.dart';
 import 'library_repository.dart';
@@ -62,4 +65,12 @@ final statsRepositoryProvider = Provider<StatsRepository>(
 
 final downloadsRepositoryProvider = Provider<DownloadsRepository>(
   (ref) => DownloadsRepository(ref.watch(storageProvider)),
+);
+
+final backupServiceProvider = Provider<BackupService>(
+  (ref) => BackupService(IsarBackupDataSource(ref.watch(storageProvider).isar)),
+);
+
+final extensionRepoServiceProvider = Provider<ExtensionRepoService>(
+  (ref) => ExtensionRepoService(ref.watch(storageProvider).isar),
 );

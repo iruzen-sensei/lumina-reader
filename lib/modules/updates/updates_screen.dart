@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme.dart';
+import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../shared/widgets.dart';
@@ -33,6 +34,22 @@ class UpdatesScreen extends ConsumerStatefulWidget {
 }
 
 class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
+  /// Runs the library updater (real source fetch) on pull-to-refresh — the
+  /// empty state promises it, but the screen never had a RefreshIndicator.
+  Future<void> _onRefresh() async {
+    try {
+      final count = await ref.read(libraryUpdaterProvider).runOnce();
+      if (!mounted) return;
+      showSnack(
+        ref,
+        context,
+        count > 0 ? '$count new chapter(s) found' : 'No new chapters',
+      );
+    } catch (e) {
+      if (mounted) showSnack(ref, context, 'Update check failed');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final updates = ref.watch(updatesProvider);
@@ -43,7 +60,10 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
 
     return Scaffold(
       body: SafeArea(
-        child: CustomScrollView(
+        child: RefreshIndicator(
+          onRefresh: _onRefresh,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
             SliverAppBar(
               pinned: false,
@@ -84,8 +104,13 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                 IconButton(
                   tooltip: 'Mark all read',
                   icon: const Icon(Icons.done_all),
-                  onPressed: () =>
-                      showSnack(ref, context, 'Marked all as read'),
+                  onPressed: () async {
+                    // REAL persistence — previously a snackbar-only stub.
+                    await ref.read(updatesProvider.notifier).markAllRead();
+                    if (context.mounted) {
+                      showSnack(ref, context, 'Marked all as read');
+                    }
+                  },
                 ),
               ],
             ),
@@ -106,6 +131,7 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                   )),
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
           ],
+          ),
         ),
       ),
     );
@@ -182,6 +208,19 @@ class _UpdateTileState extends ConsumerState<_UpdateTile> {
   late bool _isRead = widget.item.isRead;
   late bool _isDownloaded = widget.item.isDownloaded;
   bool _downloading = false;
+
+  @override
+  void didUpdateWidget(covariant _UpdateTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Keep the local flags aligned with persisted state changes (the
+    // Isar watch rebuilds the list after setRead / download updates).
+    if (widget.item.isRead != oldWidget.item.isRead) {
+      _isRead = widget.item.isRead;
+    }
+    if (widget.item.isDownloaded != oldWidget.item.isDownloaded) {
+      _isDownloaded = widget.item.isDownloaded;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -300,7 +339,13 @@ class _UpdateTileState extends ConsumerState<_UpdateTile> {
                   : LuminaTheme.readingColor,
             ),
             onPressed: () {
-              setState(() => _isRead = !_isRead);
+              // Persist through the notifier — previously this only
+              // flipped a local copy that reset on the next rebuild.
+              final next = !_isRead;
+              setState(() => _isRead = next);
+              ref
+                  .read(updatesProvider.notifier)
+                  .setRead(widget.item.id, read: next);
             },
           ),
           IconButton(
@@ -337,16 +382,43 @@ class _UpdateTileState extends ConsumerState<_UpdateTile> {
 
   Future<void> _toggleDownload() async {
     if (_isDownloaded) {
+      // Nothing to delete yet locally (deletion handled in Downloads
+      // screen once the transfer engine lands); flip visual state only.
       setState(() => _isDownloaded = false);
       return;
     }
+    final item = widget.item;
+    if (item.chapterId == null) {
+      showSnack(ref, context, 'Chapter unavailable for download');
+      return;
+    }
     setState(() => _downloading = true);
-    await Future.delayed(const Duration(milliseconds: 700));
-    if (mounted) {
-      setState(() {
-        _downloading = false;
-        _isDownloaded = true;
-      });
+    try {
+      // REAL enqueue — resolve the manga + chapter from Isar and queue the
+      // download (previously a fake 700 ms "downloaded" animation).
+      final repo = ref.read(data.libraryRepositoryProvider);
+      final manga = await repo.getManga(item.mangaId);
+      final chapter = manga?.chapters
+          .where((c) => c.id == item.chapterId)
+          .firstOrNull;
+      if (manga == null || chapter == null) {
+        if (mounted) {
+          showSnack(ref, context, 'Chapter unavailable for download');
+        }
+        return;
+      }
+      await ref.read(downloadsProvider.notifier).enqueueChapter(
+            manga: manga,
+            chapter: chapter,
+          );
+      if (mounted) {
+        setState(() => _isDownloaded = true);
+        showSnack(ref, context, 'Download queued');
+      }
+    } catch (e) {
+      if (mounted) showSnack(ref, context, 'Download failed to queue');
+    } finally {
+      if (mounted) setState(() => _downloading = false);
     }
   }
 }

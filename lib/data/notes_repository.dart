@@ -30,6 +30,10 @@ class NotesRepository {
   }
 
   /// Creates a note linked to its manga. Returns the persisted id.
+  ///
+  /// [mangaId] `0` creates a GENERAL note not attached to any book (the
+  /// notes screen's "New note" button) — previously this threw for every
+  /// standalone note because no manga row with id 0 exists.
   Future<int> addNote({
     required int mangaId,
     required String text,
@@ -40,9 +44,12 @@ class NotesRepository {
     int page = 0,
     List<String> tags = const [],
   }) async {
-    final manga = await _isar.mangas.get(mangaId);
-    if (manga == null) {
-      throw ArgumentError('Cannot attach a note to missing manga #$mangaId');
+    db.Manga? manga;
+    if (mangaId != 0) {
+      manga = await _isar.mangas.get(mangaId);
+      if (manga == null) {
+        throw ArgumentError('Cannot attach a note to missing manga #$mangaId');
+      }
     }
     final now = DateTime.now();
     final note = db.Note(
@@ -58,7 +65,7 @@ class NotesRepository {
       chapterId: chapterId,
       chapterName: chapterName,
     );
-    note.manga.value = manga;
+    if (manga != null) note.manga.value = manga;
     return _isar.writeTxn(() async => _isar.notes.put(note));
   }
 
