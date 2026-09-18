@@ -1,14 +1,3 @@
-// Gradle 9 evaluates subprojects in alphabetical path order. Any Flutter
-// plugin module whose name sorts before ":app" (e.g. :android_intent_plus)
-// is therefore already evaluated when the Flutter Gradle plugin applies to
-// :app — and Flutter 3.47.4's PluginHandler then dies with
-// "Cannot run Project.afterEvaluate(Action) when the project is already
-// evaluated" (PluginHandler.kt:122). Forcing :app to configure first
-// restores the ordering the Flutter plugin assumes. Verified against a
-// minimal Gradle 9.3.1 multi-project repro. Remove when Flutter fixes
-// PluginHandler (still unfixed on master as of 3.47.4).
-evaluationDependsOn(":app")
-
 allprojects {
     repositories {
         google()
@@ -16,6 +5,32 @@ allprojects {
     }
 }
 
-val clean by tasks.registering(Delete::class) {
+// Redirect all build output to <repo>/build/<subproject> (verbatim from the
+// Flutter 3.47.4 template). Without this, :app builds into android/app/build
+// while `flutter build apk` looks for the APK under <repo>/build/app/outputs/
+// flutter-apk — the build succeeds but the tool reports "failed to produce an
+// .apk file".
+val newBuildDir: Directory =
+    rootProject.layout.buildDirectory
+        .dir("../../build")
+        .get()
+rootProject.layout.buildDirectory.value(newBuildDir)
+
+subprojects {
+    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
+    project.layout.buildDirectory.value(newSubprojectBuildDir)
+}
+
+// Evaluation-order guard (verbatim from the template): Gradle evaluates
+// subprojects in alphabetical path order, so a plugin module sorting before
+// ":app" (e.g. :android_intent_plus) would otherwise be fully evaluated by
+// the time :app applies the Flutter Gradle plugin — whose PluginHandler then
+// crashes registering afterEvaluate hooks on it. Forcing every subproject to
+// depend on :app's evaluation keeps :app first, as the plugin assumes.
+subprojects {
+    project.evaluationDependsOn(":app")
+}
+
+tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
