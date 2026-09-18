@@ -42,8 +42,8 @@
 -keep class com.linusu.** { *; }
 -dontwarn com.linusu.**
 
-# --- floating / PiP (namespace eu.wroblewscy.marcin.floating.*) ------------
--keep class eu.wroblewscy.marcin.floating.** { *; }
--dontwarn eu.wroblewscy.marcin.floating.**
+# (floating / PiP rule removed with the phantom `floating` dependency —
+#  zero imports anywhere in lib/; its 3.0.0 Android module still referenced
+#  the removed Flutter v1 embedding and failed to compile on AGP 8.)
 
 -dontwarn javax.naming.**
