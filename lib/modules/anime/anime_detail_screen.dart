@@ -18,8 +18,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme.dart';
+import '../../core/ui/heroui.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -126,60 +128,82 @@ class _AnimeDetailScreenState extends ConsumerState<AnimeDetailScreen> {
     );
   }
 
-  void _toggleFavorite(Manga manga) {
-    ref.read(data.libraryRepositoryProvider).toggleFavorite(manga.id);
-    showSnack(
-      ref,
-      context,
-      !manga.favorite ? 'Added to library' : 'Removed from library',
+  /// REAL remove-from-library (previously only flipped the favorite flag
+  /// while claiming "Removed from library").
+  Future<void> _toggleFavorite(Manga manga) async {
+    final confirmed = await hConfirm(
+      context: context,
+      title: 'Remove from library?',
+      message:
+          '"${manga.title}" and its episodes, downloads and history will be deleted. This cannot be undone.',
+      confirmLabel: 'Remove',
     );
+    if (!confirmed) return;
+    await ref
+        .read(data.libraryRepositoryProvider)
+        .removeFromLibrary(manga.id);
+    if (mounted) {
+      showSnack(ref, context, 'Removed "${manga.title}" from library');
+      context.pop();
+    }
   }
 
+  /// Track sheet — opens the tracker search pages in the browser (honest,
+  /// working replacement for the previous snackbar-only stubs).
   void _showTrackSheet(Manga manga) {
-    showModalBottomSheet<void>(
+    hSheet<void>(
       context: context,
-      showDragHandle: true,
-      builder: (context) {
+      title: 'Track this anime',
+      builder: (sheetContext) {
+        Future<void> open(String url) async {
+          final uri = Uri.tryParse(url);
+          if (uri == null ||
+              !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+            if (sheetContext.mounted) {
+              showSnack(ref, sheetContext, 'Could not open link');
+            }
+          }
+        }
+
+        final encoded = Uri.encodeComponent(manga.title);
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text('Track this anime',
-                    style: Theme.of(context).textTheme.titleMedium),
-              ),
-              ListTile(
-                leading: const CircleAvatar(child: Icon(Icons.movie)),
-                title: const Text('MyAnimeList'),
-                subtitle: const Text('Sync watch status and progress'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.pop(context);
-                  showSnack(ref, context, 'Opening MyAnimeList…');
-                },
-              ),
-              ListTile(
-                leading: const CircleAvatar(child: Icon(Icons.auto_awesome)),
-                title: const Text('AniList'),
-                subtitle: const Text('Track score and rewatch'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.pop(context);
-                  showSnack(ref, context, 'Opening AniList…');
-                },
-              ),
-              ListTile(
-                leading: const CircleAvatar(child: Icon(Icons.live_tv)),
-                title: const Text('Kitsu'),
-                subtitle: const Text('Library & activity feed'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.pop(context);
-                  showSnack(ref, context, 'Opening Kitsu…');
-                },
-              ),
-            ],
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 4),
+                HTile(
+                  icon: Icons.tv_rounded,
+                  label: 'MyAnimeList',
+                  subtitle: 'Open title page on MAL',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    open('https://myanimelist.net/search/all?q=$encoded');
+                  },
+                ),
+                HTile(
+                  icon: Icons.auto_awesome_rounded,
+                  tone: HeroVariant.secondary,
+                  label: 'AniList',
+                  subtitle: 'Open title page on AniList',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    open('https://anilist.co/search/anime?search=$encoded');
+                  },
+                ),
+                HTile(
+                  icon: Icons.live_tv_rounded,
+                  tone: HeroVariant.success,
+                  label: 'Kitsu',
+                  subtitle: 'Library & activity feed',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    open('https://kitsu.app/anime?text=$encoded');
+                  },
+                ),
+                const SizedBox(height: 12),
+              ],
+            ),
           ),
         );
       },
@@ -199,11 +223,25 @@ class _AnimeDetailScreenState extends ConsumerState<AnimeDetailScreen> {
     context.push('/animePlayer/${episode.id}');
   }
 
+  /// REAL download-all: enqueues every un-downloaded episode through the
+  /// download engine (previously an 800 ms snackbar-only delay).
   Future<void> _downloadAll(Manga manga) async {
     setState(() => _downloadingAll = true);
-    showSnack(ref, context, 'Queued ${manga.chapters.length} episodes');
-    await Future.delayed(const Duration(milliseconds: 800));
-    if (mounted) setState(() => _downloadingAll = false);
+    try {
+      final downloads = ref.read(downloadsProvider.notifier);
+      var queued = 0;
+      for (final episode in manga.chapters) {
+        if (episode.isDownloaded) continue;
+        await downloads.enqueueEpisode(manga: manga, chapter: episode);
+        queued++;
+      }
+      if (mounted) {
+        showSnack(ref, context,
+            queued > 0 ? 'Queued $queued episodes' : 'All episodes downloaded');
+      }
+    } finally {
+      if (mounted) setState(() => _downloadingAll = false);
+    }
   }
 }
 
@@ -213,6 +251,19 @@ class _AnimeDetailScreenState extends ConsumerState<AnimeDetailScreen> {
 class _AnimeAppBar extends ConsumerWidget {
   const _AnimeAppBar({required this.manga});
   final Manga manga;
+
+  Future<void> _openInBrowser(BuildContext context, WidgetRef ref) async {
+    final url = manga.url;
+    if (!url.startsWith('http')) {
+      showSnack(ref, context, 'No web page for local items');
+      return;
+    }
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (context.mounted) showSnack(ref, context, 'Could not open browser');
+    }
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -237,7 +288,7 @@ class _AnimeAppBar extends ConsumerWidget {
         PopupMenuButton<String>(
           onSelected: (v) {
             if (v == 'open_browser') {
-              showSnack(ref, context, 'Opening in browser…');
+              _openInBrowser(context, ref);
             }
           },
           itemBuilder: (_) => const [
@@ -641,14 +692,9 @@ class _NextAiringCardState extends State<_NextAiringCard> {
                   ],
                 ),
               ),
-              if (!hasAired)
-                OutlinedButton.icon(
-                  onPressed: () => showMessage(
-                      context, 'Reminder set for episode ${n.episode}'),
-                  icon: const Icon(Icons.notifications_active_outlined,
-                      size: 18),
-                  label: const Text('Remind'),
-                ),
+              // NOTE: the previous "Remind" button was a snackbar-only
+              // stub (no notification scheduler existed). Removed until a
+              // real flutter_local_notifications pipeline is wired up.
             ],
           ),
         ),
@@ -775,18 +821,6 @@ class _EpisodeToolbar extends StatelessWidget {
                 ),
           ),
           const Spacer(),
-          if (filter != null)
-            IconButton(
-              tooltip: 'Clear filter',
-              icon: const Icon(Icons.filter_alt_off_outlined),
-              onPressed: () => onFilterChanged(null),
-            )
-          else
-            IconButton(
-              tooltip: 'Filter',
-              icon: const Icon(Icons.filter_alt_outlined),
-              onPressed: () => onFilterChanged('Subbed'),
-            ),
           IconButton(
             tooltip: downloadedOnly ? 'Show all' : 'Downloaded only',
             isSelected: downloadedOnly,
@@ -860,6 +894,89 @@ class _EpisodeList extends ConsumerWidget {
         return _EpisodeTile(
           episode: ep,
           onTap: () => onOpen(ep),
+          onLongPress: () => _showEpisodeMenu(context, ref, manga, ep),
+        );
+      },
+    );
+  }
+
+  /// Long-press episode menu: mark watched, bookmark, download, delete
+  /// download — all real, all persisted (previously episodes had NO actions
+  /// beyond a fake download animation).
+  void _showEpisodeMenu(
+    BuildContext context,
+    WidgetRef ref,
+    Manga manga,
+    Chapter episode,
+  ) {
+    final repo = ref.read(data.libraryRepositoryProvider);
+    hSheet<void>(
+      context: context,
+      title: episode.name,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 4),
+                HTile(
+                  icon: episode.isRead
+                      ? Icons.mark_chat_unread_outlined
+                      : Icons.done_all_rounded,
+                  tone: HeroVariant.primary,
+                  label:
+                      episode.isRead ? 'Mark as unwatched' : 'Mark as watched',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    repo.markChapterRead(episode.id, read: !episode.isRead);
+                  },
+                ),
+                HTile(
+                  icon: episode.isBookmarked
+                      ? Icons.bookmark_remove_outlined
+                      : Icons.bookmark_add_outlined,
+                  tone: HeroVariant.secondary,
+                  label: episode.isBookmarked
+                      ? 'Remove bookmark'
+                      : 'Bookmark',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    repo.saveChapterProgress(
+                      episode.id,
+                      isBookmarked: !episode.isBookmarked,
+                    );
+                  },
+                ),
+                if (!episode.isDownloaded)
+                  HTile(
+                    icon: Icons.download_rounded,
+                    tone: HeroVariant.success,
+                    label: 'Download',
+                    subtitle: 'Queue via the download engine',
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      ref.read(downloadsProvider.notifier).enqueueEpisode(
+                          manga: manga, chapter: episode);
+                    },
+                  )
+                else
+                  HTile(
+                    icon: Icons.delete_outline_rounded,
+                    tone: HeroVariant.danger,
+                    label: 'Delete download',
+                    subtitle: 'Removes the files from this device',
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      ref
+                          .read(downloadsProvider.notifier)
+                          .deleteChapterFiles(episode.id);
+                    },
+                  ),
+                const SizedBox(height: 12),
+              ],
+            ),
+          ),
         );
       },
     );
@@ -867,18 +984,21 @@ class _EpisodeList extends ConsumerWidget {
 }
 
 class _EpisodeTile extends StatefulWidget {
-  const _EpisodeTile({required this.episode, required this.onTap});
+  const _EpisodeTile({
+    required this.episode,
+    required this.onTap,
+    required this.onLongPress,
+  });
 
   final Chapter episode;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
   @override
   State<_EpisodeTile> createState() => _EpisodeTileState();
 }
 
 class _EpisodeTileState extends State<_EpisodeTile> {
-  bool _downloading = false;
-  late bool _downloaded = widget.episode.isDownloaded;
 
   @override
   Widget build(BuildContext context) {
@@ -973,43 +1093,13 @@ class _EpisodeTileState extends State<_EpisodeTile> {
         children: [
           if (ep.isBookmarked)
             Icon(Icons.bookmark, color: theme.colorScheme.tertiary, size: 18),
-          IconButton(
-            tooltip: _downloaded ? 'Delete download' : 'Download',
-            icon: _downloadIcon(),
-            onPressed: _toggleDownload,
-          ),
+          if (ep.isDownloaded)
+            const Icon(Icons.check_circle,
+                color: LuminaTheme.finishedColor, size: 20),
         ],
       ),
       onTap: widget.onTap,
+      onLongPress: widget.onLongPress,
     );
-  }
-
-  Widget _downloadIcon() {
-    if (_downloading) {
-      return const SizedBox(
-        width: 18,
-        height: 18,
-        child: CircularProgressIndicator(strokeWidth: 2),
-      );
-    }
-    if (_downloaded) {
-      return const Icon(Icons.check_circle, color: LuminaTheme.finishedColor);
-    }
-    return const Icon(Icons.download_outlined);
-  }
-
-  Future<void> _toggleDownload() async {
-    if (_downloaded) {
-      setState(() => _downloaded = false);
-      return;
-    }
-    setState(() => _downloading = true);
-    await Future.delayed(const Duration(milliseconds: 900));
-    if (mounted) {
-      setState(() {
-        _downloading = false;
-        _downloaded = true;
-      });
-    }
   }
 }

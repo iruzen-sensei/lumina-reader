@@ -67,6 +67,12 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
   SkipRange? _activeSkip;
   StreamSubscription<Duration>? _positionSub;
 
+  // ---- Watch-progress persistence (mirrors the manga reader's _flush) ----
+  DateTime _sessionStart = DateTime.now();
+  Timer? _progressSaver;
+  bool _completedHandled = false;
+  bool _incognito = false;
+
   /// Nullable: assigned by the async _loadEpisode resolve after the first
   /// frame — every access must be guarded (the previous `late` variant
   /// crashed the overlay build with LateInitializationError on first open).
@@ -93,6 +99,7 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     _subs = [
       _player.stream.position.listen((p) {
         if (!_seeking && mounted) setState(() => _position = p);
+        _scheduleProgressSave();
       }),
       _player.stream.duration.listen((d) {
         if (mounted) setState(() => _duration = d);
@@ -109,10 +116,79 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
       _player.stream.completed.listen((completed) {
         if (completed && mounted) {
           showSnack(ref, context, 'Episode finished');
+          // REAL completion: mark watched + persist history/stats
+          // (previously the player never recorded anything, so the anime
+          // library's watched checkmarks and Continue-watching could never
+          // come from actually watching an episode).
+          _handleEpisodeComplete();
         }
       }),
     ];
     _scheduleHide();
+    _incognito = ref.read(incognitoModeProvider);
+    _sessionStart = DateTime.now();
+  }
+
+  /// Debounced progress write — at most one DB write every 5 s while
+  /// playing (mirrors the manga reader's throttled saveChapterProgress).
+  void _scheduleProgressSave() {
+    _progressSaver?.cancel();
+    _progressSaver = Timer(const Duration(seconds: 5), _flushProgress);
+  }
+
+  Future<void> _flushProgress() async {
+    final episode = _episode;
+    if (episode == null || _incognito) return;
+    if (_duration.inMilliseconds <= 0) return;
+    final seconds = _position.inSeconds;
+    // Skip meaningless writes (nothing watched yet).
+    if (seconds <= 0) return;
+    try {
+      await ref.read(data.libraryRepositoryProvider).saveChapterProgress(
+            episode.id,
+            lastPageRead: seconds,
+            pageCount: _duration.inSeconds,
+            isRead: seconds >= _duration.inSeconds - 30,
+          );
+    } catch (_) {
+      // Progress persistence must never interrupt playback.
+    }
+  }
+
+  /// Marks the episode watched and records history + a stats session.
+  Future<void> _handleEpisodeComplete() async {
+    final episode = _episode;
+    final manga = _manga;
+    if (episode == null || manga == null || _completedHandled) return;
+    _completedHandled = true;
+    if (_incognito) return;
+    try {
+      await ref.read(data.libraryRepositoryProvider).saveChapterProgress(
+            episode.id,
+            isRead: true,
+            lastPageRead: _duration.inSeconds,
+            pageCount: _duration.inSeconds,
+          );
+      await ref.read(data.historyRepositoryProvider).recordRead(
+            mangaId: manga.id,
+            chapterId: episode.id,
+            chapterName: episode.name,
+            chapterNumber: episode.number,
+            mangaTitle: manga.title,
+            mangaCover: manga.thumbnailUrl,
+            isAnime: true,
+            progress: 1.0,
+          );
+      final watched = DateTime.now().difference(_sessionStart).inSeconds;
+      await ref.read(data.statsRepositoryProvider).recordSession(
+            mangaId: manga.id,
+            chapterId: episode.id,
+            pagesRead: 0,
+            durationSeconds: watched.clamp(1, 60 * 60 * 3),
+          );
+    } catch (_) {
+      // Best-effort — playback already finished.
+    }
   }
 
   Future<void> _loadEpisode() async {
@@ -145,13 +221,31 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     await _player.open(Media(url));
     await _player.setRate(_speed);
     await _player.setVolume(_volume);
+    await _resumeFromSavedPosition();
     _maybeStartAniSkipWatch();
+  }
+
+  /// REAL resume: jump to the saved watch position when it is meaningful
+  /// (previously every open restarted at 0:00 even mid-episode).
+  Future<void> _resumeFromSavedPosition() async {
+    final episode = _episode;
+    if (episode == null) return;
+    final saved = episode.lastPageRead; // seconds watched
+    // Only resume when at least 10 s were watched and 30 s remain.
+    if (saved <= 10) return;
+    if (_duration.inSeconds > 0 && saved >= _duration.inSeconds - 30) return;
+    try {
+      await _player.seek(Duration(seconds: saved));
+    } catch (_) {}
   }
 
   @override
   void dispose() {
     _hideTimer?.cancel();
     _positionSub?.cancel();
+    _progressSaver?.cancel();
+    // Flush the final watch position so Continue-watching resumes here.
+    unawaited(_flushProgress());
     for (final s in _subs) {
       s.cancel();
     }
@@ -321,7 +415,10 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
       _qualityIndex = _qualityIndex.clamp(0, sources.length - 1);
     });
     _openedEpisodeId = target.id;
+    _completedHandled = false;
+    _sessionStart = DateTime.now();
     await _player.open(Media(sources[_qualityIndex].url));
+    await _resumeFromSavedPosition();
     _maybeStartAniSkipWatch();
   }
 

@@ -22,6 +22,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme.dart';
+import '../../core/ui/heroui.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -149,7 +150,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       // and cancelling yields a null result rather than an empty list.
       final result = await FilePicker.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['epub', 'pdf', 'cbz', 'cbr', 'zip'],
+        allowedExtensions: ['epub', 'pdf', 'cbz', 'cbr', 'zip', 'txt'],
         allowMultiple: true,
       );
       if (!mounted) return;
@@ -175,20 +176,35 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         final dest = '$importsDir/$fileName';
         try {
           await File(path).copy(dest);
+          final isTxt = dest.toLowerCase().endsWith('.txt');
           await repo.addToLibrary(
             Manga(
               id: 0,
               title: fileName.replaceFirst(
-                  RegExp(r'\.(epub|pdf|cbz|cbr|zip)$',
+                  RegExp(r'\.(epub|pdf|cbz|cbr|zip|txt)$',
                       caseSensitive: false),
                   ''),
               sourceId: 0,
               url: dest,
-              itemType: ItemType.book,
+              // .txt imports are novels (opened in the novel reader);
+              // everything else is a book (epub / pdf / cbz readers).
+              itemType:
+                  isTxt ? ItemType.novel : ItemType.book,
               genre: const ['Local file'],
               status: ItemStatus.unknown,
               dateAdded: DateTime.now(),
             ),
+            chapters: isTxt
+                ? [
+                    Chapter(
+                      id: 0,
+                      url: dest,
+                      name: 'Chapter 1',
+                      number: 1,
+                      dateUploaded: DateTime.now(),
+                    ),
+                  ]
+                : null,
           );
           imported++;
         } catch (e) {
@@ -561,91 +577,139 @@ class _SelectionBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final selection = ref.watch(librarySelectionProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Material(
-      color: Theme.of(context).colorScheme.primaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.close),
-              onPressed: () =>
-                  ref.read(librarySelectionProvider.notifier).clear(),
-            ),
-            Text(
-              '${selection.length} selected',
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
+      color: isDark ? HeroColors.darkContent1 : Colors.white,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+          child: Row(
+            children: [
+              HIconButton(
+                icon: Icons.close_rounded,
+                onPressed: () =>
+                    ref.read(librarySelectionProvider.notifier).clear(),
               ),
-            ),
-            const Spacer(),
-            IconButton(
-              tooltip: 'Select all',
-              icon: const Icon(Icons.select_all_outlined),
-              onPressed: () {
-                final all = ref.read(filteredMangaProvider);
-                ref
-                    .read(librarySelectionProvider.notifier)
-                    .addAll(all.map((m) => m.id));
-              },
-            ),
-            IconButton(
-              tooltip: 'Mark as read',
-              icon: const Icon(Icons.done_all),
-              onPressed: () {
-                showSnack(ref, context, 'Marked ${selection.length} as read');
-                ref.read(librarySelectionProvider.notifier).clear();
-              },
-            ),
-            IconButton(
-              tooltip: 'Add to category',
-              icon: const Icon(Icons.label_outline),
-              onPressed: () => _showCategorySheet(context, ref),
-            ),
-            IconButton(
-              tooltip: 'Remove from library',
-              icon: const Icon(Icons.delete_outline),
-              onPressed: () {
-                showSnack(ref, context, 'Removed ${selection.length} items');
-                ref.read(librarySelectionProvider.notifier).clear();
-              },
-            ),
-          ],
+              Text(
+                '${selection.length} selected',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white : HeroColors.default900,
+                ),
+              ),
+              const Spacer(),
+              HIconButton(
+                tooltip: 'Select all',
+                icon: Icons.select_all_outlined,
+                onPressed: () {
+                  final all = ref.read(filteredMangaProvider);
+                  ref
+                      .read(librarySelectionProvider.notifier)
+                      .addAll(all.map((m) => m.id));
+                },
+              ),
+              HIconButton(
+                tooltip: 'Mark as read',
+                icon: Icons.done_all_rounded,
+                color: HeroVariant.success,
+                onPressed: () => _markAllRead(context, ref, selection),
+              ),
+              HIconButton(
+                tooltip: 'Add to category',
+                icon: Icons.label_outline_rounded,
+                onPressed: () => _showCategorySheet(context, ref, selection),
+              ),
+              HIconButton(
+                tooltip: 'Remove from library',
+                icon: Icons.delete_outline_rounded,
+                color: HeroVariant.danger,
+                onPressed: () => _removeSelected(context, ref, selection),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  void _showCategorySheet(BuildContext context, WidgetRef ref) {
-    final categories = ref.read(categoriesProvider);
-    showModalBottomSheet<void>(
+  /// REAL delete: confirm → repository removeFromLibraryMany (removes
+  /// chapters, download queue rows, downloaded files, imported files,
+  /// history and notes) → clear selection. Previously this showed a
+  /// snackbar and deleted nothing.
+  Future<void> _removeSelected(
+    BuildContext context,
+    WidgetRef ref,
+    Set<int> selection,
+  ) async {
+    final confirmed = await hConfirm(
       context: context,
-      showDragHandle: true,
-      builder: (context) {
+      title: 'Remove ${selection.length} ${selection.length == 1 ? 'entry' : 'entries'}?',
+      message:
+          'This also deletes their downloaded chapters, imported files, history and notes. This cannot be undone.',
+      confirmLabel: 'Remove',
+    );
+    if (!confirmed) return;
+    final ids = selection.toList();
+    ref.read(librarySelectionProvider.notifier).clear();
+    final removed = await ref
+        .read(data.libraryRepositoryProvider)
+        .removeFromLibraryMany(ids);
+    if (context.mounted) {
+      showSnack(ref, context, 'Removed $removed ${removed == 1 ? 'entry' : 'entries'} from library');
+    }
+  }
+
+  /// REAL mark-as-read: marks every chapter of every selected entry read.
+  Future<void> _markAllRead(
+    BuildContext context,
+    WidgetRef ref,
+    Set<int> selection,
+  ) async {
+    final repo = ref.read(data.libraryRepositoryProvider);
+    for (final id in selection) {
+      await repo.markAllChaptersRead(id, read: true);
+    }
+    ref.read(librarySelectionProvider.notifier).clear();
+    if (context.mounted) {
+      showSnack(ref, context, 'Marked ${selection.length} as read');
+    }
+  }
+
+  void _showCategorySheet(BuildContext context, WidgetRef ref, Set<int> selection) {
+    final categories = ref.read(categoriesProvider);
+    hSheet<void>(
+      context: context,
+      title: 'Set category',
+      builder: (sheetContext) {
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text('Set categories',
-                    style: Theme.of(context).textTheme.titleMedium),
-              ),
-              ...categories.where((c) => c.id != 0).map((c) => ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: Color(c.color),
-                      child: const Icon(Icons.label,
-                          color: Colors.white, size: 18),
-                    ),
-                    title: Text(c.name),
-                    onTap: () {
-                      Navigator.pop(context);
-                      showSnack(ref, context, 'Added to ${c.name}');
-                      ref.read(librarySelectionProvider.notifier).clear();
-                    },
-                  )),
-            ],
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 4),
+                ...categories.where((c) => c.id != 0).map((c) => HTile(
+                      icon: Icons.label_rounded,
+                      tone: HeroVariant.secondary,
+                      label: c.name,
+                      subtitle: 'Move ${selection.length} selected ${selection.length == 1 ? 'entry' : 'entries'} here',
+                      onTap: () async {
+                        final repo = ref.read(data.libraryRepositoryProvider);
+                        for (final id in selection) {
+                          await repo.setMangaCategory(id, c.id);
+                        }
+                        if (sheetContext.mounted) {
+                          Navigator.pop(sheetContext);
+                        }
+                        ref.read(librarySelectionProvider.notifier).clear();
+                        if (context.mounted) {
+                          showSnack(ref, context, 'Moved to ${c.name}');
+                        }
+                      },
+                    )),
+                const SizedBox(height: 12),
+              ],
+            ),
           ),
         );
       },

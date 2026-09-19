@@ -116,7 +116,9 @@ dto.Manga mangaToDto(
 /// separately by the repository so Isar links stay consistent.
 db.Manga mangaFromDto(dto.Manga m, {int? existingId}) {
   return db.Manga(
-    id: existingId ?? m.id,
+    // id 0 = not persisted (browse DTOs) → null → Isar auto-increments.
+    // A literal 0 made every browse-added entry share ONE row.
+    id: existingId ?? (m.id > 0 ? m.id : null),
     name: m.title,
     author: m.author ?? '',
     description: m.description ?? '',
@@ -167,7 +169,10 @@ dto.Chapter chapterToDto(db.Chapter c) {
 
 db.Chapter chapterFromDto(dto.Chapter c, {int? existingId}) {
   return db.Chapter(
-    id: existingId ?? c.id,
+    // id 0 on a DTO means "not persisted yet" — it must map to NULL so
+    // Isar auto-increments. Mapping it to a literal 0 made every fresh
+    // chapter share one row (each put overwrote the previous).
+    id: existingId ?? (c.id > 0 ? c.id : null),
     name: c.name,
     url: c.url,
     chapterNumber: c.number.round(),

@@ -121,6 +121,19 @@ class StatsRepository {
     return results;
   }
 
+  /// Updates a goal's target (wired to the Stats screen's "Set goal"
+  /// dialog — previously the button was a snackbar-only stub and the
+  /// seeded defaults were permanently read-only).
+  Future<void> setGoalTarget(int goalId, int target) async {
+    if (target <= 0) return;
+    await _isar.writeTxn(() async {
+      final g = await _isar.readingGoals.get(goalId);
+      if (g == null) return;
+      g.target = target;
+      await _isar.readingGoals.put(g);
+    });
+  }
+
   Future<(String, String, dto.GoalPeriod, int)> _goalProgress(
       db.ReadingGoal g) async {
     final now = DateTime.now();

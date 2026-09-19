@@ -17,8 +17,12 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:isar/isar.dart';
 
+import '../data/downloads_repository.dart';
 import '../data/library_repository.dart';
+import '../models/category.dart' as db_c;
+import '../models/manga.dart' as db_m;
 import '../models/models.dart' as dto;
+import '../models/settings.dart' as db_s;
 import '../models/update.dart' as db;
 import '../providers/storage_provider.dart';
 import 'extension_coordinator.dart';
@@ -31,10 +35,12 @@ class LibraryUpdater {
     this.interval = const Duration(minutes: 30),
     this.maxConcurrent = 3,
   })  : _isar = storage.isar,
+        _storage = storage,
         _library = library,
         _coordinator = coordinator;
 
   final Isar _isar;
+  final StorageProvider _storage;
   final LibraryRepository _library;
   final ExtensionCoordinator _coordinator;
   final Duration interval;
@@ -140,7 +146,57 @@ class LibraryUpdater {
     await _isar.writeTxn(() async {
       await _isar.updates.putAll(rows);
     });
+
+    // AUTO-DOWNLOAD: when the user enabled it (Settings → Downloads), new
+    // chapters of entries in the selected categories are queued through
+    // the download engine automatically. Previously the toggle and the
+    // category picker were persisted but nothing ever consumed them.
+    await _maybeAutoDownload(manga, newOnes);
     return newOnes.length;
+  }
+
+  Future<void> _maybeAutoDownload(
+      dto.Manga manga, List<dto.Chapter> newChapters) async {
+    try {
+      final s = await _isar.settings.get(227);
+      if (s?.downloadAutoNew != true) return;
+
+      // Category gate: when the user picked specific categories, only
+      // entries in those categories auto-download.
+      final cats = s?.downloadAutoCategories;
+      if (cats != null && cats.isNotEmpty) {
+        final catNames = (await _isar.categorys.where().findAll())
+            .where((c) => cats.contains(c.id))
+            .map((c) => c.name)
+            .toSet();
+        if (catNames.isNotEmpty) {
+          final row = await _isar.mangas.get(manga.id);
+          if (row?.category == null || !catNames.contains(row!.category)) {
+            return;
+          }
+        }
+      }
+
+      final downloads = DownloadsRepository(_storage);
+      final refreshed = await _isar.mangas.get(manga.id);
+      if (refreshed == null) return;
+      await refreshed.chapters.load();
+      final byUrl = {for (final c in refreshed.chapters) c.url: c};
+      for (final c in newChapters) {
+        final row = byUrl[c.url];
+        if (row == null || row.id == null || row.isDownloaded) continue;
+        await downloads.enqueue(
+          mangaId: manga.id,
+          chapterId: row.id!,
+          mangaTitle: manga.title,
+          chapterName: c.name,
+          isAnime: manga.isAnime,
+          mangaCover: manga.thumbnailUrl,
+        );
+      }
+    } catch (e) {
+      debugPrint('LibraryUpdater auto-download failed: $e');
+    }
   }
 
   /// Marks every update row as seen (called when the Updates tab opens).

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -20,6 +21,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../../data/providers.dart' as data;
+import '../../models/models.dart';
+import '../../providers/providers.dart' show incognitoModeProvider;
 import '../shared/widgets.dart';
 
 // ---------------------------------------------------------------------------
@@ -35,7 +39,7 @@ class PdfBookmark {
     required this.createdAt,
   });
 
-  final String id;
+  String id;
   final int page;
   final String label;
   final DateTime createdAt;
@@ -113,6 +117,7 @@ class PdfReaderView extends ConsumerStatefulWidget {
     required this.path,
     this.title,
     this.initialPage = 1,
+    this.mangaId,
   });
 
   /// Local file path to the .pdf document.
@@ -123,6 +128,9 @@ class PdfReaderView extends ConsumerStatefulWidget {
 
   /// 1-based initial page number.
   final int initialPage;
+
+  /// Library entry id — enables progress / history / bookmark persistence.
+  final int? mangaId;
 
   @override
   ConsumerState<PdfReaderView> createState() => _PdfReaderViewState();
@@ -140,11 +148,20 @@ class _PdfReaderViewState extends ConsumerState<PdfReaderView> {
   final List<PdfBookmark> _bookmarks = [];
   final GlobalKey _viewerKey = GlobalKey();
 
+  /// Drives the actual document scroll (pdfrx). Previously absent — every
+  /// "go to page" affordance only repainted the page LABEL while the
+  /// document never moved.
+  final PdfViewerController _pdfController = PdfViewerController();
+
+  Timer? _progressSaver;
+  bool _restoredInitialPage = false;
+
   @override
   void initState() {
     super.initState();
     _currentPage = widget.initialPage;
     _loadDocument();
+    _loadBookmarks();
     if (ref.read(pdfReaderSettingsProvider).keepScreenOn) {
       WakelockPlus.enable();
     }
@@ -157,10 +174,155 @@ class _PdfReaderViewState extends ConsumerState<PdfReaderView> {
 
   @override
   void dispose() {
+    _progressSaver?.cancel();
+    unawaited(_flushProgress(isFinal: true));
     WakelockPlus.disable();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     super.dispose();
+  }
+
+  // -------------------------------------------------------------------------
+  // Progress persistence (saveBookProgress + history)
+  // -------------------------------------------------------------------------
+
+  void _scheduleProgressSave() {
+    if (widget.mangaId == null) return;
+    _progressSaver?.cancel();
+    _progressSaver = Timer(const Duration(seconds: 3), () => _flushProgress());
+  }
+
+  Future<void> _flushProgress({bool isFinal = false}) async {
+    final id = widget.mangaId;
+    if (id == null || _totalPages <= 0) return;
+    if (ref.read(incognitoModeProvider)) return;
+    try {
+      await ref.read(data.libraryRepositoryProvider).saveBookProgress(
+            id,
+            currentPage: _currentPage,
+            totalPages: _totalPages,
+            progress: (_currentPage / _totalPages).clamp(0.0, 1.0),
+            isFinished: _currentPage >= _totalPages,
+          );
+      if (isFinal) {
+        final manga = await ref.read(data.libraryRepositoryProvider).getManga(id);
+        if (manga != null) {
+          await ref.read(data.historyRepositoryProvider).recordRead(
+                mangaId: id,
+                chapterId: 0,
+                chapterName: 'PDF',
+                chapterNumber: _currentPage.toDouble(),
+                mangaTitle: manga.title,
+                mangaCover: manga.thumbnailUrl,
+                isAnime: false,
+                progress: (_currentPage / _totalPages).clamp(0.0, 1.0),
+                page: _currentPage,
+                totalPages: _totalPages,
+              );
+        }
+      }
+    } catch (_) {
+      // Persistence must never break reading.
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Bookmark persistence (stored as tagged Notes)
+  // -------------------------------------------------------------------------
+
+  Future<void> _loadBookmarks() async {
+    final id = widget.mangaId;
+    if (id == null) return;
+    try {
+      final notes = await ref.read(data.notesRepositoryProvider).getNotes();
+      final marks = notes
+          .where((n) =>
+              n.mangaId == id &&
+              n.type == NoteType.thought &&
+              n.tags.contains('pdf-bookmark'))
+          .toList();
+      if (!mounted) return;
+      setState(() {
+        _bookmarks
+          ..clear()
+          ..addAll([
+            for (final m in marks)
+              PdfBookmark(
+                id: m.id.toString(),
+                page: m.page,
+                label: 'Page ${m.page}',
+                createdAt: m.createdAt,
+              )
+          ]);
+      });
+    } catch (_) {}
+  }
+
+  void _toggleBookmark() {
+    final existing =
+        _bookmarks.where((b) => b.page == _currentPage).firstOrNull;
+    if (existing != null) {
+      setState(() => _bookmarks.remove(existing));
+      final noteId = int.tryParse(existing.id);
+      if (noteId != null) {
+        ref.read(data.notesRepositoryProvider).deleteNote(noteId);
+      }
+      showSnack(ref, context, 'Bookmark removed');
+    } else {
+      final mark = PdfBookmark(
+        id: 'bm-${DateTime.now().millisecondsSinceEpoch}',
+        page: _currentPage,
+        label: 'Page $_currentPage',
+        createdAt: DateTime.now(),
+      );
+      setState(() => _bookmarks.add(mark));
+      final id = widget.mangaId;
+      if (id != null) {
+          ref.read(data.notesRepositoryProvider).addNote(
+              mangaId: id,
+              text: 'Bookmark — page $_currentPage',
+              type: NoteType.thought,
+              color: NoteColor.purple,
+              page: _currentPage,
+              tags: const ['pdf-bookmark'],
+            ).then((newId) {
+          // Swap the temp id for the persisted note id so removal works.
+          if (mounted) {
+            setState(() => mark.id = newId.toString());
+          }
+        });
+      }
+      showSnack(ref, context, 'Bookmark added');
+    }
+  }
+
+  /// Maps the fit-policy setting to a real pdfrx sizing delegate
+  /// (previously the chips wrote to a provider nothing consumed):
+  ///  * fitWidth  → Smart delegate (auto-fits page width)
+  ///  * fitHeight → legacy initial zoom = fit-page (page fully visible)
+  ///  * fitBoth   → legacy initial zoom = fit-page
+  ///  * original  → legacy initial zoom = 1.0 (100%)
+  PdfViewerSizeDelegateProvider _sizeDelegateFor(PdfPageFitPolicy p) {
+    switch (p) {
+      case PdfPageFitPolicy.fitWidth:
+        return const PdfViewerSizeDelegateProviderSmart();
+      case PdfPageFitPolicy.fitHeight:
+      case PdfPageFitPolicy.fitBoth:
+        return PdfViewerSizeDelegateProviderLegacy(
+          calculateInitialZoom: (document, controller, fitZoom, coverZoom) =>
+              math.min(fitZoom, coverZoom),
+        );
+      case PdfPageFitPolicy.original:
+        return const PdfViewerSizeDelegateProviderLegacy(
+          calculateInitialZoom: _originalZoom,
+        );
+    }
+  }
+
+  /// 100% zoom (PDF points = device logical pixels, approx).
+  static double? _originalZoom(
+      PdfDocument document, PdfViewerController controller, double fitZoom, double coverZoom) {
+    return 1.0;
   }
 
   Future<void> _loadDocument() async {
@@ -205,29 +367,18 @@ class _PdfReaderViewState extends ConsumerState<PdfReaderView> {
   Future<void> _goToPage(int page) async {
     if (page < 1 || page > _totalPages) return;
     setState(() => _currentPage = page);
+    // REAL navigation — scrolls the document itself (previously this only
+    // repainted the "Page X of Y" label and the viewer never moved).
+    try {
+      await _pdfController.goToPage(pageNumber: page);
+    } catch (_) {
+      // Controller not attached yet — the page state is tracked above.
+    }
+    _scheduleProgressSave();
   }
 
   void _nextPage() => _goToPage(_currentPage + 1);
   void _prevPage() => _goToPage(_currentPage - 1);
-
-  void _toggleBookmark() {
-    final existing =
-        _bookmarks.where((b) => b.page == _currentPage).firstOrNull;
-    if (existing != null) {
-      setState(() => _bookmarks.remove(existing));
-      showSnack(ref, context, 'Bookmark removed');
-    } else {
-      setState(() {
-        _bookmarks.add(PdfBookmark(
-          id: 'bm-${DateTime.now().millisecondsSinceEpoch}',
-          page: _currentPage,
-          label: 'Page $_currentPage',
-          createdAt: DateTime.now(),
-        ));
-      });
-      showSnack(ref, context, 'Bookmark added');
-    }
-  }
 
   void _openBookmark(PdfBookmark bm) {
     _goToPage(bm.page);
@@ -237,6 +388,18 @@ class _PdfReaderViewState extends ConsumerState<PdfReaderView> {
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(pdfReaderSettingsProvider);
+
+    // Live wakelock toggling (previously only read once in initState).
+    ref.listen<PdfReaderSettings>(pdfReaderSettingsProvider, (prev, next) {
+      if (prev?.keepScreenOn != next.keepScreenOn) {
+        if (next.keepScreenOn) {
+          unawaited(WakelockPlus.enable());
+        } else {
+          unawaited(WakelockPlus.disable());
+        }
+      }
+    });
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
@@ -257,10 +420,26 @@ class _PdfReaderViewState extends ConsumerState<PdfReaderView> {
                               // wraps the already-loaded [PdfDocument].
                               PdfDocumentRefDirect(_document!),
                               key: _viewerKey,
+                              controller: _pdfController,
                               params: PdfViewerParams(
+                                // REAL fit policy (previously the chips wrote
+                                // to a provider nothing consumed).
+                                sizeDelegateProvider:
+                                    _sizeDelegateFor(settings.fitPolicy),
                                 onPageChanged: (page) {
                                   if (page != null) {
                                     setState(() => _currentPage = page + 1);
+                                    _scheduleProgressSave();
+                                  }
+                                },
+                                onViewerReady: (document, controller) {
+                                  // Resume at the saved page (only once).
+                                  if (!_restoredInitialPage &&
+                                      widget.initialPage > 1 &&
+                                      widget.initialPage <= _totalPages) {
+                                    _restoredInitialPage = true;
+                                    unawaited(controller.goToPage(
+                                        pageNumber: widget.initialPage));
                                   }
                                 },
                                 pageOverlaysBuilder: (context, pageRect, page) {
@@ -303,6 +482,7 @@ class _PdfReaderViewState extends ConsumerState<PdfReaderView> {
     final title = widget.title ??
         _document?.sourceName ??
         'PDF';
+    final settings = ref.read(pdfReaderSettingsProvider);
     return Positioned(
       top: 0,
       left: 0,
@@ -333,12 +513,16 @@ class _PdfReaderViewState extends ConsumerState<PdfReaderView> {
                           color: Colors.white,
                           fontWeight: FontWeight.w600)),
                 ),
-                IconButton(
-                  tooltip: 'Thumbnails',
-                  icon: const Icon(Icons.view_carousel, color: Colors.white),
-                  onPressed: () => setState(() =>
-                      _thumbnailSidebarOpen = !_thumbnailSidebarOpen),
-                ),
+                // Thumbnail sidebar toggle — only offered when the
+                // persisted settings enable thumbnails (the switch
+                // previously toggled a value nothing consumed).
+                if (settings.showThumbnails)
+                  IconButton(
+                    tooltip: 'Thumbnails',
+                    icon: const Icon(Icons.view_carousel, color: Colors.white),
+                    onPressed: () => setState(() =>
+                        _thumbnailSidebarOpen = !_thumbnailSidebarOpen),
+                  ),
                 IconButton(
                   tooltip: 'Bookmark page',
                   icon: Icon(

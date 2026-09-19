@@ -22,6 +22,8 @@ import 'package:flutter_html/flutter_html.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../../data/providers.dart' as data;
+import '../../providers/providers.dart' show incognitoModeProvider;
 import '../shared/widgets.dart';
 
 // ---------------------------------------------------------------------------
@@ -232,6 +234,7 @@ class EpubReaderView extends ConsumerStatefulWidget {
     super.key,
     required this.path,
     this.title,
+    this.mangaId,
   });
 
   /// Local file path to the .epub archive.
@@ -239,6 +242,9 @@ class EpubReaderView extends ConsumerStatefulWidget {
 
   /// Optional fallback title shown while the EPUB is loading.
   final String? title;
+
+  /// Library entry id — enables progress + history persistence.
+  final int? mangaId;
 
   @override
   ConsumerState<EpubReaderView> createState() => _EpubReaderViewState();
@@ -258,6 +264,8 @@ class _EpubReaderViewState extends ConsumerState<EpubReaderView> {
   String _searchQuery = '';
   List<({int chapter, int offset})> _searchResults = const [];
 
+  Timer? _progressSaver;
+
   @override
   void initState() {
     super.initState();
@@ -270,11 +278,63 @@ class _EpubReaderViewState extends ConsumerState<EpubReaderView> {
 
   @override
   void dispose() {
+    _progressSaver?.cancel();
+    unawaited(_flushProgress(isFinal: true));
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     WakelockPlus.disable();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
+  }
+
+  // -----------------------------------------------------------------------
+  // Progress persistence (saveBookProgress + history) — previously the
+  // reader always reopened at chapter 0 / scroll 0 and never recorded
+  // history.
+  // -----------------------------------------------------------------------
+
+  void _scheduleProgressSave() {
+    if (widget.mangaId == null) return;
+    _progressSaver?.cancel();
+    _progressSaver = Timer(const Duration(seconds: 3), _flushProgress);
+  }
+
+  Future<void> _flushProgress({bool isFinal = false}) async {
+    final id = widget.mangaId;
+    if (id == null || _chapters.isEmpty) return;
+    if (ref.read(incognitoModeProvider)) return;
+    final progress = _chapters.isEmpty
+        ? 0.0
+        : ((_currentChapterIndex + _readingProgress) / _chapters.length)
+            .clamp(0.0, 1.0);
+    try {
+      await ref.read(data.libraryRepositoryProvider).saveBookProgress(
+            id,
+            currentPage: _currentChapterIndex + 1,
+            totalPages: _chapters.length,
+            progress: progress,
+            isFinished: _currentChapterIndex >= _chapters.length - 1 &&
+                _readingProgress > 0.95,
+          );
+      if (isFinal) {
+        final manga =
+            await ref.read(data.libraryRepositoryProvider).getManga(id);
+        if (manga != null) {
+          await ref.read(data.historyRepositoryProvider).recordRead(
+                mangaId: id,
+                chapterId: 0,
+                chapterName: _chapters[_currentChapterIndex].title,
+                chapterNumber: _currentChapterIndex + 1.0,
+                mangaTitle: manga.title,
+                mangaCover: manga.thumbnailUrl,
+                isAnime: false,
+                progress: progress,
+              );
+        }
+      }
+    } catch (_) {
+      // Persistence must never break reading.
+    }
   }
 
   Future<void> _loadBook() async {
@@ -286,9 +346,25 @@ class _EpubReaderViewState extends ConsumerState<EpubReaderView> {
       final book = await EpubLoader.fromFile(widget.path);
       final chapters = EpubLoader.flattenChapters(book);
       if (!mounted) return;
+      // Resume at the last-read chapter (stored as a 1-based page number
+      // on the library row — the reader previously always opened at
+      // chapter 1).
+      var resumeChapter = 0;
+      final id = widget.mangaId;
+      if (id != null) {
+        try {
+          final (page, total) =
+              await ref.read(data.libraryRepositoryProvider).getBookProgress(id);
+          if (total == chapters.length && page > 1 && page <= chapters.length) {
+            resumeChapter = page - 1;
+          }
+        } catch (_) {}
+      }
+      if (!mounted) return;
       setState(() {
         _book = book;
         _chapters = chapters;
+        _currentChapterIndex = resumeChapter;
         _loading = false;
       });
     } catch (e) {
@@ -308,6 +384,7 @@ class _EpubReaderViewState extends ConsumerState<EpubReaderView> {
         max <= 0 ? 0.0 : (offset / max).clamp(0.0, 1.0).toDouble();
     if ((progress - _readingProgress).abs() > 0.01) {
       setState(() => _readingProgress = progress);
+      _scheduleProgressSave();
     }
   }
 
@@ -322,6 +399,7 @@ class _EpubReaderViewState extends ConsumerState<EpubReaderView> {
       _chapterListOpen = false;
       _readingProgress = 0;
     });
+    _scheduleProgressSave();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.jumpTo(0);

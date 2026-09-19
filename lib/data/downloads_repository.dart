@@ -6,16 +6,22 @@
 // changes here; the UI watches the collection and stays in sync across
 // app restarts.
 
+import 'dart:io';
+
 import 'package:isar/isar.dart';
 
+import '../models/chapter.dart' as db_ch;
 import '../models/download.dart' as db;
 import '../models/mappers.dart' as map;
 import '../models/models.dart' as dto;
 import '../providers/storage_provider.dart';
 
 class DownloadsRepository {
-  DownloadsRepository(StorageProvider storage) : _isar = storage.isar;
+  DownloadsRepository(StorageProvider storage)
+      : _isar = storage.isar,
+        _storage = storage;
   final Isar _isar;
+  final StorageProvider _storage;
 
   Future<List<dto.DownloadTask>> getAll() async {
     final rows = await _isar.downloads.where().sortByRequestedAtDesc().findAll();
@@ -136,6 +142,56 @@ class DownloadsRepository {
     });
   }
 
+  /// The chapter id a queue row refers to (null for malformed rows).
+  Future<int?> chapterIdFor(int downloadId) async {
+    final row = await _isar.downloads.get(downloadId);
+    return row?.chapterId;
+  }
+
+  /// Removes EVERY queue row for a chapter, deletes its downloaded files
+  /// on disk and resets the chapter's downloaded flag. This is what the
+  /// "delete download" affordances call — previously only the queue row
+  /// was removed, so files stayed on disk and the checkmark never cleared.
+  Future<void> removeByChapter(int chapterId) async {
+    final rows = await _isar.downloads
+        .filter()
+        .chapterIdEqualTo(chapterId)
+        .findAll();
+    if (rows.isNotEmpty) {
+      await _isar.writeTxn(
+          () async => _isar.downloads.deleteAll(rows.map((d) => d.id).toList()));
+    }
+
+    final c = await _isar.chapters.get(chapterId);
+    if (c != null) {
+      await c.manga.load();
+      final m = c.manga.value;
+      if (m != null) {
+        final baseDir = await _storage.getDownloadsDir();
+        final dir = Directory('$baseDir/chapters/${m.id}/$chapterId');
+        if (dir.existsSync()) {
+          try {
+            await dir.delete(recursive: true);
+          } catch (_) {}
+        }
+        // Anime episodes are saved as a single .ts file next to the dir.
+        final tsFile = File('$baseDir/chapters/${m.id}/$chapterId.ts');
+        if (tsFile.existsSync()) {
+          try {
+            await tsFile.delete();
+          } catch (_) {}
+        }
+      }
+      await _isar.writeTxn(() async {
+        c
+          ..isDownloaded = false
+          ..isDownloading = false
+          ..downloadProgress = 0.0;
+        await _isar.chapters.put(c);
+      });
+    }
+  }
+
   Future<void> clearCompleted() async {
     await _isar.writeTxn(() async {
       final done = await _isar.downloads
@@ -152,6 +208,35 @@ class DownloadsRepository {
   Future<void> clearAll() async {
     await _isar.writeTxn(() async {
       await _isar.downloads.clear();
+    });
+  }
+
+  /// Deletes EVERY downloaded chapter/episode file AND resets every
+  /// chapter's downloaded flag, while PRESERVING the `imports/` directory
+  /// (user-imported EPUB/PDF/CBZ/videos live there — the previous
+  /// "delete all" removed the whole downloads dir and destroyed the
+  /// source files of imported books).
+  Future<void> deleteAllFiles() async {
+    await clearAll();
+    final baseDir = await _storage.getDownloadsDir();
+    final chaptersDir = Directory('$baseDir/chapters');
+    if (chaptersDir.existsSync()) {
+      try {
+        await chaptersDir.delete(recursive: true);
+      } catch (_) {}
+    }
+    // Reset every chapter flag so the UI shows the honest state.
+    await _isar.writeTxn(() async {
+      final chapters = await _isar.chapters.where().findAll();
+      for (final c in chapters) {
+        if (c.isDownloaded || c.isDownloading) {
+          c
+            ..isDownloaded = false
+            ..isDownloading = false
+            ..downloadProgress = 0.0;
+          await _isar.chapters.put(c);
+        }
+      }
     });
   }
 

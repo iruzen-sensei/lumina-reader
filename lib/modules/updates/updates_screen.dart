@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme.dart';
+import '../../core/ui/heroui.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -381,13 +382,28 @@ class _UpdateTileState extends ConsumerState<_UpdateTile> {
   }
 
   Future<void> _toggleDownload() async {
+    final item = widget.item;
     if (_isDownloaded) {
-      // Nothing to delete yet locally (deletion handled in Downloads
-      // screen once the transfer engine lands); flip visual state only.
-      setState(() => _isDownloaded = false);
+      // REAL delete — removes the downloaded files + queue rows and
+      // resets the chapter flag (previously "flip visual state only").
+      if (item.chapterId == null) return;
+      final confirmed = await hConfirm(
+        context: context,
+        title: 'Delete download?',
+        message:
+            'The downloaded files for "${item.chapterName}" will be removed from this device.',
+        confirmLabel: 'Delete',
+      );
+      if (!confirmed) return;
+      await ref
+          .read(downloadsProvider.notifier)
+          .deleteChapterFiles(item.chapterId!);
+      if (mounted) {
+        setState(() => _isDownloaded = false);
+        showSnack(ref, context, 'Download deleted');
+      }
       return;
     }
-    final item = widget.item;
     if (item.chapterId == null) {
       showSnack(ref, context, 'Chapter unavailable for download');
       return;
@@ -407,10 +423,17 @@ class _UpdateTileState extends ConsumerState<_UpdateTile> {
         }
         return;
       }
-      await ref.read(downloadsProvider.notifier).enqueueChapter(
-            manga: manga,
-            chapter: chapter,
-          );
+      if (item.isAnime) {
+        await ref.read(downloadsProvider.notifier).enqueueEpisode(
+              manga: manga,
+              chapter: chapter,
+            );
+      } else {
+        await ref.read(downloadsProvider.notifier).enqueueChapter(
+              manga: manga,
+              chapter: chapter,
+            );
+      }
       if (mounted) {
         setState(() => _isDownloaded = true);
         showSnack(ref, context, 'Download queued');

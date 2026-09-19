@@ -12,13 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme.dart';
+import '../../core/ui/heroui.dart';
+import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
+import '../../providers/storage_provider.dart';
 import '../shared/widgets.dart';
 
 /// The anime library screen.
@@ -42,6 +48,75 @@ class _AnimeLibraryScreenState extends ConsumerState<AnimeLibraryScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  /// REAL video import (previously the FAB only showed a snackbar): pick
+  /// mp4/mkv/webm files, copy them into the app documents dir and create an
+  /// anime entry with one playable episode. Playback runs through the
+  /// coordinator's local-file branch in videoList().
+  Future<void> _importVideo() async {
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['mp4', 'mkv', 'webm', 'avi', 'mov'],
+        allowMultiple: true,
+      );
+      if (!mounted) return;
+      final files = result?.files ?? const <PlatformFile>[];
+      if (files.isEmpty) {
+        showSnack(ref, context, 'No file selected');
+        return;
+      }
+
+      final repo = ref.read(data.libraryRepositoryProvider);
+      final docsDir = await StorageProvider().getDownloadsDir();
+      final importsDir = '$docsDir/imports';
+      await Directory(importsDir).create(recursive: true);
+
+      var imported = 0;
+      final failures = <String>[];
+      for (final path in files.map((f) => f.path).whereType<String>()) {
+        final fileName = path.split('/').last;
+        final dest = '$importsDir/$fileName';
+        try {
+          await File(path).copy(dest);
+          final entry = Manga(
+            id: 0,
+            title: fileName.replaceFirst(
+                RegExp(r'\.(mp4|mkv|webm|avi|mov)$', caseSensitive: false),
+                ''),
+            sourceId: 0,
+            url: dest,
+            itemType: ItemType.anime,
+            genre: const ['Local file'],
+            status: ItemStatus.unknown,
+            dateAdded: DateTime.now(),
+          );
+          await repo.addToLibrary(entry, chapters: [
+            Chapter(
+              id: 0,
+              url: dest,
+              name: 'Episode 1',
+              number: 1,
+              dateUploaded: DateTime.now(),
+            ),
+          ]);
+          imported++;
+        } catch (e) {
+          failures.add('$fileName: $e');
+        }
+      }
+
+      if (!mounted) return;
+      if (imported > 0) {
+        showSnack(ref, context,
+            'Imported $imported video(s)${failures.isNotEmpty ? ' (${failures.length} failed)' : ''}');
+      } else if (failures.isNotEmpty) {
+        showSnack(ref, context, 'Import failed: ${failures.first}');
+      }
+    } catch (e) {
+      if (mounted) showSnack(ref, context, 'Import failed: $e');
+    }
   }
 
   @override
@@ -84,8 +159,7 @@ class _AnimeLibraryScreenState extends ConsumerState<AnimeLibraryScreen> {
       floatingActionButton: selection.isNotEmpty
           ? null
           : FloatingActionButton.extended(
-              onPressed: () =>
-                  showSnack(ref, context, 'Pick a .mp4 / .mkv to import'),
+              onPressed: _importVideo,
               icon: const Icon(Icons.video_file_outlined),
               label: const Text('Import'),
             ),
@@ -301,52 +375,80 @@ class _AnimeSelectionBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final selection = ref.watch(animeLibrarySelectionProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Material(
-      color: Theme.of(context).colorScheme.primaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.close),
-              onPressed: () =>
-                  ref.read(animeLibrarySelectionProvider.notifier).clear(),
-            ),
-            Text(
-              '${selection.length} selected',
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
+      color: isDark ? HeroColors.darkContent1 : Colors.white,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+          child: Row(
+            children: [
+              HIconButton(
+                icon: Icons.close_rounded,
+                onPressed: () =>
+                    ref.read(animeLibrarySelectionProvider.notifier).clear(),
               ),
-            ),
-            const Spacer(),
-            IconButton(
-              tooltip: 'Select all',
-              icon: const Icon(Icons.select_all_outlined),
-              onPressed: () {
-                final all = ref.read(filteredAnimeProvider);
-                ref
-                    .read(animeLibrarySelectionProvider.notifier)
-                    .addAll(all.map((m) => m.id));
-              },
-            ),
-            IconButton(
-              tooltip: 'Mark as seen',
-              icon: const Icon(Icons.done_all),
-              onPressed: () {
-                showSnack(ref, context, 'Marked ${selection.length} as seen');
-                ref.read(animeLibrarySelectionProvider.notifier).clear();
-              },
-            ),
-            IconButton(
-              tooltip: 'Remove from library',
-              icon: const Icon(Icons.delete_outline),
-              onPressed: () {
-                showSnack(ref, context, 'Removed ${selection.length} items');
-                ref.read(animeLibrarySelectionProvider.notifier).clear();
-              },
-            ),
-          ],
+              Text(
+                '${selection.length} selected',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white : HeroColors.default900,
+                ),
+              ),
+              const Spacer(),
+              HIconButton(
+                tooltip: 'Select all',
+                icon: Icons.select_all_outlined,
+                onPressed: () {
+                  final all = ref.read(filteredAnimeProvider);
+                  ref
+                      .read(animeLibrarySelectionProvider.notifier)
+                      .addAll(all.map((m) => m.id));
+                },
+              ),
+              HIconButton(
+                tooltip: 'Mark as seen',
+                icon: Icons.done_all_rounded,
+                color: HeroVariant.success,
+                onPressed: () async {
+                  final repo = ref.read(data.libraryRepositoryProvider);
+                  for (final id in selection) {
+                    await repo.markAllChaptersRead(id, read: true);
+                  }
+                  ref.read(animeLibrarySelectionProvider.notifier).clear();
+                  if (context.mounted) {
+                    showSnack(ref, context, 'Marked ${selection.length} as seen');
+                  }
+                },
+              ),
+              HIconButton(
+                tooltip: 'Remove from library',
+                icon: Icons.delete_outline_rounded,
+                color: HeroVariant.danger,
+                onPressed: () async {
+                  final confirmed = await hConfirm(
+                    context: context,
+                    title:
+                        'Remove ${selection.length} ${selection.length == 1 ? 'entry' : 'entries'}?',
+                    message:
+                        'This also deletes their downloaded episodes and history. This cannot be undone.',
+                    confirmLabel: 'Remove',
+                  );
+                  if (!confirmed) return;
+                  final ids = selection.toList();
+                  ref.read(animeLibrarySelectionProvider.notifier).clear();
+                  final removed = await ref
+                      .read(data.libraryRepositoryProvider)
+                      .removeFromLibraryMany(ids);
+                  if (context.mounted) {
+                    showSnack(ref, context,
+                        'Removed $removed ${removed == 1 ? 'entry' : 'entries'}');
+                  }
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );

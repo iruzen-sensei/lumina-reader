@@ -21,6 +21,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:isar/isar.dart';
 
 import 'package:lumina_reader/data/downloads_repository.dart';
@@ -65,6 +66,8 @@ class DownloadEngine {
     _stopped = true;
     await _sub?.cancel();
     _sub = null;
+    _recheckTimer?.cancel();
+    _recheckTimer = null;
     for (final d in _active.values) {
       d.cancel();
     }
@@ -85,6 +88,39 @@ class DownloadEngine {
     }
   }
 
+  /// The persisted "Only download on Wi-Fi" switch — previously the
+  /// setting was stored but the engine never consulted it.
+  Future<bool> _wifiOnly() async {
+    try {
+      final s = await _isar.settings.get(227);
+      return s?.downloadOnlyOverWifi ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<bool> _connectionAllowed() async {
+    if (!await _wifiOnly()) return true;
+    final results = await Connectivity().checkConnectivity();
+    return results.contains(ConnectivityResult.wifi) ||
+        results.contains(ConnectivityResult.ethernet);
+  }
+
+  /// Re-checks connectivity periodically while tasks wait for Wi-Fi —
+  /// otherwise a queued task would sit unnoticed until the next DB write.
+  void _scheduleRecheck() {
+    _recheckTimer ??= Timer.periodic(const Duration(seconds: 15), (_) {
+      if (_stopped) {
+        _recheckTimer?.cancel();
+        _recheckTimer = null;
+        return;
+      }
+      unawaited(_drain());
+    });
+  }
+
+  Timer? _recheckTimer;
+
   Future<void> _drain() async {
     if (_draining || _stopped) return;
     _draining = true;
@@ -95,6 +131,16 @@ class DownloadEngine {
       while (!_stopped) {
         final limit = await _parallelLimit();
         if (_active.length >= limit) break;
+
+        // Wi-Fi gate: when the user requires Wi-Fi and the network is
+        // metered, leave the queue untouched and retry later.
+        if (!await _connectionAllowed()) {
+          _scheduleRecheck();
+          break;
+        }
+        _recheckTimer?.cancel();
+        _recheckTimer = null;
+
         final activeIds = _active.keys.toSet();
         final queued = await _isar.downloads
             .filter()
@@ -163,6 +209,51 @@ class DownloadEngine {
         downloadId, state: db.DownloadState.downloading);
 
     try {
+      final baseDir = await StorageProvider().getDownloadsDir();
+      final chapterDir = '$baseDir/chapters/${row.mangaId}/$chapterId';
+
+      if (row.isAnime == true) {
+        // ---- Anime episode: resolve stream URLs, download m3u8. ----
+        final videos = await _coordinator.videoList(chapterId);
+        if (videos.isEmpty) {
+          throw StateError('No video streams resolved for episode #$chapterId');
+        }
+        final best = videos.reduce(
+            (a, b) => a.height >= b.height ? a : b);
+        await Directory(chapterDir).create(recursive: true);
+        final outPath = '$chapterDir/$chapterId.ts';
+
+        var lastWrite = DateTime.now();
+        final savedPath = await downloader.downloadAnimeEpisode(
+          m3u8Url: best.url,
+          outputPath: outPath,
+          onProgress: (p) {
+            final now = DateTime.now();
+            if (now.difference(lastWrite) < const Duration(seconds: 1)) return;
+            lastWrite = now;
+            unawaited(_downloads.updateState(
+              downloadId,
+              state: db.DownloadState.downloading,
+              success: p.completed,
+              total: p.total,
+              downloadedBytes: p.bytesDownloaded,
+            ));
+          },
+        );
+
+        if (_stopped || !_active.containsKey(downloadId)) return;
+
+        await _downloads.updateState(
+          downloadId,
+          state: db.DownloadState.completed,
+          savedPath: savedPath,
+        );
+        await _markChapterDownloaded(chapterId, chapterDir, 1);
+        _log('completed episode ${row.mangaTitle} / ${row.chapterName}');
+        return;
+      }
+
+      // ---- Manga chapter: resolve page URLs, fetch images. ----
       // 1. Resolve the page URLs through the source chain.
       final urls = await _coordinator.pageList(chapterId);
       if (urls.isEmpty) {
@@ -171,8 +262,6 @@ class DownloadEngine {
 
       // 2. Fetch into the per-chapter directory (raw images — the offline
       //    reader path consumes files directly).
-      final baseDir = await StorageProvider().getDownloadsDir();
-      final chapterDir = '$baseDir/chapters/${row.mangaId}/$chapterId';
       await Directory(chapterDir).create(recursive: true);
 
       var lastWrite = DateTime.now();

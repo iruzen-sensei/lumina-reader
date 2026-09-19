@@ -3,8 +3,10 @@
 // Licensed under the Apache License, Version 2.0
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 
@@ -12,9 +14,14 @@ import 'app.dart';
 import 'data/downloads_repository.dart' as downloads_db;
 import 'data/library_repository.dart';
 import 'data/sources_repository.dart';
+import 'models/settings.dart' as db_s;
 import 'providers/storage_provider.dart';
+import 'data/backup_data_source.dart';
+import 'services/backup.dart';
 import 'services/download_engine.dart';
+import 'services/extension_coordinator.dart';
 import 'services/extension_repo_service.dart';
+import 'services/library_updater.dart';
 
 void main() async {
   // Error boundary — NEVER crash to a black screen (the HyperOS lesson).
@@ -67,6 +74,24 @@ void main() async {
         } catch (e) {
           debugPrint('Download engine start failed (non-fatal): $e');
         }
+        // Periodic library updates — the Updates screen previously promised
+        // a "sync interval" that never existed (only manual pull-to-refresh
+        // ran LibraryUpdater.runOnce).
+        try {
+          LibraryUpdater(
+            storage: storage,
+            library: library,
+            coordinator: ExtensionCoordinator(
+              sources: sources,
+              library: library,
+            ),
+          ).start();
+        } catch (e) {
+          debugPrint('Library updater start failed (non-fatal): $e');
+        }
+        // Periodic auto-backup — the Settings screen offered a backup
+        // interval but nothing ever ran a backup on schedule.
+        unawaited(_maybeAutoBackup(storage));
       } catch (e) {
         debugPrint('Bootstrap failed (non-fatal): $e');
       }
@@ -117,4 +142,48 @@ void main() async {
       ),
     ));
   });
+}
+
+/// Runs a backup when the persisted interval has elapsed since the last
+/// one (Settings → Backup interval — previously stored but never acted on).
+Future<void> _maybeAutoBackup(StorageProvider storage) async {
+  try {
+    final settings = await storage.isar.settings.get(227);
+    final intervalHours = settings?.backupInterval ?? 168; // default 7 days
+    final lastBackup = settings?.backupLastBackupAt ?? 0;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final intervalMs = intervalHours * 3600 * 1000;
+    if (lastBackup != 0 && now - lastBackup < intervalMs) return; // not due
+
+    final service = BackupService(IsarBackupDataSource(storage.isar));
+    final bytes = await service.export(const BackupOptions());
+    // Write into the app documents directory (not user-visible storage,
+    // which would need permissions on Android 10+).
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File(
+        '${dir.path}/autobackup-${DateTime.now().millisecondsSinceEpoch}.lumina');
+    await file.writeAsBytes(bytes, flush: true);
+
+    // Record the run + prune old auto-backups (keep the newest 3).
+    await storage.isar.writeTxn(() async {
+      final s = await storage.isar.settings.get(227);
+      if (s == null) return;
+      s.backupLastBackupAt = now;
+      await storage.isar.settings.put(s);
+    });
+    final backups = dir
+        .listSync()
+        .whereType<File>()
+        .where((f) => f.path.contains('autobackup-'))
+        .toList()
+      ..sort((a, b) => b.path.compareTo(a.path));
+    for (final old in backups.skip(3)) {
+      try {
+        await old.delete();
+      } catch (_) {}
+    }
+    debugPrint('Auto-backup written: ${file.path}');
+  } catch (e) {
+    debugPrint('Auto-backup failed (non-fatal): $e');
+  }
 }

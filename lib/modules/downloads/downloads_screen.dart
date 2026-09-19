@@ -465,7 +465,7 @@ class _DownloadCard extends ConsumerWidget {
           IconButton(
             tooltip: 'Remove',
             icon: const Icon(Icons.delete_outline),
-            onPressed: () => notifier.remove(task.id),
+            onPressed: () => notifier.removeWithFiles(task.id),
           ),
         ];
       case DownloadState.failed:
@@ -478,7 +478,7 @@ class _DownloadCard extends ConsumerWidget {
           IconButton(
             tooltip: 'Remove',
             icon: const Icon(Icons.delete_outline),
-            onPressed: () => notifier.remove(task.id),
+            onPressed: () => notifier.removeWithFiles(task.id),
           ),
         ];
       case DownloadState.completed:
@@ -486,7 +486,7 @@ class _DownloadCard extends ConsumerWidget {
           IconButton(
             tooltip: 'Remove',
             icon: const Icon(Icons.delete_outline),
-            onPressed: () => notifier.remove(task.id),
+            onPressed: () => notifier.removeWithFiles(task.id),
           ),
         ];
       case DownloadState.cancelled:
@@ -499,7 +499,7 @@ class _DownloadCard extends ConsumerWidget {
           IconButton(
             tooltip: 'Remove',
             icon: const Icon(Icons.delete_outline),
-            onPressed: () => notifier.remove(task.id),
+            onPressed: () => notifier.removeWithFiles(task.id),
           ),
         ];
     }

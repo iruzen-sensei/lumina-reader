@@ -16,6 +16,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme.dart';
+import '../../core/ui/heroui.dart';
+import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../shared/widgets.dart';
@@ -78,7 +80,7 @@ class StatsScreen extends ConsumerWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Streak card with freeze-token affordances.
+// Streak card — real metrics + the goal editor.
 // ---------------------------------------------------------------------------
 class _StreakCard extends ConsumerWidget {
   const _StreakCard({required this.streak});
@@ -87,6 +89,11 @@ class _StreakCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final heatmap = ref.watch(statsHeatmapProvider);
+    final cutoff = DateTime.now().subtract(const Duration(days: 30));
+    final activeDays = heatmap
+        .where((d) => d.date.isAfter(cutoff) && d.count > 0)
+        .length;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: Card(
@@ -128,8 +135,11 @@ class _StreakCard extends ConsumerWidget {
                       width: 1, height: 40, color: theme.dividerColor),
                   Expanded(
                     child: _StreakMetric(
-                      value: '${streak.freezeTokens}',
-                      label: 'Freeze tokens',
+                      // Real metric from the heatmap (the previous third
+                      // slot showed "Freeze tokens: 0" — hardcoded, with a
+                      // permanently disabled button).
+                      value: '$activeDays',
+                      label: 'Active days',
                       color: LuminaTheme.unreadColor,
                     ),
                   ),
@@ -140,19 +150,8 @@ class _StreakCard extends ConsumerWidget {
                 children: [
                   Expanded(
                     child: FilledButton.tonalIcon(
-                      onPressed: streak.freezeTokens > 0
-                          ? () => showSnack(
-                              ref, context, 'Used a streak freeze token')
-                          : null,
-                      icon: const Icon(Icons.ac_unit, size: 18),
-                      label: const Text('Use freeze'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => showSnack(
-                          ref, context, 'Goal: read every day this week'),
+                      // REAL goal editor (previously a snackbar-only stub).
+                      onPressed: () => _showGoalEditor(context, ref),
                       icon: const Icon(Icons.flag_outlined, size: 18),
                       label: const Text('Set goal'),
                     ),
@@ -162,6 +161,121 @@ class _StreakCard extends ConsumerWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// REAL goal editor: pick one of the tracked goals and set a new target;
+  /// persists through StatsRepository.setGoalTarget (previously a
+  /// snackbar-only stub — the seeded goals were read-only forever).
+  void _showGoalEditor(BuildContext context, WidgetRef ref) {
+    final goals = ref.read(statsGoalsProvider);
+    if (goals.isEmpty) {
+      showSnack(ref, context, 'No goals tracked yet');
+      return;
+    }
+    hSheet<void>(
+      context: context,
+      title: 'Edit goals',
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 4),
+                for (final g in goals) _GoalEditorTile(goal: g),
+                const SizedBox(height: 12),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _GoalEditorTile extends ConsumerStatefulWidget {
+  const _GoalEditorTile({required this.goal});
+  final Goal goal;
+
+  @override
+  ConsumerState<_GoalEditorTile> createState() => _GoalEditorTileState();
+}
+
+class _GoalEditorTileState extends ConsumerState<_GoalEditorTile> {
+  late final TextEditingController _controller =
+      TextEditingController(text: '${widget.goal.target}');
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.goal.label,
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.white : HeroColors.default900,
+                  ),
+                ),
+                Text(
+                  '${widget.goal.current} / ${widget.goal.target} ${widget.goal.unit}',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color:
+                        isDark ? HeroColors.default400 : HeroColors.default500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            width: 84,
+            child: TextField(
+              controller: _controller,
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.center,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          HButton(
+            label: 'Save',
+            size: HButtonSize.sm,
+            variant: HButtonVariant.flat,
+            onPressed: () async {
+              final value = int.tryParse(_controller.text.trim());
+              if (value == null || value <= 0) {
+                showSnack(ref, context, 'Enter a positive number');
+                return;
+              }
+              await ref
+                  .read(data.statsRepositoryProvider)
+                  .setGoalTarget(widget.goal.id, value);
+              if (context.mounted) {
+                showSnack(ref, context, 'Goal updated to $value');
+              }
+            },
+          ),
+        ],
       ),
     );
   }

@@ -60,8 +60,18 @@ jobs:
       # that `flutter analyze` cannot see. The fixture tests validate the
       # native extension parsers (Madara HTML + MangaDex JSON) against
       # captured real-site payloads, network-independent.
-      - name: Compile smoke test
-        run: flutter test test/compile_smoke_test.dart test/madara_fixture_test.dart test/mangadex_fixture_test.dart
+      - name: Fetch Linux Isar core binary (repository tests)
+        # isar_flutter_libs ships no Linux binary; the repository delete/
+        # link regression tests need it to open a real database.
+        run: |
+          curl -sL -o libisar.so https://github.com/isar/isar/releases/download/3.1.0%2B1/libisar_linux_x64.so
+          ls -la libisar.so
+
+      # Quality gate #4: compile smoke test + extension-parser fixtures +
+      # repository regression tests (delete flows, chapter linking — the
+      # Isar async-put link orphaning bug). All network-independent.
+      - name: Test suite
+        run: flutter test test/compile_smoke_test.dart test/madara_fixture_test.dart test/mangadex_fixture_test.dart test/repository_delete_test.dart
 
       # The keystore MUST exist BEFORE `flutter build apk`: Gradle signs the
       # release build itself (android/app/build.gradle.kts wires the release

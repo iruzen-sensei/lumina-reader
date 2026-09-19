@@ -2,10 +2,11 @@
 // Modified for Lumina Reader, Copyright 2024 Lumina Reader Contributors
 // Licensed under the Apache License, Version 2.0
 
-import 'package:flex_color_scheme/flex_color_scheme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/theme.dart';
+import 'modules/shared/app_lock.dart';
 import 'providers/providers.dart';
 import 'router/router.dart';
 
@@ -13,12 +14,11 @@ import 'router/router.dart';
 ///
 /// The theme is driven by the PERSISTED app settings ([appSettingsProvider]):
 ///   * themeMode  → system / light / dark / amoled (true-black)
-///   * customSeed → the FlexColorScheme seed colour
+///   * customSeed → FlexColorScheme key colour (defaults to HeroUI primary)
 ///   * fontSize   → applied app-wide via a [TextScaler] override
-///
-/// Previously this widget built a hardcoded deep-purple pair and ignored the
-/// settings row entirely — every theme control in the Settings screen was
-/// writing to a database nothing ever read back.
+///   * einkMode   → global grayscale filter (previously persisted but never
+///     consumed by anything)
+///   * appLock    → PIN gate on launch / resume (previously flags only)
 class LuminaApp extends ConsumerWidget {
   const LuminaApp({super.key});
 
@@ -30,11 +30,9 @@ class LuminaApp extends ConsumerWidget {
     final router = ref.watch(routerProvider);
     final settings = ref.watch(appSettingsProvider);
 
-    final lightTheme = _light(settings.customSeed);
-    final darkTheme = _dark(
-      settings.customSeed,
-      trueBlack: settings.themeMode == AppThemeMode.amoled,
-    );
+    final lightTheme = LuminaTheme.light();
+    final darkTheme =
+        LuminaTheme.dark(trueBlack: settings.themeMode == AppThemeMode.amoled);
 
     // Scale factor applied through a MediaQuery TextScaler override below.
     final textScale =
@@ -53,7 +51,8 @@ class LuminaApp extends ConsumerWidget {
       routerConfig: router,
       builder: (context, child) {
         final mediaQuery = MediaQuery.of(context);
-        return MediaQuery(
+        final settings = ref.watch(appSettingsProvider);
+        Widget app = MediaQuery(
           data: mediaQuery.copyWith(
             textScaler: textScale == 1.0
                 ? mediaQuery.textScaler
@@ -61,45 +60,31 @@ class LuminaApp extends ConsumerWidget {
           ),
           child: child ?? const SizedBox.shrink(),
         );
+
+        // E-ink mode: strip colour to grayscale e-paper look.
+        if (settings.einkMode) {
+          app = ColorFiltered(
+            colorFilter: const ColorFilter.matrix(<double>[
+              0.2126, 0.7152, 0.0722, 0, 0, //
+              0.2126, 0.7152, 0.0722, 0, 0,
+              0.2126, 0.7152, 0.0722, 0, 0,
+              0, 0, 0, 1, 0,
+            ]),
+            child: app,
+          );
+        }
+
+        // App lock gate: wraps the navigator with the PIN overlay when the
+        // user enabled locking (launch / resume).
+        if (settings.appLockEnabled) {
+          app = AppLockGate(
+            lockOnLaunch: settings.lockOnLaunch,
+            lockOnResume: settings.lockOnResume,
+            child: app,
+          );
+        }
+        return app;
       },
-    );
-  }
-
-  ThemeData _light(Color seed) {
-    return FlexThemeData.light(
-      // Material-3 tonal palette generated from the user's brand colour.
-      keyColors: FlexKeyColors(useKeyColors: true, keyPrimary: seed),
-      surfaceMode: FlexSurfaceMode.highScaffoldLevelSurface,
-      blendLevel: 20,
-      appBarOpacity: 0.00,
-      subThemesData: const FlexSubThemesData(
-        blendOnLevel: 10,
-        thinBorderWidth: 2.0,
-        unselectedToggleIsColored: true,
-        inputDecoratorRadius: 24.0,
-        chipRadius: 24.0,
-      ),
-      useMaterial3: true,
-      visualDensity: FlexColorScheme.comfortablePlatformDensity,
-    );
-  }
-
-  ThemeData _dark(Color seed, {required bool trueBlack}) {
-    return FlexThemeData.dark(
-      keyColors: FlexKeyColors(useKeyColors: true, keyPrimary: seed),
-      surfaceMode: FlexSurfaceMode.level,
-      blendLevel: 15,
-      appBarOpacity: 0.00,
-      subThemesData: const FlexSubThemesData(
-        blendOnLevel: 10,
-        thinBorderWidth: 2.0,
-        unselectedToggleIsColored: true,
-        inputDecoratorRadius: 24.0,
-        chipRadius: 24.0,
-      ),
-      useMaterial3: true,
-      visualDensity: FlexColorScheme.comfortablePlatformDensity,
-      darkIsTrueBlack: trueBlack, // AMOLED pure black
     );
   }
 }

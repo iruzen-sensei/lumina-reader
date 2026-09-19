@@ -12,13 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import 'dart:async' show unawaited;
+import 'dart:async' show Timer, unawaited;
 import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+
+import '../../data/providers.dart' as data;
+import '../../providers/providers.dart' show incognitoModeProvider;
 
 /// Comic-archive (CBZ / ZIP) viewer.
 ///
@@ -32,11 +36,19 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 /// in memory anyway. Streaming per-entry extraction can come later if users
 /// import library-sized archives.
 class CbzReaderView extends StatefulWidget {
-  const CbzReaderView({super.key, required this.path, required this.title});
+  const CbzReaderView({
+    super.key,
+    required this.path,
+    required this.title,
+    this.mangaId,
+  });
 
   /// Local file path to the .cbz / .zip archive.
   final String path;
   final String title;
+
+  /// Library entry id — enables progress + history persistence.
+  final int? mangaId;
 
   @override
   State<CbzReaderView> createState() => _CbzReaderViewState();
@@ -44,6 +56,11 @@ class CbzReaderView extends StatefulWidget {
 
 class _CbzReaderViewState extends State<CbzReaderView> {
   final PageController _controller = PageController();
+
+  /// Captured in initState — safe to use from dispose() (reading the
+  /// provider scope via context in dispose is not).
+  late final ProviderContainer _container;
+  bool _containerReady = false;
 
   /// Decoded page bytes in display order.
   List<Uint8List> _pages = const [];
@@ -54,6 +71,7 @@ class _CbzReaderViewState extends State<CbzReaderView> {
 
   int _index = 0;
   bool _chromeVisible = false;
+  Timer? _progressSaver;
 
   static const Set<String> _imageExtensions = {
     '.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.bmp',
@@ -62,14 +80,67 @@ class _CbzReaderViewState extends State<CbzReaderView> {
   @override
   void initState() {
     super.initState();
+    _container = ProviderScope.containerOf(context, listen: false);
+    _containerReady = true;
     _load();
   }
 
   @override
   void dispose() {
+    _progressSaver?.cancel();
+    unawaited(_flushProgress(isFinal: true));
     WakelockPlus.disable();
     _controller.dispose();
     super.dispose();
+  }
+
+  // -----------------------------------------------------------------------
+  // Progress persistence — CBZ reads previously vanished without a trace:
+  // no resume position, no history entry.
+  // -----------------------------------------------------------------------
+
+  void _scheduleProgressSave() {
+    if (widget.mangaId == null) return;
+    _progressSaver?.cancel();
+    _progressSaver = Timer(const Duration(seconds: 3), _flushProgress);
+  }
+
+  Future<void> _flushProgress({bool isFinal = false}) async {
+    final id = widget.mangaId;
+    if (id == null || _pages.isEmpty || !_containerReady) return;
+    final container = _container;
+    if (container.read(incognitoModeProvider)) return;
+    final progress = ((_index + 1) / _pages.length).clamp(0.0, 1.0);
+    try {
+      await container
+          .read(data.libraryRepositoryProvider)
+          .saveBookProgress(
+            id,
+            currentPage: _index + 1,
+            totalPages: _pages.length,
+            progress: progress,
+            isFinished: _index >= _pages.length - 1,
+          );
+      if (isFinal) {
+        final manga = await container.read(data.libraryRepositoryProvider).getManga(id);
+        if (manga != null) {
+          await container.read(data.historyRepositoryProvider).recordRead(
+            mangaId: id,
+            chapterId: 0,
+            chapterName: 'Page ${_index + 1}',
+            chapterNumber: (_index + 1).toDouble(),
+            mangaTitle: manga.title,
+            mangaCover: manga.thumbnailUrl,
+            isAnime: false,
+            progress: progress,
+            page: _index + 1,
+            totalPages: _pages.length,
+          );
+        }
+      }
+    } catch (_) {
+      // Persistence must never break reading.
+    }
   }
 
   Future<void> _load() async {
@@ -104,10 +175,28 @@ class _CbzReaderViewState extends State<CbzReaderView> {
       ];
 
       if (!mounted) return;
+      // Resume at the last-read page (previously CBZ always reopened at
+      // page 1 with no trace of the previous session).
+      var initialIndex = 0;
+      final id = widget.mangaId;
+      if (id != null) {
+        try {
+          final (page, total) =
+              await _container.read(data.libraryRepositoryProvider).getBookProgress(id);
+          if (total == pages.length && page > 1 && page <= pages.length) {
+            initialIndex = page - 1;
+          }
+        } catch (_) {}
+      }
+      if (!mounted) return;
       setState(() {
         _pages = pages;
         _error = null;
+        _index = initialIndex;
       });
+      if (initialIndex > 0) {
+        _controller.jumpToPage(initialIndex);
+      }
       unawaited(WakelockPlus.enable());
     } catch (e) {
       if (!mounted) return;
@@ -181,7 +270,10 @@ class _CbzReaderViewState extends State<CbzReaderView> {
     return PageView.builder(
       controller: _controller,
       itemCount: _pages.length,
-      onPageChanged: (i) => setState(() => _index = i),
+      onPageChanged: (i) {
+        setState(() => _index = i);
+        _scheduleProgressSave();
+      },
       itemBuilder: (context, i) => InteractiveViewer(
         maxScale: 5,
         minScale: 0.8,

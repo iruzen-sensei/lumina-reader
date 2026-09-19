@@ -22,6 +22,7 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
   String? _path;
   String _title = '';
   bool _loaded = false;
+  int _initialPage = 1;
 
   @override
   void initState() {
@@ -30,12 +31,21 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
   }
 
   Future<void> _resolve() async {
-    final manga =
-        await ref.read(data.libraryRepositoryProvider).getManga(widget.id);
+    final repo = ref.read(data.libraryRepositoryProvider);
+    final manga = await repo.getManga(widget.id);
+    if (!mounted) return;
+    var initial = 1;
+    if (manga != null) {
+      // Resume at the saved page (the reader previously always opened at
+      // page 1 even though the DB stores the last position).
+      final (page, total) = await repo.getBookProgress(widget.id);
+      initial = total > 0 ? page.clamp(1, total) : page;
+    }
     if (!mounted) return;
     setState(() {
       _path = manga == null ? null : _pdfPathFor(manga.url);
       _title = manga?.title ?? '';
+      _initialPage = initial;
       _loaded = true;
     });
   }
@@ -78,6 +88,11 @@ class _PdfReaderScreenState extends ConsumerState<PdfReaderScreen> {
         ),
       );
     }
-    return PdfReaderView(path: path, title: _title);
+    return PdfReaderView(
+      path: path,
+      title: _title,
+      mangaId: widget.id,
+      initialPage: _initialPage,
+    );
   }
 }

@@ -18,7 +18,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/theme.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -217,10 +216,12 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
               _SourceGrid(
                   sourceId: activeSource.id,
                   label: 'Popular',
+                  latest: false,
                   source: activeSource),
               _SourceGrid(
                   sourceId: activeSource.id,
                   label: 'Latest',
+                  latest: true,
                   source: activeSource),
               _SourceSearch(source: activeSource),
             ],
@@ -275,94 +276,10 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
   }
 
   // --------------------------------------------------------------------------
-  // Add repository sheet — lets the user paste the URL of a third-party
-  // extension repository (the same workflow as Tachiyomi / Aniyomi).
+  // Add repository sheet — see the top-level showAddRepoSheet() below.
   // --------------------------------------------------------------------------
   void _showAddRepoSheet(BuildContext context) {
-    final controller = TextEditingController();
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (sheetContext) {
-        return Padding(
-          padding: EdgeInsets.fromLTRB(
-              20, 0, 20, MediaQuery.of(sheetContext).viewInsets.bottom + 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Add extension repository',
-                  style: Theme.of(sheetContext)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              Text(
-                'Paste the URL of a Lumina / Tachiyomi / Aniyomi compatible '
-                'extension repository to make its extensions available.',
-                style: Theme.of(sheetContext)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(
-                        color: Theme.of(sheetContext)
-                            .colorScheme
-                            .onSurfaceVariant),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: controller,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  hintText: 'https://raw.githubusercontent.com/…/…',
-                  prefixIcon: Icon(Icons.link),
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 8),
-              _ExistingReposList(),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                      onPressed: () => Navigator.pop(sheetContext),
-                      child: const Text('Cancel')),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    onPressed: () => _submitRepoUrl(
-                        sheetContext, controller.text.trim()),
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  /// REAL repository registration — fetches the index (with Mangayomi URL
-  /// normalization), persists the repo and upserts its extension catalog.
-  /// Shows a spinner while fetching and surfaces validation errors inline.
-  Future<void> _submitRepoUrl(BuildContext sheetContext, String url) async {
-    if (url.isEmpty) return;
-    Navigator.pop(sheetContext);
-    if (!mounted) return;
-    showSnack(ref, context, 'Fetching repository…');
-    try {
-      final service = ref.read(data.extensionRepoServiceProvider);
-      final count = await service.addRepo(url);
-      if (!mounted) return;
-      showSnack(ref, context,
-          count > 0 ? 'Repository added — $count extensions' : 'Repository added');
-    } catch (e) {
-      if (!mounted) return;
-      showSnack(
-          ref, context, 'Could not add repository: ${e.toString()}');
-    }
+    showAddRepoSheet(context, ref);
   }
 
   void _showGlobalSearch(BuildContext context) {
@@ -419,6 +336,105 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
         );
       },
     );
+  }
+
+
+  /// REAL repository registration — fetches the index (with Mangayomi URL
+  /// normalization), persists the repo and upserts its extension catalog.
+  /// Shows a spinner while fetching and surfaces validation errors inline.
+}
+
+// ----------------------------------------------------------------------------
+// Top-level add-repo sheet — callable from both the app bar and the
+// extensions catalog sheet (previously the catalog sheet's "Add repo"
+// button only dismissed the sheet).
+// ----------------------------------------------------------------------------
+void showAddRepoSheet(BuildContext context, WidgetRef ref) {
+  final controller = TextEditingController();
+  showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (sheetContext) {
+      return Padding(
+        padding: EdgeInsets.fromLTRB(
+            20, 0, 20, MediaQuery.of(sheetContext).viewInsets.bottom + 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Add extension repository',
+                style: Theme.of(sheetContext)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            Text(
+              'Paste the URL of a Lumina / Tachiyomi / Aniyomi compatible '
+              'extension repository to make its extensions available.',
+              style: Theme.of(sheetContext).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(sheetContext)
+                      .colorScheme
+                      .onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: 'https://raw.githubusercontent.com/…/…',
+                prefixIcon: Icon(Icons.link),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            _ExistingReposList(),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                    onPressed: () => Navigator.pop(sheetContext),
+                    child: const Text('Cancel')),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: () =>
+                      _submitRepoUrl(sheetContext, ref, controller.text.trim()),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+Future<void> _submitRepoUrl(
+    BuildContext sheetContext, WidgetRef ref, String url) async {
+  if (url.isEmpty) return;
+  Navigator.pop(sheetContext);
+  final context = sheetContext;
+  showSnack(ref, context, 'Fetching repository…');
+  {
+    try {
+      final service = ref.read(data.extensionRepoServiceProvider);
+      final count = await service.addRepo(url);
+      if (!context.mounted) return;
+      showSnack(
+        ref,
+        context,
+        count > 0
+            ? 'Added repository with $count extensions'
+            : 'Repository added — no compatible extensions found',
+      );
+    } catch (e) {
+      if (context.mounted) {
+        showSnack(ref, context, 'Could not add repository: $e');
+      }
+    }
   }
 }
 
@@ -517,8 +533,11 @@ class _ExtensionCatalogSheetState extends ConsumerState<_ExtensionCatalogSheet> 
                 onPressed: _syncing ? null : _syncAll,
               ),
               FilledButton.tonalIcon(
+                // Closes the extensions sheet and opens the real add-repo
+                // form (previously this button only dismissed the sheet).
                 onPressed: () {
                   Navigator.pop(context);
+                  showAddRepoSheet(context, ref);
                 },
                 icon: const Icon(Icons.add_link, size: 18),
                 label: const Text('Add repo'),
@@ -756,16 +775,21 @@ class _SourceGrid extends ConsumerWidget {
   const _SourceGrid({
     required this.sourceId,
     required this.label,
+    required this.latest,
     required this.source,
   });
 
   final int sourceId;
   final String label;
+  final bool latest;
   final Source source;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final items = ref.watch(browseGridProvider(sourceId));
+    // Keyed by (sourceId, latest) — the Latest tab previously watched the
+    // SAME provider instance as Popular, so it rendered a duplicate of the
+    // popular grid while `load(latest: true)` sat unreachable.
+    final items = ref.watch(browseFeedProvider((sourceId, latest)));
     if (items.isEmpty) {
       return emptyState(
         context: context,
@@ -774,32 +798,41 @@ class _SourceGrid extends ConsumerWidget {
         subtitle: '$label returned no items from ${source.name}.',
       );
     }
-    return CustomScrollView(
-      slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-          sliver: SliverGrid(
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 120,
-              childAspectRatio: 0.66,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 14,
-            ),
-            delegate: SliverChildBuilderDelegate(
-              (context, i) {
-                final manga = items[i];
-                return BookCover(
-                  manga: manga,
-                  width: double.infinity,
-                  height: double.infinity,
-                  onTap: () => openSourceManga(context, ref, manga),
-                );
-              },
-              childCount: items.length,
+    return NotificationListener<ScrollNotification>(
+      onNotification: (n) {
+        // Infinite scroll: fetch the next page near the end of the grid.
+        if (n.metrics.pixels >= n.metrics.maxScrollExtent - 400) {
+          ref.read(browseFeedProvider((sourceId, latest)).notifier).loadMore();
+        }
+        return false;
+      },
+      child: CustomScrollView(
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+            sliver: SliverGrid(
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 120,
+                childAspectRatio: 0.66,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 14,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (context, i) {
+                  final manga = items[i];
+                  return BookCover(
+                    manga: manga,
+                    width: double.infinity,
+                    height: double.infinity,
+                    onTap: () => openSourceManga(context, ref, manga),
+                  );
+                },
+                childCount: items.length,
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -824,9 +857,11 @@ class _SourceSearchState extends ConsumerState<_SourceSearch> {
 
   @override
   Widget build(BuildContext context) {
+    // Per-source search (previously watched the merged globalSearch
+    // provider, so searching ONE source returned every source's results).
     final results = _query.isEmpty
         ? const AsyncValue<List<Manga>>.data([])
-        : ref.watch(globalSearchProvider(_query));
+        : ref.watch(sourceSearchProvider((widget.source.id, _query)));
 
     return Column(
       children: [
@@ -910,7 +945,11 @@ class _GlobalSearchResults extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sources = ref.watch(sourcesProvider);
+    // INSTALLED sources only — previously the sheet listed every catalog
+    // row (including ~360 uninstalled ones, firing real network searches
+    // at each) and every row displayed the identical merged result list.
+    final sources =
+        ref.watch(sourcesProvider).where((s) => s.isInstalled).toList();
     return Column(
       children: [
         Padding(
@@ -954,7 +993,9 @@ class _SourceSearchRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final results = ref.watch(globalSearchProvider(query));
+    // Each row searches its OWN source (previously every row watched the
+    // same merged provider — identical lists and counts everywhere).
+    final results = ref.watch(sourceSearchProvider((source.id, query)));
     return ExpansionTile(
       initiallyExpanded: true,
       tilePadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1008,76 +1049,3 @@ class _SourceSearchRow extends ConsumerWidget {
   }
 }
 
-/// Source detail route — opened when the user taps the source card header.
-/// Kept here as a public widget so it can be wired into the router.
-class SourceDetailView extends ConsumerWidget {
-  const SourceDetailView({super.key, required this.sourceId});
-  final int sourceId;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final sources = ref.watch(sourcesProvider);
-    final source = sources.firstWhere((s) => s.id == sourceId);
-    final items = ref.watch(browseGridProvider(sourceId));
-
-    return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            expandedHeight: 180,
-            pinned: true,
-            flexibleSpace: FlexibleSpaceBar(
-              title: Text(source.name),
-              background: DecoratedBox(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: LuminaTheme.headerGradient,
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Align(
-                    alignment: Alignment.bottomLeft,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(source.baseUrl,
-                            style: const TextStyle(color: Colors.white70)),
-                        const SizedBox(height: 4),
-                        Chip(
-                          label: Text(source.lang),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.all(16),
-            sliver: SliverGrid(
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 120,
-                childAspectRatio: 0.66,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 14,
-              ),
-              delegate: SliverChildBuilderDelegate(
-                (context, i) => BookCover(
-                  manga: items[i],
-                  onTap: () => openSourceManga(context, ref, items[i]),
-                ),
-                childCount: items.length,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

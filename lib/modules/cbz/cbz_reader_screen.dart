@@ -95,6 +95,6 @@ class _CbzReaderScreenState extends ConsumerState<CbzReaderScreen> {
         ),
       );
     }
-    return CbzReaderView(path: path, title: _title);
+    return CbzReaderView(path: path, title: _title, mangaId: widget.id);
   }
 }

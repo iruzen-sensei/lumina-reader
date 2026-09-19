@@ -315,10 +315,19 @@ final novelLibraryProvider =
 );
 
 /// Filters + sorts the anime library according to [libraryOptionsProvider].
+/// Applies the global "Downloaded only" toggle (previously the switch only
+/// flipped a badge and never filtered any list).
 final filteredAnimeProvider = Provider<List<Manga>>((ref) {
   final all = ref.watch(animeLibraryProvider);
   final options = ref.watch(libraryOptionsProvider);
-  return _applyLibraryOptions(all, options);
+  final downloadedOnly = ref.watch(downloadedOnlyProvider);
+  var items = _applyLibraryOptions(all, options);
+  if (downloadedOnly) {
+    items = items
+        .where((m) => m.chapters.any((c) => c.isDownloaded))
+        .toList();
+  }
+  return items;
 });
 
 /// Everything the Library tab can show: manga + novels + imported local
@@ -339,6 +348,7 @@ final libraryTabProvider = Provider<List<Manga>>((ref) => [
 final filteredMangaProvider = Provider<List<Manga>>((ref) {
   final all = ref.watch(libraryTabProvider);
   final options = ref.watch(libraryOptionsProvider);
+  final downloadedOnly = ref.watch(downloadedOnlyProvider);
   var items = _applyLibraryOptions(all, options);
   final ItemType? mediaFilter = switch (options.mediaType) {
     LibraryMediaType.all => null,
@@ -349,6 +359,11 @@ final filteredMangaProvider = Provider<List<Manga>>((ref) {
   };
   if (mediaFilter != null) {
     items = items.where((m) => m.itemType == mediaFilter).toList();
+  }
+  if (downloadedOnly) {
+    items = items
+        .where((m) => m.chapters.any((c) => c.isDownloaded))
+        .toList();
   }
   return items;
 });
@@ -499,9 +514,32 @@ class DownloadsNotifier extends StateNotifier<List<DownloadTask>> {
   final data.DownloadsRepository _repo;
   StreamSubscription<void>? _sub;
 
+  // Last snapshot per task id — used to derive a live bytes/sec readout
+  // (the Download row stores byte counters, not speeds).
+  final Map<int, (int, DateTime)> _lastBytes = {};
+
   Future<void> _reload() async {
     try {
-      state = await _repo.getAll();
+      final now = DateTime.now();
+      final rows = await _repo.getAll();
+      final next = <DownloadTask>[];
+      for (final t in rows) {
+        var speed = 0.0;
+        if (t.state == DownloadState.downloading) {
+          final last = _lastBytes[t.id];
+          if (last != null) {
+            final dBytes = t.downloadedBytes - last.$1;
+            final dSec = now.difference(last.$2).inMilliseconds / 1000.0;
+            if (dSec > 0.2 && dBytes > 0) speed = dBytes / dSec;
+          }
+          _lastBytes[t.id] = (t.downloadedBytes, now);
+        } else {
+          _lastBytes.remove(t.id);
+        }
+        t.speedBytesPerSec = speed;
+        next.add(t);
+      }
+      state = next;
     } catch (e) {
       debugPrint('DownloadsNotifier reload failed: $e');
     }
@@ -536,6 +574,18 @@ class DownloadsNotifier extends StateNotifier<List<DownloadTask>> {
 
   Future<void> remove(int id) => _repo.remove(id);
 
+  /// Remove a task AND its downloaded files (what every "Remove" affordance
+  /// in the Downloads screen calls — previously only the queue row vanished
+  /// and the files stayed on disk with the chapter checkmark still set).
+  Future<void> removeWithFiles(int id) async {
+    final chapterId = await _repo.chapterIdFor(id);
+    if (chapterId != null) {
+      await _repo.removeByChapter(chapterId);
+    } else {
+      await _repo.remove(id);
+    }
+  }
+
   /// Enqueues a chapter download for a library item.
   Future<void> enqueueChapter({
     required Manga manga,
@@ -549,6 +599,29 @@ class DownloadsNotifier extends StateNotifier<List<DownloadTask>> {
         isAnime: false,
         mangaCover: manga.thumbnailUrl,
       );
+
+  /// Enqueues an EPISODE download (the engine resolves the stream through
+  /// the coordinator's videoList and pulls the m3u8 segments).
+  Future<void> enqueueEpisode({
+    required Manga manga,
+    required Chapter chapter,
+  }) =>
+      _repo.enqueue(
+        mangaId: manga.id,
+        chapterId: chapter.id,
+        mangaTitle: manga.title,
+        chapterName: chapter.name,
+        isAnime: true,
+        mangaCover: manga.thumbnailUrl,
+      );
+
+  /// Removes a download row AND its files on disk + resets the chapter's
+  /// downloaded flag (previously only the queue row vanished and the
+  /// "downloaded" checkmark stayed forever). Chapter-row writes re-emit
+  /// watchLibrary so every screen refreshes automatically.
+  Future<void> deleteChapterFiles(int chapterId) async {
+    await _repo.removeByChapter(chapterId);
+  }
 
   @override
   void dispose() {
@@ -1470,45 +1543,95 @@ final sourcesProvider =
   (ref) => SourcesNotifier(ref.watch(data.sourcesRepositoryProvider)),
 );
 
-/// Catalog grid for one source (popular by default). Auto-loads through the
-/// extension coordinator; empty until loaded or when the source is disabled.
+/// Catalog grid for one source, keyed by `(sourceId, latest)`. The Latest
+/// tab previously watched the SAME provider instance as Popular (family
+/// keyed by sourceId only), so it displayed a duplicate of the popular
+/// grid — `load(latest: true)` existed but was unreachable. The record key
+/// gives each tab its own notifier.
 class BrowseGridNotifier extends StateNotifier<List<Manga>> {
-  BrowseGridNotifier(this._sourceId, this._coordinator) : super(const []) {
+  BrowseGridNotifier(
+    this._sourceId,
+    this._coordinator, {
+    bool latest = false,
+  })  : _latest = latest,
+        super(const []) {
     _load();
   }
 
   final int _sourceId;
+  final bool _latest;
   final ExtensionCoordinator _coordinator;
+  int _page = 1;
+  bool _hasMore = true;
+  bool _loadingMore = false;
+
+  bool get hasMore => _hasMore;
 
   Future<void> _load() => load();
 
   Future<void> load({bool latest = false, int page = 1}) async {
     try {
-      state = latest
+      final useLatest = latest || _latest;
+      final items = useLatest
           ? await _coordinator.latest(_sourceId, page: page)
           : await _coordinator.popular(_sourceId, page: page);
+      _page = page;
+      _hasMore = items.length >= 20; // sources page in twenties
+      state = items;
     } catch (e) {
       debugPrint('BrowseGridNotifier($_sourceId) load failed: $e');
       state = const [];
     }
   }
+
+  /// Appends the next page (infinite scroll).
+  Future<void> loadMore() async {
+    if (_loadingMore || !_hasMore) return;
+    _loadingMore = true;
+    try {
+      final next = _latest
+          ? await _coordinator.latest(_sourceId, page: _page + 1)
+          : await _coordinator.popular(_sourceId, page: _page + 1);
+      _page = _page + 1;
+      _hasMore = next.length >= 20;
+      if (next.isNotEmpty) state = [...state, ...next];
+    } catch (e) {
+      debugPrint('BrowseGridNotifier($_sourceId) loadMore failed: $e');
+    } finally {
+      _loadingMore = false;
+    }
+  }
 }
 
-final browseGridProvider =
-    StateNotifierProvider.family<BrowseGridNotifier, List<Manga>, int>(
-  (ref, sourceId) => BrowseGridNotifier(
-      sourceId, ref.watch(extensionCoordinatorProvider)),
-);
+final browseFeedProvider = StateNotifierProvider.family<
+    BrowseGridNotifier,
+    List<Manga>,
+    (int, bool)>((ref, key) => BrowseGridNotifier(
+      key.$1,
+      ref.watch(extensionCoordinatorProvider),
+      latest: key.$2,
+    ));
 
-/// Global search across every enabled source. Runs one search per source
+/// Search ONE source. Keyed by (sourceId, query) — previously the
+/// per-source search box watched the merged cross-source provider, so
+/// searching inside a source returned a soup of every source's results.
+final sourceSearchProvider = FutureProvider.autoDispose
+    .family<List<Manga>, (int, String)>((ref, key) async {
+  final (sourceId, query) = key;
+  if (query.trim().isEmpty) return const [];
+  final coordinator = ref.watch(extensionCoordinatorProvider);
+  return await coordinator.search(sourceId, query);
+});
+
+/// Global search across every INSTALLED source. Runs one search per source
 /// concurrently and merges the results.
 final globalSearchProvider =
-    FutureProvider.family<List<Manga>, String>((ref, query) async {
+    FutureProvider.autoDispose.family<List<Manga>, String>((ref, query) async {
   if (query.trim().isEmpty) return const [];
-  final sources = ref.watch(sourcesProvider);
+  final sources = ref.watch(sourcesProvider).where((s) => s.isInstalled).toList();
   final coordinator = ref.watch(extensionCoordinatorProvider);
   final results = await Future.wait(
-    sources.map((s) => coordinator.search(s.id, query)),
+    sources.map((s) => coordinator.search(s.id, query).catchError((_) => <Manga>[])),
   );
   return results.expand((list) => list).toList();
 });
@@ -1709,6 +1832,7 @@ class AppSettingsNotifier extends StateNotifier<SettingsState> {
       aniSkipEnabled: s.playerAutoSkipOpening ?? true,
       pipEnabled: s.playerEnablePip ?? true,
       autoDownloadNew: s.downloadAutoNew ?? false,
+      autoDownloadCategories: s.downloadAutoCategories ?? const <int>[],
       downloadOnWifiOnly: s.downloadOnlyOverWifi ?? true,
       parallelDownloads: s.downloadConcurrent ?? 3,
       appLockEnabled: s.appLockEnabled ?? false,
@@ -1778,6 +1902,7 @@ class AppSettingsNotifier extends StateNotifier<SettingsState> {
       playerAutoSkipOpening: s.aniSkipEnabled,
       playerEnablePip: s.pipEnabled,
       downloadAutoNew: s.autoDownloadNew,
+      downloadAutoCategories: s.autoDownloadCategories,
       downloadOnlyOverWifi: s.downloadOnWifiOnly,
       downloadConcurrent: s.parallelDownloads,
       libraryAutoUpdate: true,
@@ -1818,6 +1943,8 @@ class AppSettingsNotifier extends StateNotifier<SettingsState> {
   void togglePip() => _mutate((s) => s..pipEnabled = !s.pipEnabled);
   void toggleAutoDownloadNew() =>
       _mutate((s) => s..autoDownloadNew = !s.autoDownloadNew);
+  void setAutoDownloadCategories(List<int> ids) =>
+      _mutate((s) => s..autoDownloadCategories = List<int>.from(ids));
   void setParallelDownloads(int n) =>
       _mutate((s) => s..parallelDownloads = n);
   void toggleDownloadOnWifiOnly() =>

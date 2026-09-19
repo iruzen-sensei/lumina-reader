@@ -66,7 +66,14 @@ class NotesRepository {
       chapterName: chapterName,
     );
     if (manga != null) note.manga.value = manga;
-    return _isar.writeTxn(() async => _isar.notes.put(note));
+    return _isar.writeTxn(() async {
+      final id = await _isar.notes.put(note);
+      // ⚠ Isar 3's async put does not persist links — save explicitly,
+      // otherwise notes are stored orphaned and never surface under their
+      // book (same class of bug as chapter linking).
+      await note.manga.save();
+      return id;
+    });
   }
 
   Future<void> updateNote(int noteId,

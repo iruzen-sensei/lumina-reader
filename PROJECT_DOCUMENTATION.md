@@ -553,6 +553,116 @@ This gives compatibility with 300+ Tachiyomi/Mihon sources, all Mangayomi extens
     - dependency_overrides: image: ^4.0.17 (epubx vs media_kit conflict)
     - Plus 16 more minor version updates
 
+### Full-component audit + HeroUI round (2026-09-19 — "everything tested, everything real"):
+
+Two audit agents traced every interactive element of every screen against
+its handler. Root causes found and fixed:
+
+**Catastrophic data-layer bugs (found by the new repository test suite):**
+
+1. **Isar async-put never persists links (CRITICAL):** Isar 3's async
+   `put`/`putAll` silently skip link persistence (only the `*_Sync` APIs
+   save them). Every `addToLibrary`/`setChapters` stored chapters as
+   ORPHANS — the detail screen showed "no chapters" for everything added
+   from Browse even after the routing fix. Fixed with an explicit
+   `chapter.manga.save()` loop in `_replaceChapters` (+ the same fix for
+   notes). Regression-tested in `test/repository_delete_test.dart`.
+2. **DTO id 0 mapped to a literal Isar id 0 (CRITICAL):** `mangaFromDto` /
+   `chapterFromDto` mapped unpersisted DTOs (id 0) to a literal Isar id 0
+   (Isar's autoincrement is INT64_MIN, NOT 0) — every browse-added entry
+   shared ONE row and every chapter of an entry shared ONE row, each put
+   overwriting the last. Fixed: id 0 now maps to null (autoincrement).
+
+**Delete flows (the "you can't delete anything" report):**
+
+3. `LibraryRepository.removeFromLibraryMany` — the ONE delete funnel for
+   library entries: chapters, download-queue rows, downloaded page files,
+   imported source files, history rows and notes in one call. Wired to the
+   Library + Anime selection bars (previously snackbar-only theatre) and
+   both detail screens' In-library buttons (previously only flipped a
+   favorite bit while claiming "Removed from library").
+4. `DownloadsRepository.removeByChapter` — deletes queue rows AND files on
+   disk AND resets `chapter.isDownloaded`. Wired to every "Remove" in the
+   Downloads screen (previously row-only), the Updates screen (previously
+   a visual flag flip) and the new long-press chapter/episode menus.
+5. `deleteAllFiles` — Settings "Delete all downloads" / "Clear download
+   cache" now wipe ONLY `downloads/chapters/` — the previous code deleted
+   the whole downloads dir, destroying user-imported books under
+   `imports/` (data-loss footgun, regression-tested).
+
+**Fake components made real:**
+
+6. Per-chapter / per-episode download buttons: replaced the 900 ms
+   `Future.delayed` theatre with real engine enqueues; long-press opens a
+   Mihon-style sheet (mark read/watched, bookmark, download, delete
+   download) — all persisted.
+7. Anime: download-all enqueues real episodes (engine gained an
+   anime branch: `videoList` → m3u8 → concatenated .ts); the player now
+   persists watch position every 5 s, resumes where you left off, marks
+   episodes watched and records history + stats sessions; downloaded
+   episodes play offline from disk; local video import (mp4/mkv/webm)
+   actually creates playable entries.
+8. Browse: the Latest tab fetched its own feed (it previously watched the
+   same provider as Popular — a duplicate grid) with infinite scroll;
+   per-source search now searches THAT source (previously every search
+   showed the merged cross-source soup); the global-search sheet only
+   queries installed sources and shows each source its own results; the
+   extensions sheet's "Add repo" button opens the real add-repo form.
+9. PDF reader: `PdfViewerController` + `goToPage` — page navigation now
+   scrolls the document (previously only the "Page X of Y" label
+   repainted); fit-policy chips drive real sizing delegates; thumbnails
+   switch honored; live wakelock toggling; resume from last page;
+   debounced progress + history persistence; bookmarks persist as tagged
+   notes.
+10. EPUB/CBZ readers: progress + history persistence and resume (all
+    previously in-memory only).
+11. Novel reader: real .txt pipeline — the reader depended on
+    `cacheNovelChapters()` which nothing ever called (permanent "No
+    chapters loaded" dead end). Library import now accepts .txt as novels;
+    the reader splits them into chapters (heading patterns or ~2,500-word
+    chunks) and renders them.
+12. Library selection "Mark as read" + "Add to category" now write to the
+    DB (markAllChaptersRead / setMangaCategory); "Downloaded only"
+    actually filters both libraries; scanlator filter lists the real
+    groups; "Open in browser" launches url_launcher; Track sheets open
+    the tracker search pages in the browser.
+13. Settings: app lock is REAL (PIN gate on launch/resume, PIN setup flow,
+    SHA-256 hashed pin file); auto-download categories picker persists
+    (new Isar field) and the LibraryUpdater auto-downloads new chapters of
+    the selected categories; the backup interval is enforced (auto-backup
+    on schedule, keeps the newest 3); e-ink mode applies a global
+    grayscale filter; the decorative cloud-sync toggle was replaced with
+    honest tracker links; Wi-Fi-only downloads are enforced by the engine;
+    the 30-minute library update interval actually runs.
+14. Calendar: card taps resolve the AniList id against the library and
+    open the real detail screen (previously always "Not found"), else open
+    AniList in the browser; fake Watch/Remind stubs replaced.
+15. Stats: "Set goal" edits the real goal targets; the fake
+    "Freeze tokens: 0" metric replaced with real active-days.
+
+**HeroUI design system:**
+
+16. `lib/core/ui/heroui.dart` — a native-Flutter implementation of the
+    HeroUI (heroui.com) component language (HeroUI itself is React-only):
+    exact colour tokens (primary #006FEE, secondary #7828C8, success
+    #17C964, warning #F5A524, danger #F31260, zinc default ramp, dark
+    content surfaces), HeroUI radius scale, the signature scale-0.97 press
+    interaction, and Button (solid/bordered/light/flat/ghost), Chip
+    (solid/bordered/flat/dot), Card, Switch, Progress, Sheet, Dialog,
+    Tile and Section components. The app theme was rebuilt on the HeroUI
+    palette (light #FFFFFF / dark #000000 + #18181B surfaces) and the
+    shared StatusChip restyled to the HeroUI flat-chip look.
+
+**Dead code removed (~3,300 lines):** unreachable `reader_view.dart` and
+`anime_player_view.dart` (superseded richer variants), the never-called
+`cloud_sync.dart` / `reading_tracker.dart` / `external_player.dart` and
+the four unused tracker clients, plus the unrouted `SourceDetailView`.
+
+**Tests:** new `test/repository_delete_test.dart` (7 Isar-backed
+regression tests: delete funnel, chapter linking, flag resets, category
+writes, book-progress round-trip, imports preservation). CI fetches the
+Linux Isar core binary and runs the suite on every push.
+
 ### Bug-fix round (2026-09-19 — "extension content unreachable + imports invisible"):
 
 1. **Browse → detail routing (CRITICAL):** every browse/search tap pushed

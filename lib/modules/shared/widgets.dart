@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme.dart';
+import '../../core/ui/heroui.dart';
 import '../../models/models.dart';
 
 /// A rounded book / anime cover with cached network image, optional unread
@@ -237,43 +238,54 @@ class StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // HeroUI "flat chip" look: tinted pill when selected (coloured text on
+    // a soft accent background), neutral zinc pill otherwise — replacing
+    // the previous high-contrast filled chip.
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final base = color ?? theme.colorScheme.primary;
+    final bg = selected
+        ? (isDark
+            ? base.withValues(alpha: 0.28)
+            : base.withValues(alpha: 0.14))
+        : (isDark ? HeroColors.darkContent2 : HeroColors.default100);
+    final fg = selected
+        ? (isDark ? _lighten(base) : base)
+        : (isDark ? HeroColors.default400 : HeroColors.default600);
+
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
-          color: selected ? base : theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: selected ? base : theme.colorScheme.outlineVariant,
-          ),
+          color: bg,
+          borderRadius: BorderRadius.circular(999),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (icon != null) ...[
-              Icon(icon,
-                  size: 15,
-                  color: selected ? theme.colorScheme.onPrimary : base),
+              Icon(icon, size: 15, color: fg),
               const SizedBox(width: 5),
             ],
             Text(
               label,
               style: TextStyle(
                 fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                color: selected
-                    ? theme.colorScheme.onPrimary
-                    : theme.colorScheme.onSurface,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                color: fg,
               ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  static Color _lighten(Color c) {
+    final hsl = HSLColor.fromColor(c);
+    return hsl.withLightness((hsl.lightness + 0.15).clamp(0.0, 1.0)).toColor();
   }
 }
 

@@ -190,9 +190,40 @@ class ExtensionCoordinator {
   /// Available video streams for an episode (anime sources).
   Future<List<dto.VideoQuality>> videoList(int episodeId) async {
     final (manga, episode) = await _library.resolveChapter(episodeId);
-    if (manga == null || episode == null || manga.sourceId == 0) {
+    if (manga == null || episode == null) return const [];
+
+    // Downloaded episodes — serve the local .ts file instead of the network.
+    if (episode.isDownloaded) {
+      try {
+        final base = await StorageProvider().getDownloadsDir();
+        final f = File('$base/chapters/${manga.id}/$episodeId/$episodeId.ts');
+        if (await f.exists()) {
+          return [
+            dto.VideoQuality('Downloaded', Uri.file(f.path).toString(), 0)
+          ];
+        }
+      } catch (_) {/* fall through */}
+    }
+
+    // Locally imported video (ItemType.anime with a file path, sourceId 0) —
+    // previously unreachable: videoList refused any episode whose manga had
+    // no source, so imported videos could never play.
+    final epUrl = episode.url;
+    if (manga.sourceId == 0 ||
+        epUrl.startsWith('/') ||
+        epUrl.startsWith('file:')) {
+      if (epUrl.isNotEmpty) {
+        return [
+          dto.VideoQuality(
+            'Local file',
+            epUrl.startsWith('file:') ? epUrl : Uri.file(epUrl).toString(),
+            0,
+          )
+        ];
+      }
       return const [];
     }
+
     final service = await _serviceForSourceId(manga.sourceId);
     if (service == null) return const [];
     try {

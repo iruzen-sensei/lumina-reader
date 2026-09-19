@@ -547,6 +547,9 @@ class Settings {
   /// Whether to automatically download new chapters when they are detected.
   bool? downloadAutoNew;
 
+  /// Category ids whose new chapters auto-download. Empty / null = all.
+  List<int>? downloadAutoCategories;
+
   /// Number of new chapters to auto-download per entry. `-1` = all.
   int? downloadAutoNewCount;
 
@@ -1724,6 +1727,7 @@ class Settings {
     this.downloadCover,
     this.downloadChaptersTogether,
     this.downloadAutoNew,
+    this.downloadAutoCategories,
     this.downloadAutoNewCount,
     this.downloadThreads,
     this.downloadMaxSpeed,

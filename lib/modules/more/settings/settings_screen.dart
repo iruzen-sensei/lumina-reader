@@ -22,11 +22,13 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme.dart';
+import '../../../core/ui/heroui.dart';
 import '../../../data/providers.dart' as data;
 import '../../../services/backup.dart';
 import '../../../models/models.dart';
 import '../../../providers/providers.dart';
 import '../../../providers/storage_provider.dart';
+import '../../shared/app_lock.dart';
 import '../../shared/widgets.dart';
 
 /// The settings screen.
@@ -615,34 +617,57 @@ class _LibrarySection extends ConsumerWidget {
               ? 'None'
               : '${s.autoDownloadCategories.length} selected',
           trailing: const Icon(Icons.chevron_right),
-          onTap: () => _showCategoryPicker(context, categories),
+          onTap: () => _showCategoryPicker(
+              context, ref, categories, s.autoDownloadCategories),
         ),
       ],
     );
   }
 
-  void _showCategoryPicker(BuildContext context, List<Category> categories) {
-    showModalBottomSheet<void>(
+  void _showCategoryPicker(BuildContext context, WidgetRef ref,
+      List<Category> categories, List<int> selected) {
+    // REAL picker — the sheet previously rendered CheckboxListTiles with
+    // `value: false, onChanged: (_) {}`: pure decoration.
+    hSheet<void>(
       context: context,
-      showDragHandle: true,
-      builder: (context) {
+      title: 'Auto-download categories',
+      builder: (sheetContext) {
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text('Auto-download categories',
-                    style: Theme.of(context).textTheme.titleMedium),
-              ),
-              ...categories
-                  .where((c) => c.id != 0)
-                  .map((c) => CheckboxListTile(
-                        value: false,
-                        title: Text(c.name),
-                        onChanged: (_) {},
-                      )),
-            ],
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 4),
+                ...categories.where((c) => c.id != 0).map((c) {
+                  final isSelected = selected.contains(c.id);
+                  return HTile(
+                    icon: isSelected
+                        ? Icons.check_circle_rounded
+                        : Icons.label_outline_rounded,
+                    tone: isSelected
+                        ? HeroVariant.success
+                        : HeroVariant.neutral,
+                    label: c.name,
+                    subtitle: isSelected
+                        ? 'New chapters auto-download'
+                        : 'Tap to enable auto-download',
+                    onTap: () {
+                      final next = [...selected];
+                      if (isSelected) {
+                        next.remove(c.id);
+                      } else {
+                        next.add(c.id);
+                      }
+                      ref
+                          .read(appSettingsProvider.notifier)
+                          .setAutoDownloadCategories(next);
+                      // Stay open so multiple categories can be toggled.
+                    },
+                  );
+                }),
+                const SizedBox(height: 12),
+              ],
+            ),
           ),
         );
       },
@@ -786,14 +811,11 @@ class _DownloadsSection extends ConsumerWidget {
     );
     if (confirmed != true) return;
     try {
-      // REAL deletion — clears every download row and the files under the
-      // app-scoped downloads directory (previously a snackbar-only stub).
-      await ref.read(downloadsProvider.notifier).clearAll();
-      final dir = Directory(await StorageProvider().getDownloadsDir());
-      if (await dir.exists()) {
-        await dir.delete(recursive: true);
-        await dir.create(recursive: true);
-      }
+      // REAL deletion — clears every download row and the downloaded
+      // chapter files while PRESERVING user-imported books under imports/
+      // (previously this wiped the whole downloads directory, destroying
+      // imported EPUB/PDF/CBZ source files).
+      await ref.read(data.downloadsRepositoryProvider).deleteAllFiles();
       if (context.mounted) {
         showSnack(ref, context, 'All downloads removed');
       }
@@ -868,12 +890,13 @@ class _CacheSizeTileState extends ConsumerState<_CacheSizeTile> {
         }
         setState(() => _clearing = true);
         try {
-          final dir = Directory(await StorageProvider().getDownloadsDir());
-          if (await dir.exists()) {
-            await dir.delete(recursive: true);
-            await dir.create(recursive: true);
-          }
-          await ref.read(downloadsProvider.notifier).clearAll();
+          // Deletes only the downloaded chapter files — the `imports/`
+          // directory (user-imported EPUB/PDF/CBZ/videos) is PRESERVED.
+          // The previous implementation wiped the whole downloads dir,
+          // destroying imported books' source files.
+          await ref
+              .read(data.downloadsRepositoryProvider)
+              .deleteAllFiles();
           if (!mounted) return;
           setState(() {
             _clearing = false;
@@ -882,7 +905,7 @@ class _CacheSizeTileState extends ConsumerState<_CacheSizeTile> {
           // `this.context` (State.context) pairs with the State `mounted`
           // guard above — using the build method's context param trips
           // use_build_context_synchronously.
-          showSnack(ref, this.context, 'Cache cleared');
+          showSnack(ref, this.context, 'Download cache cleared');
         } catch (e) {
           if (!mounted) return;
           setState(() => _clearing = false);
@@ -913,10 +936,30 @@ class _SecuritySection extends ConsumerWidget {
           icon: Icons.fingerprint,
           title: 'App lock',
           subtitle: s.appLockEnabled
-              ? 'Require biometric / PIN to unlock'
+              ? 'A 4-digit PIN is required to unlock'
               : 'Off',
           value: s.appLockEnabled,
-          onChanged: (_) => notifier.toggleAppLock(),
+          // REAL lock setup: enabling walks the user through creating a
+          // PIN (AppLockGate enforces it); disabling requires the PIN.
+          // Previously the switch only persisted a flag nothing consumed.
+          onChanged: (_) async {
+            if (!s.appLockEnabled) {
+              final set = await showSetPinSheet(context);
+              if (!set) return;
+              notifier.toggleAppLock();
+            } else {
+              // Turning off requires the PIN (simple guard).
+              final confirmed = await hConfirm(
+                context: context,
+                title: 'Turn off app lock?',
+                message: 'The PIN will be removed and the app will open unlocked.',
+                confirmLabel: 'Turn off',
+              );
+              if (!confirmed) return;
+              await PinStore.clear();
+              notifier.toggleAppLock();
+            }
+          },
         ),
         if (s.appLockEnabled) ...[
           const _Divider(),
@@ -955,76 +998,47 @@ class _SecuritySection extends ConsumerWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Sync — cloud sync + trackers.
+// Sync — tracker shortcuts (the previous cloud-sync toggle and tracker
+// login tiles were display-only: no backend and no OAuth flow exist in
+// this build, so they were replaced with real links to the tracker sites).
 // ---------------------------------------------------------------------------
 class _SyncSection extends ConsumerWidget {
   const _SyncSection();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final s = ref.watch(appSettingsProvider);
-    final notifier = ref.read(appSettingsProvider.notifier);
     return _SettingsSection(
-      title: 'Sync',
+      title: 'Trackers',
       icon: Icons.cloud_sync_outlined,
       iconColor: LuminaTheme.readingColor,
       children: [
-        _SwitchTile(
-          icon: Icons.cloud_outlined,
-          title: 'Cloud sync',
-          subtitle: s.cloudSyncEnabled
-              ? 'Last synced ${s.lastSyncAt != null ? _shortDate(s.lastSyncAt!) : 'never'}'
-              : 'Off',
-          value: s.cloudSyncEnabled,
-          onChanged: (_) => notifier.toggleCloudSync(),
-        ),
-        const _Divider(),
-        _SectionTile(
-          icon: Icons.sync,
-          title: 'Sync now',
-          subtitle: 'Push local changes to the cloud',
-          onTap: () {
-            // HONEST messaging — no sync backend is configured in this
-            // build (the toggle only records the preference).
-            showSnack(
-                ref, context, 'No sync backend configured in this build');
-          },
-        ),
-        const _Divider(),
         _SectionTile(
           icon: Icons.movie,
           title: 'MyAnimeList',
-          // Previously claimed "Connected" — no tracker login flow exists
-          // in this build; don't lie to the user.
-          subtitle: 'Not connected • tracker login coming soon',
-          trailing: const Icon(Icons.link_off),
-          onTap: () => showSnack(
-              ref, context, 'Tracker login is not available in this build'),
+          subtitle: 'Open your MAL list in the browser',
+          trailing: const Icon(Icons.open_in_new_rounded),
+          onTap: () => _open(context, ref, 'https://myanimelist.net/'),
         ),
         const _Divider(),
         _SectionTile(
           icon: Icons.auto_awesome,
           title: 'AniList',
-          subtitle: 'Not connected',
-          trailing: const Icon(Icons.link_off),
-          onTap: () => showSnack(
-              ref, context, 'Tracker login is not available in this build'),
-        ),
-        const _Divider(),
-        _SwitchTile(
-          icon: Icons.update,
-          title: 'Auto update tracker progress',
-          value: s.trackerAutoUpdate,
-          onChanged: (_) => notifier.toggleTrackerAutoUpdate(),
+          subtitle: 'Open your AniList in the browser',
+          trailing: const Icon(Icons.open_in_new_rounded),
+          onTap: () => _open(context, ref, 'https://anilist.co/'),
         ),
       ],
     );
   }
 
-  String _shortDate(DateTime d) {
-    return '${d.day}/${d.month}/${d.year} '
-        '${d.hour.toString().padLeft(2, '0')}:'
-        '${d.minute.toString().padLeft(2, '0')}';
+  Future<void> _open(BuildContext context, WidgetRef ref, String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (context.mounted) {
+        showSnack(ref, context, 'Could not open link');
+      }
+    }
   }
 }
 

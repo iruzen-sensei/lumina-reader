@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import 'dart:collection';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -20,6 +21,7 @@ import 'package:flutter_html/flutter_html.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../../data/providers.dart' as data;
 import '../shared/widgets.dart';
 
 // ---------------------------------------------------------------------------
@@ -496,6 +498,8 @@ class NovelReaderView extends ConsumerStatefulWidget {
 class _NovelReaderViewState extends ConsumerState<NovelReaderView> {
   final ScrollController _scrollController = ScrollController();
   NovelChapter? _chapter;
+  bool _fileLoadAttempted = false;
+  String? _fileLoadError;
 
   @override
   void initState() {
@@ -510,7 +514,114 @@ class _NovelReaderViewState extends ConsumerState<NovelReaderView> {
         if (match != null) _setChapter(match, restoreScroll: true);
       });
     }
+    _loadFromFileIfNeeded();
   }
+
+  /// REAL content pipeline for locally imported .txt novels. The reader
+  /// previously depended on `cacheNovelChapters()` — which NOTHING ever
+  /// called — so it rendered its "No chapters loaded" empty state forever.
+  /// Now a .txt import on the Library tab is split into chapters (by
+  /// heading pattern, falling back to fixed-size chunks) and cached.
+  Future<void> _loadFromFileIfNeeded() async {
+    if (_fileLoadAttempted) return;
+    _fileLoadAttempted = true;
+    try {
+      final manga = await ref
+          .read(data.libraryRepositoryProvider)
+          .getManga(widget.novelId);
+      if (manga == null) return;
+      final path = manga.url;
+      if (!path.toLowerCase().endsWith('.txt')) return;
+
+      final text = await File(path).readAsString();
+      if (text.trim().isEmpty) {
+        setState(() => _fileLoadError = 'The imported file is empty.');
+        return;
+      }
+      final chapters = _splitIntoChapters(text, manga.title);
+      cacheNovelChapters(widget.novelId, chapters);
+      if (!mounted) return;
+      setState(() {
+        // Auto-open the first chapter once loaded.
+        _chapter ??= chapters.first;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() =>
+            _fileLoadError = 'Could not load the novel file: $e');
+      }
+    }
+  }
+
+  /// Splits raw novel text into chapters by common heading patterns
+  /// (`Chapter 12`, `CHAPTER XII`, `第12章`); when no headings exist the
+  /// text is chunked into ~2,500-word segments so navigation still works.
+  List<NovelChapter> _splitIntoChapters(String text, String title) {
+    final heading = RegExp(
+      r'^\s*(?:chapter\s+\d+|chapter\s+[ivxlcdm]+|第\s*\d+\s*章|prologue|epilogue)\s*:?.*$',
+      caseSensitive: false,
+      multiLine: true,
+    );
+    final lines = text.split('\n');
+    final found = <int>[];
+    for (var i = 0; i < lines.length; i++) {
+      if (heading.hasMatch(lines[i])) found.add(i);
+    }
+
+    final List<(String, String)> parts;
+    if (found.length >= 2) {
+      parts = [
+        for (var i = 0; i < found.length; i++)
+          (
+            lines[found[i]].trim(),
+            lines
+                .sublist(
+                    found[i],
+                    i + 1 < found.length ? found[i + 1] : lines.length)
+                .join('\n')
+          ),
+      ];
+    } else {
+      // No headings — chunk by word count.
+      final words = text.split(RegExp(r'\s+'));
+      const chunkSize = 2500;
+      parts = [
+        for (var i = 0; i < words.length; i += chunkSize)
+          (
+            'Part ${i ~/ chunkSize + 1}',
+            words
+                .sublist(
+                    i, math.min(i + chunkSize, words.length))
+                .join(' ')
+          ),
+      ];
+    }
+
+    return [
+      for (var i = 0; i < parts.length; i++)
+        NovelChapter(
+          id: i + 1,
+          title: parts[i].$1.length > 80 ? 'Chapter ${i + 1}' : parts[i].$1,
+          html: _toHtml(parts[i].$2),
+          number: (i + 1).toDouble(),
+        ),
+    ];
+  }
+
+  String _toHtml(String raw) {
+    final paragraphs = raw
+        .split(RegExp(r'\n\s*\n'))
+        .map((p) => p.trim())
+        .where((p) => p.isNotEmpty)
+        .map((p) => '<p>${_escape(p)}</p>')
+        .join('');
+    return paragraphs.isEmpty ? '<p></p>' : paragraphs;
+  }
+
+  String _escape(String s) => s
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;');
 
   @override
   void dispose() {
@@ -562,9 +673,11 @@ class _NovelReaderViewState extends ConsumerState<NovelReaderView> {
         body: emptyState(
           context: context,
           icon: Icons.auto_stories_outlined,
-          title: 'No chapters loaded',
-          subtitle: 'Install a novel-capable source and open a chapter '
-              'from its detail page.',
+          title: _fileLoadError ?? 'No chapters loaded',
+          subtitle: _fileLoadError ??
+              'Import a .txt novel from the Library tab (Import button), or '
+              'install a novel-capable source and open a chapter from its '
+              'detail page.',
         ),
       );
     }

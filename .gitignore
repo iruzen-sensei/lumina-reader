@@ -33,3 +33,7 @@ android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
 android/key.properties
 *.jks
 *.keystore
+
+# Linux Isar core binary — fetched on demand for repository tests (CI does
+# this automatically; see .github/workflows/build-android.yml).
+/libisar.so

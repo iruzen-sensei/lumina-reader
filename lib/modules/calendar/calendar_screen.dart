@@ -18,8 +18,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:table_calendar/table_calendar.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme.dart';
+import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../shared/widgets.dart';
@@ -139,7 +141,7 @@ class _TrackerBadge extends StatelessWidget {
           Icon(Icons.auto_awesome, size: 12, color: LuminaTheme.finishedColor),
           SizedBox(width: 4),
           Text(
-            'AniList + MAL',
+            'AniList',
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.bold,
@@ -295,15 +297,15 @@ class _DayHeader extends StatelessWidget {
   }
 }
 
-class _AiringCard extends StatefulWidget {
+class _AiringCard extends ConsumerStatefulWidget {
   const _AiringCard({required this.episode});
   final AiringEpisode episode;
 
   @override
-  State<_AiringCard> createState() => _AiringCardState();
+  ConsumerState<_AiringCard> createState() => _AiringCardState();
 }
 
-class _AiringCardState extends State<_AiringCard> {
+class _AiringCardState extends ConsumerState<_AiringCard> {
   late Timer _timer;
 
   @override
@@ -320,6 +322,25 @@ class _AiringCardState extends State<_AiringCard> {
     super.dispose();
   }
 
+  /// Resolves the calendar entry against the library; when found pushes the
+  /// real anime detail screen, otherwise opens AniList in the browser
+  /// (previously the card pushed /animeDetail/<anilistId> which ALWAYS
+  /// resolved to "Not found" — the library never stored that id).
+  Future<void> _openAnime() async {
+    final e = widget.episode;
+    final repo = ref.read(data.libraryRepositoryProvider);
+    final match = await repo.findByAniListId(e.animeId);
+    if (!mounted) return;
+    if (match != null) {
+      unawaited(context.push('/animeDetail/${match.id}'));
+      return;
+    }
+    final uri = Uri.tryParse('https://anilist.co/anime/${e.animeId}');
+    if (uri != null) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final e = widget.episode;
@@ -330,7 +351,11 @@ class _AiringCardState extends State<_AiringCard> {
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => context.push('/animeDetail/${e.animeId}'),
+        // REAL navigation: resolve the AniList id against the LIBRARY
+        // (previously this pushed /animeDetail/<anilistId>, which always
+        // resolved to "Not found" because the library never stored that
+        // id). Falls back to opening the AniList page in the browser.
+        onTap: () => _openAnime(),
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
@@ -429,17 +454,15 @@ class _AiringCardState extends State<_AiringCard> {
               ),
               const SizedBox(width: 8),
               FilledButton.tonalIcon(
-                onPressed: () => showMessage(
-                    context,
-                    hasAired
-                        ? 'Watch episode ${e.episodeNumber}'
-                        : 'Set reminder'),
+                // REAL action: in-library → open detail; otherwise open the
+                // AniList page in the browser (the previous "Watch" and
+                // "Remind" handlers were snackbar-only stubs — no player
+                // navigation and no notification scheduler existed).
+                onPressed: _openAnime,
                 icon: Icon(
-                    hasAired
-                        ? Icons.play_arrow
-                        : Icons.notifications_active_outlined,
+                    hasAired ? Icons.play_arrow : Icons.open_in_new_rounded,
                     size: 18),
-                label: Text(hasAired ? 'Watch' : 'Remind'),
+                label: Text(hasAired ? 'Watch' : 'AniList'),
               ),
             ],
           ),

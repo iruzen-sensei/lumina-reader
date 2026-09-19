@@ -16,8 +16,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme.dart';
+import '../../core/ui/heroui.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -109,6 +111,12 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
             downloadingAll: _downloadingAll,
             filter: _chapterFilter,
             onFilterChanged: (v) => setState(() => _chapterFilter = v),
+            scanlators: manga.chapters
+                .map((c) => c.scanlator)
+                .whereType<String>()
+                .where((s) => s.trim().isNotEmpty)
+                .toSet()
+                .toList(),
           )),
           _ChapterList(
             manga: manga,
@@ -126,72 +134,108 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   /// Returns the dedicated reader route for imported book files
   /// (epub / pdf / cbz), or null for regular manga/anime entries.
   String? _bookReaderRoute(Manga manga) {
-    if (manga.itemType != ItemType.book) return null;
-    final url = manga.url.toLowerCase();
-    if (url.endsWith('.epub')) return '/epubReader/${manga.id}';
-    if (url.endsWith('.pdf')) return '/pdfReader/${manga.id}';
-    if (url.endsWith('.cbz') || url.endsWith('.zip')) {
-      return '/cbzReader/${manga.id}';
+    if (manga.itemType == ItemType.book) {
+      final url = manga.url.toLowerCase();
+      if (url.endsWith('.epub')) return '/epubReader/${manga.id}';
+      if (url.endsWith('.pdf')) return '/pdfReader/${manga.id}';
+      if (url.endsWith('.cbz') || url.endsWith('.zip')) {
+        return '/cbzReader/${manga.id}';
+      }
+      return null;
+    }
+    // Imported .txt novels open the novel reader.
+    if (manga.itemType == ItemType.novel &&
+        manga.url.toLowerCase().endsWith('.txt')) {
+      return null; // routed per-chapter by _openChapter
     }
     return null;
   }
 
-  void _toggleFavorite(Manga manga) {
-    // Persist through the repository — the library watch stream refreshes
-    // every screen automatically (previously this only mutated a seed copy).
-    ref.read(data.libraryRepositoryProvider).toggleFavorite(manga.id);
-    showSnack(
-      ref,
-      context,
-      !manga.favorite ? 'Added to library' : 'Removed from library',
+  /// REAL remove-from-library with confirmation. Previously this only
+  /// flipped the favorite bit — the snackbar said "Removed from library"
+  /// while the entry stayed on the Library tab forever ("you can't delete
+  /// anything"). The favorite flag is kept for browse items; on the detail
+  /// screen the button now truly deletes the entry (chapters, downloads,
+  /// history, notes) and pops back.
+  Future<void> _toggleFavorite(Manga manga) async {
+    final confirmed = await hConfirm(
+      context: context,
+      title: 'Remove from library?',
+      message:
+          '"${manga.title}" and its chapters, downloads, history and notes will be deleted. This cannot be undone.',
+      confirmLabel: 'Remove',
     );
+    if (!confirmed) return;
+    await ref
+        .read(data.libraryRepositoryProvider)
+        .removeFromLibrary(manga.id);
+    if (mounted) {
+      showSnack(ref, context, 'Removed "${manga.title}" from library');
+      context.pop();
+    }
   }
 
+  /// REAL "Open in browser" lives on the app bar (_DetailAppBar) and the
+  /// track sheet — see _DetailAppBar._openInBrowser.
+
+  /// Track sheet — opens the entry's search page on the tracking sites in
+  /// the browser. In-app tracker sync requires OAuth credentials this build
+  /// does not bundle; deep-linking to the tracker search is the honest,
+  // actually-working replacement for the previous snackbar-only stubs.
   void _showTrackSheet(Manga manga) {
-    showModalBottomSheet<void>(
+    hSheet<void>(
       context: context,
-      showDragHandle: true,
-      builder: (context) {
+      title: 'Track this ${manga.isAnime ? 'anime' : 'manga'}',
+      builder: (sheetContext) {
+        Future<void> open(String url) async {
+          final uri = Uri.tryParse(url);
+          if (uri == null ||
+              !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+            if (sheetContext.mounted) {
+              showSnack(ref, sheetContext, 'Could not open link');
+            }
+          }
+        }
+
+        final encoded = Uri.encodeComponent(manga.title);
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text('Track this ${manga.isAnime ? 'anime' : 'manga'}',
-                    style: Theme.of(context).textTheme.titleMedium),
-              ),
-              ListTile(
-                leading: const CircleAvatar(child: Icon(Icons.movie)),
-                title: const Text('MyAnimeList'),
-                subtitle: const Text('Sync status and progress'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.pop(context);
-                  showSnack(ref, context, 'Opening MyAnimeList…');
-                },
-              ),
-              ListTile(
-                leading: const CircleAvatar(child: Icon(Icons.auto_awesome)),
-                title: const Text('AniList'),
-                subtitle: const Text('Track score and rewatch'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.pop(context);
-                  showSnack(ref, context, 'Opening AniList…');
-                },
-              ),
-              ListTile(
-                leading: const CircleAvatar(child: Icon(Icons.bookmark)),
-                title: const Text('MangaUpdates'),
-                subtitle: const Text('Follow release updates'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.pop(context);
-                  showSnack(ref, context, 'Opening MangaUpdates…');
-                },
-              ),
-            ],
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 4),
+                HTile(
+                  icon: Icons.tv_rounded,
+                  label: 'MyAnimeList',
+                  subtitle: 'Open title page on MAL',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    open('https://myanimelist.net/search/all?q=$encoded');
+                  },
+                ),
+                HTile(
+                  icon: Icons.auto_awesome_rounded,
+                  tone: HeroVariant.secondary,
+                  label: 'AniList',
+                  subtitle: 'Open title page on AniList',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    open('https://anilist.co/search/manga?search=$encoded');
+                  },
+                ),
+                HTile(
+                  icon: Icons.bookmark_rounded,
+                  tone: HeroVariant.success,
+                  label: 'MangaUpdates',
+                  subtitle: 'Follow release updates',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    open('https://www.mangaupdates.com/series.html?search=$encoded');
+                  },
+                ),
+                const SizedBox(height: 12),
+              ],
+            ),
           ),
         );
       },
@@ -210,6 +254,8 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   void _openChapter(Manga manga, Chapter chapter) {
     if (manga.isAnime) {
       context.push('/animePlayer/${chapter.id}');
+    } else if (manga.itemType == ItemType.novel) {
+      context.push('/novelReader/${chapter.id}');
     } else {
       context.push('/reader/${chapter.id}');
     }
@@ -242,6 +288,19 @@ class _DetailAppBar extends ConsumerWidget {
   const _DetailAppBar({required this.manga});
   final Manga manga;
 
+  Future<void> _openInBrowser(BuildContext context, WidgetRef ref) async {
+    final url = manga.url;
+    if (!url.startsWith('http')) {
+      showSnack(ref, context, 'No web page for local items');
+      return;
+    }
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (context.mounted) showSnack(ref, context, 'Could not open browser');
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return SliverAppBar(
@@ -266,7 +325,7 @@ class _DetailAppBar extends ConsumerWidget {
         PopupMenuButton<String>(
           onSelected: (v) {
             if (v == 'open_browser') {
-              showSnack(ref, context, 'Opening in browser…');
+              _openInBrowser(context, ref);
             } else if (v == 'share') {
               SharePlus.instance.share(ShareParams(
                 text: '${manga.title}\n${manga.url}',
@@ -616,6 +675,7 @@ class _ChapterToolbar extends StatelessWidget {
     required this.downloadingAll,
     required this.filter,
     required this.onFilterChanged,
+    required this.scanlators,
   });
 
   final int count;
@@ -628,6 +688,7 @@ class _ChapterToolbar extends StatelessWidget {
   final bool downloadingAll;
   final String? filter;
   final ValueChanged<String?> onFilterChanged;
+  final List<String> scanlators;
 
   @override
   Widget build(BuildContext context) {
@@ -682,8 +743,40 @@ class _ChapterToolbar extends StatelessWidget {
     );
   }
 
+  /// REAL scanlator filter: lists the scanlator groups present in the
+  /// chapter list. Previously this hard-coded the literal 'Lumina Scans'
+  /// (matching nothing) and never opened a sheet.
   void _showFilterSheet(BuildContext context) {
-    onFilterChanged('Lumina Scans');
+    if (scanlators.isEmpty) {
+      onFilterChanged(null);
+      return;
+    }
+    hSheet<void>(
+      context: context,
+      title: 'Filter by group',
+      builder: (sheetContext) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 4),
+                ...scanlators.map((s) => HTile(
+                      icon: Icons.groups_rounded,
+                      tone: HeroVariant.secondary,
+                      label: s,
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        onFilterChanged(s);
+                      },
+                    )),
+                const SizedBox(height: 12),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -731,15 +824,101 @@ class _ChapterList extends ConsumerWidget {
       separatorBuilder: (_, __) => const Divider(height: 1, indent: 56),
       itemBuilder: (context, i) {
         final c = chapters[i];
-        final selected =
-            ref.watch(librarySelectionProvider).contains(c.id);
         return _ChapterTile(
           chapter: c,
           isAnime: manga.isAnime,
-          selected: selected,
           onTap: () => onOpen(c),
-          onLongPress: () =>
-              ref.read(librarySelectionProvider.notifier).toggle(c.id),
+          onLongPress: () => _showChapterMenu(context, ref, manga, c),
+        );
+      },
+    );
+  }
+
+  /// Long-press context menu — previously a long-press toggled the LIBRARY
+  /// selection provider with a chapter id (a no-op on this screen that also
+  /// corrupted the Library tab's selection state). Now it opens the same
+  /// chapter actions Mihon-style apps offer: mark read, bookmark, download
+  /// and delete download.
+  void _showChapterMenu(
+    BuildContext context,
+    WidgetRef ref,
+    Manga manga,
+    Chapter chapter,
+  ) {
+    final repo = ref.read(data.libraryRepositoryProvider);
+    hSheet<void>(
+      context: context,
+      title: chapter.name,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 4),
+                HTile(
+                  icon: chapter.isRead
+                      ? Icons.mark_chat_unread_outlined
+                      : Icons.done_all_rounded,
+                  tone: HeroVariant.primary,
+                  label: chapter.isRead
+                      ? 'Mark as unread'
+                      : 'Mark as read',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    repo.markChapterRead(chapter.id, read: !chapter.isRead);
+                  },
+                ),
+                HTile(
+                  icon: chapter.isBookmarked
+                      ? Icons.bookmark_remove_outlined
+                      : Icons.bookmark_add_outlined,
+                  tone: HeroVariant.secondary,
+                  label: chapter.isBookmarked
+                      ? 'Remove bookmark'
+                      : 'Bookmark',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    ref.read(data.libraryRepositoryProvider).saveChapterProgress(
+                      chapter.id,
+                      isBookmarked: !chapter.isBookmarked,
+                    );
+                  },
+                ),
+                if (!chapter.isDownloaded)
+                  HTile(
+                    icon: Icons.download_rounded,
+                    tone: HeroVariant.success,
+                    label: 'Download',
+                    subtitle: 'Queue via the download engine',
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      if (manga.isAnime) {
+                        ref.read(downloadsProvider.notifier).enqueueEpisode(
+                            manga: manga, chapter: chapter);
+                      } else {
+                        ref.read(downloadsProvider.notifier).enqueueChapter(
+                            manga: manga, chapter: chapter);
+                      }
+                    },
+                  )
+                else
+                  HTile(
+                    icon: Icons.delete_outline_rounded,
+                    tone: HeroVariant.danger,
+                    label: 'Delete download',
+                    subtitle: 'Removes the files from this device',
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      ref
+                          .read(downloadsProvider.notifier)
+                          .deleteChapterFiles(chapter.id);
+                    },
+                  ),
+                const SizedBox(height: 12),
+              ],
+            ),
+          ),
         );
       },
     );
@@ -750,14 +929,12 @@ class _ChapterTile extends StatefulWidget {
   const _ChapterTile({
     required this.chapter,
     required this.isAnime,
-    required this.selected,
     required this.onTap,
     required this.onLongPress,
   });
 
   final Chapter chapter;
   final bool isAnime;
-  final bool selected;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
 
@@ -766,14 +943,6 @@ class _ChapterTile extends StatefulWidget {
 }
 
 class _ChapterTileState extends State<_ChapterTile> {
-  bool _downloading = false;
-  bool _downloaded = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _downloaded = widget.chapter.isDownloaded;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -813,16 +982,13 @@ class _ChapterTileState extends State<_ChapterTile> {
         children: [
           if (c.isBookmarked)
             Icon(Icons.bookmark, color: theme.colorScheme.tertiary, size: 18),
-          IconButton(
-            tooltip: _downloaded ? 'Delete download' : 'Download',
-            icon: _downloadIcon(),
-            onPressed: _toggleDownload,
-          ),
+          if (c.isDownloaded)
+            const Icon(Icons.check_circle,
+                color: LuminaTheme.finishedColor, size: 20),
         ],
       ),
       onTap: widget.onTap,
       onLongPress: widget.onLongPress,
-      selected: widget.selected,
     );
   }
 
@@ -854,32 +1020,4 @@ class _ChapterTileState extends State<_ChapterTile> {
     );
   }
 
-  Widget _downloadIcon() {
-    if (_downloading) {
-      return const SizedBox(
-        width: 18,
-        height: 18,
-        child: CircularProgressIndicator(strokeWidth: 2),
-      );
-    }
-    if (_downloaded) {
-      return const Icon(Icons.check_circle, color: LuminaTheme.finishedColor);
-    }
-    return const Icon(Icons.download_outlined);
-  }
-
-  Future<void> _toggleDownload() async {
-    if (_downloaded) {
-      setState(() => _downloaded = false);
-      return;
-    }
-    setState(() => _downloading = true);
-    await Future.delayed(const Duration(milliseconds: 900));
-    if (mounted) {
-      setState(() {
-        _downloading = false;
-        _downloaded = true;
-      });
-    }
-  }
 }

@@ -80,6 +80,6 @@ class _EpubReaderScreenState extends ConsumerState<EpubReaderScreen> {
         ),
       );
     }
-    return EpubReaderView(path: path, title: _title);
+    return EpubReaderView(path: path, title: _title, mangaId: widget.id);
   }
 }
