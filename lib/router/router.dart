@@ -5,11 +5,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../models/models.dart' show Manga;
 import '../modules/anime/anime_detail_screen.dart';
 import '../modules/anime/player/anime_player_screen.dart';
 import '../modules/anime_library/anime_library_screen.dart';
 import '../modules/browse/browse_screen.dart';
 import '../modules/calendar/calendar_screen.dart';
+import '../modules/cbz/cbz_reader_screen.dart';
 import '../modules/downloads/downloads_screen.dart';
 import '../modules/epub/epub_reader_screen.dart';
 import '../modules/history/history_screen.dart';
@@ -17,6 +19,7 @@ import '../modules/library/library_screen.dart';
 import '../modules/main_view/main_screen.dart';
 import '../modules/manga/manga_detail_screen.dart';
 import '../modules/manga/reader/reader_screen.dart';
+import '../modules/manga/source_manga_detail_screen.dart';
 import '../modules/more/more_screen.dart';
 import '../modules/more/settings/settings_screen.dart';
 import '../modules/notes/notes_screen.dart';
@@ -74,6 +77,19 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) =>
             MangaDetailScreen(id: int.parse(state.pathParameters['id']!)),
       ),
+      // Source catalog preview — a Browse/search result that is NOT yet in
+      // the library. The in-memory Manga DTO travels via `extra` because it
+      // has no persistent id yet (id 0 until "Add to library" persists it).
+      GoRoute(
+        path: '/sourceMangaDetail',
+        name: 'sourceMangaDetail',
+        builder: (context, state) {
+          final extra = state.extra;
+          return SourceMangaDetailScreen(
+            manga: extra is Manga ? extra : null,
+          );
+        },
+      ),
       // Anime detail
       GoRoute(
         path: '/animeDetail/:id',
@@ -111,6 +127,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/pdfReader/:mangaId',
         name: 'pdfReader',
         builder: (context, state) => PdfReaderScreen(
+          id: int.parse(state.pathParameters['mangaId']!),
+        ),
+      ),
+      // CBZ / comic-zip reader — loads the file path from the library entry
+      GoRoute(
+        path: '/cbzReader/:mangaId',
+        name: 'cbzReader',
+        builder: (context, state) => CbzReaderScreen(
           id: int.parse(state.pathParameters['mangaId']!),
         ),
       ),

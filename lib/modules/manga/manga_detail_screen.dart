@@ -124,12 +124,15 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   }
 
   /// Returns the dedicated reader route for imported book files
-  /// (epub / pdf), or null for regular manga/anime entries.
+  /// (epub / pdf / cbz), or null for regular manga/anime entries.
   String? _bookReaderRoute(Manga manga) {
     if (manga.itemType != ItemType.book) return null;
     final url = manga.url.toLowerCase();
     if (url.endsWith('.epub')) return '/epubReader/${manga.id}';
     if (url.endsWith('.pdf')) return '/pdfReader/${manga.id}';
+    if (url.endsWith('.cbz') || url.endsWith('.zip')) {
+      return '/cbzReader/${manga.id}';
+    }
     return null;
   }
 

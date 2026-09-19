@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import 'dart:async' show unawaited;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -21,6 +23,42 @@ import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../shared/widgets.dart';
+
+/// Opens a catalog item discovered in Browse / search.
+///
+/// Browse DTOs are in-memory (`id: 0` — nothing is persisted until the user
+/// commits), so routing to /mangaDetail/<id> always landed on a dead
+/// "Not found" page. This helper first checks whether the entry is already
+/// in the library (matched by source URL, the stable identity): if yes it
+/// opens the full library-backed detail screen, otherwise it opens the
+/// [SourceMangaDetailScreen] preview which can load details, add to library
+/// and start reading.
+///
+/// The router and repository are captured SYNCHRONOUSLY: callers may pop
+/// their own surface (e.g. the global-search bottom sheet) immediately after
+/// invoking this helper, which disposes the calling context — any use of
+/// `context` / `ref` after an await would then throw.
+Future<void> openSourceManga(
+  BuildContext context,
+  WidgetRef ref,
+  Manga manga,
+) async {
+  if (!context.mounted || manga.url.isEmpty) return;
+  final router = GoRouter.of(context);
+  final repo = ref.read(data.libraryRepositoryProvider);
+  try {
+    final existing = await repo.getMangaBySourceUrl(manga.url);
+    if (existing != null) {
+      await router.push('/mangaDetail/${existing.id}');
+    } else {
+      await router.push('/sourceMangaDetail', extra: manga);
+    }
+  } catch (_) {
+    // Library lookup failures must not block browsing — fall through to the
+    // preview screen, which surfaces its own errors.
+    unawaited(router.push('/sourceMangaDetail', extra: manga));
+  }
+}
 
 /// The browse screen.
 ///
@@ -754,7 +792,7 @@ class _SourceGrid extends ConsumerWidget {
                   manga: manga,
                   width: double.infinity,
                   height: double.infinity,
-                  onTap: () => context.push('/mangaDetail/${manga.id}'),
+                  onTap: () => openSourceManga(context, ref, manga),
                 );
               },
               childCount: items.length,
@@ -848,7 +886,7 @@ class _SourceSearchState extends ConsumerState<_SourceSearch> {
                   manga: items[i],
                   width: double.infinity,
                   height: double.infinity,
-                  onTap: () => context.push('/mangaDetail/${items[i].id}'),
+                  onTap: () => openSourceManga(context, ref, items[i]),
                 ),
               );
             },
@@ -950,7 +988,7 @@ class _SourceSearchRow extends ConsumerWidget {
                   manga: items[i],
                   onTap: () {
                     Navigator.pop(context);
-                    context.push('/mangaDetail/${items[i].id}');
+                    openSourceManga(context, ref, items[i]);
                   },
                 ),
               ),
@@ -1032,7 +1070,7 @@ class SourceDetailView extends ConsumerWidget {
               delegate: SliverChildBuilderDelegate(
                 (context, i) => BookCover(
                   manga: items[i],
-                  onTap: () => context.push('/mangaDetail/${items[i].id}'),
+                  onTap: () => openSourceManga(context, ref, items[i]),
                 ),
                 childCount: items.length,
               ),

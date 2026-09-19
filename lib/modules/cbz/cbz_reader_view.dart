@@ -1,0 +1,323 @@
+// Copyright 2024 Lumina Reader Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import 'dart:async' show unawaited;
+import 'dart:io';
+
+import 'package:archive/archive.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+
+/// Comic-archive (CBZ / ZIP) viewer.
+///
+/// Loads the archive, keeps only image entries, sorts them with a NATURAL
+/// ordering (page 2 before page 10 — plain lexicographic sort breaks comic
+/// page sequences with zero-padded and non-padded names mixed) and renders
+/// them in a horizontal PageView with pinch-zoom per page.
+///
+/// Whole-file decode is a deliberate v1 trade-off: comic chapters are
+/// typically 5–60 MB, and archive's ZipDecoder needs the central directory
+/// in memory anyway. Streaming per-entry extraction can come later if users
+/// import library-sized archives.
+class CbzReaderView extends StatefulWidget {
+  const CbzReaderView({super.key, required this.path, required this.title});
+
+  /// Local file path to the .cbz / .zip archive.
+  final String path;
+  final String title;
+
+  @override
+  State<CbzReaderView> createState() => _CbzReaderViewState();
+}
+
+class _CbzReaderViewState extends State<CbzReaderView> {
+  final PageController _controller = PageController();
+
+  /// Decoded page bytes in display order.
+  List<Uint8List> _pages = const [];
+
+  /// Failure reason when the archive could not be opened (not a zip,
+  /// zero images, IO error, ...). Rendered as an actionable error state.
+  String? _error;
+
+  int _index = 0;
+  bool _chromeVisible = false;
+
+  static const Set<String> _imageExtensions = {
+    '.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.bmp',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    WakelockPlus.disable();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final file = File(widget.path);
+      if (!await file.exists()) {
+        throw StateError('File not found: ${widget.path}');
+      }
+      final archive = ZipDecoder().decodeBytes(await file.readAsBytes());
+
+      final entries = <(String, ArchiveFile)>[];
+      for (final entry in archive) {
+        if (entry.isFile) {
+          final name = entry.name.toLowerCase();
+          if (_imageExtensions.any(name.endsWith)) {
+            entries.add((entry.name, entry));
+          }
+        }
+      }
+      if (entries.isEmpty) {
+        throw StateError('No images found inside the archive. '
+            'CBZ files must contain image files (jpg / png / webp).');
+      }
+
+      // Natural sort: split the entry name into digit / non-digit chunks so
+      // "9.jpg" sorts before "10.jpg".
+      entries.sort((a, b) => compareNatural(a.$1, b.$1));
+
+      final pages = <Uint8List>[
+        for (final e in entries)
+          Uint8List.fromList(e.$2.content as List<int>),
+      ];
+
+      if (!mounted) return;
+      setState(() {
+        _pages = pages;
+        _error = null;
+      });
+      unawaited(WakelockPlus.enable());
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Scaffold(
+      backgroundColor: isDark ? Colors.black : const Color(0xFF101010),
+      body: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.light,
+        child: GestureDetector(
+          onTap: () => setState(() => _chromeVisible = !_chromeVisible),
+          child: Stack(
+            children: [
+              _body(),
+              if (_chromeVisible) ..._chrome(context),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _body() {
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.folder_off_outlined,
+                  size: 64, color: Colors.white54),
+              const SizedBox(height: 16),
+              const Text(
+                'Could not open this archive',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style:
+                    const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+              const SizedBox(height: 20),
+              FilledButton.tonal(
+                onPressed: () {
+                  setState(() => _error = null);
+                  _load();
+                },
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (_pages.isEmpty) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      );
+    }
+    return PageView.builder(
+      controller: _controller,
+      itemCount: _pages.length,
+      onPageChanged: (i) => setState(() => _index = i),
+      itemBuilder: (context, i) => InteractiveViewer(
+        maxScale: 5,
+        minScale: 0.8,
+        clipBehavior: Clip.none,
+        child: Center(
+          child: Image.memory(
+            _pages[i],
+            fit: BoxFit.contain,
+            gaplessPlayback: true,
+            errorBuilder: (_, __, ___) => const Icon(
+              Icons.broken_image,
+              size: 56,
+              color: Colors.white38,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _chrome(BuildContext context) {
+    return [
+      // Top bar.
+      Positioned(
+        top: 0,
+        left: 0,
+        right: 0,
+        child: Container(
+          color: Colors.black.withValues(alpha: 0.7),
+          child: SafeArea(
+            bottom: false,
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  onPressed: () => Navigator.maybePop(context),
+                ),
+                Expanded(
+                  child: Text(
+                    widget.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      // Bottom page indicator + slider.
+      Positioned(
+        bottom: 0,
+        left: 0,
+        right: 0,
+        child: Container(
+          color: Colors.black.withValues(alpha: 0.7),
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(
+                children: [
+                  Text(
+                    '${_index + 1} / ${_pages.length}',
+                    style: const TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w600),
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: _pages.isEmpty
+                          ? 0
+                          : _index.toDouble().clamp(0, _pages.length - 1),
+                      max: _pages.isEmpty ? 1 : (_pages.length - 1).toDouble(),
+                      onChanged: (v) {
+                        final page = v.round();
+                        if (page != _index) {
+                          _controller.jumpToPage(page);
+                        }
+                      },
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.chevron_right, color: Colors.white),
+                    onPressed: _index >= _pages.length - 1
+                        ? null
+                        : () => _controller.nextPage(
+                            duration: const Duration(milliseconds: 250),
+                            curve: Curves.easeInOut),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    ];
+  }
+}
+
+/// Natural (human) string ordering: digit chunks compare numerically,
+/// everything else lexicographically. Case-insensitive.
+int compareNatural(String a, String b) {
+  var i = 0;
+  var j = 0;
+  while (i < a.length && j < b.length) {
+    final aDigit = a.codeUnitAt(i) >= 0x30 && a.codeUnitAt(i) <= 0x39;
+    final bDigit = b.codeUnitAt(j) >= 0x30 && b.codeUnitAt(j) <= 0x39;
+    if (aDigit && bDigit) {
+      // Consume full digit runs.
+      var ai = i;
+      while (ai < a.length &&
+          a.codeUnitAt(ai) >= 0x30 &&
+          a.codeUnitAt(ai) <= 0x39) {
+        ai++;
+      }
+      var bj = j;
+      while (bj < b.length &&
+          b.codeUnitAt(bj) >= 0x30 &&
+          b.codeUnitAt(bj) <= 0x39) {
+        bj++;
+      }
+      final aNum = int.tryParse(a.substring(i, ai)) ?? 0;
+      final bNum = int.tryParse(b.substring(j, bj)) ?? 0;
+      if (aNum != bNum) return aNum.compareTo(bNum);
+      i = ai;
+      j = bj;
+    } else {
+      final cmp = a[i].toLowerCase().compareTo(b[j].toLowerCase());
+      if (cmp != 0) return cmp;
+      i++;
+      j++;
+    }
+  }
+  return a.length.compareTo(b.length);
+}

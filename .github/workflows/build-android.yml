@@ -57,9 +57,11 @@ jobs:
       # Quality gate #4: compile smoke test. Runs the whole app library
       # graph through the real Dart kernel compiler — catches package-level
       # compile breaks (e.g. upstream null-safety bugs under newer SDKs)
-      # that `flutter analyze` cannot see.
+      # that `flutter analyze` cannot see. The fixture tests validate the
+      # native extension parsers (Madara HTML + MangaDex JSON) against
+      # captured real-site payloads, network-independent.
       - name: Compile smoke test
-        run: flutter test test/compile_smoke_test.dart test/madara_fixture_test.dart
+        run: flutter test test/compile_smoke_test.dart test/madara_fixture_test.dart test/mangadex_fixture_test.dart
 
       # The keystore MUST exist BEFORE `flutter build apk`: Gradle signs the
       # release build itself (android/app/build.gradle.kts wires the release

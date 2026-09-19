@@ -314,18 +314,43 @@ final novelLibraryProvider =
       ItemType.novel, ref.watch(data.libraryRepositoryProvider)),
 );
 
-/// Filters + sorts the manga library according to [libraryOptionsProvider].
-final filteredMangaProvider = Provider<List<Manga>>((ref) {
-  final all = ref.watch(mangaLibraryProvider);
-  final options = ref.watch(libraryOptionsProvider);
-  return _applyLibraryOptions(all, options);
-});
-
 /// Filters + sorts the anime library according to [libraryOptionsProvider].
 final filteredAnimeProvider = Provider<List<Manga>>((ref) {
   final all = ref.watch(animeLibraryProvider);
   final options = ref.watch(libraryOptionsProvider);
   return _applyLibraryOptions(all, options);
+});
+
+/// Everything the Library tab can show: manga + novels + imported local
+/// books. Previously the tab watched ONLY the manga list, so imported
+/// EPUB/PDF/CBZ files (ItemType.book) silently vanished after import —
+/// the snackbar said "Imported 1 file(s)" and the grid never changed.
+final libraryTabProvider = Provider<List<Manga>>((ref) => [
+      ...ref.watch(mangaLibraryProvider),
+      ...ref.watch(novelLibraryProvider),
+      ...ref.watch(bookLibraryProvider),
+    ]);
+
+/// Filters + sorts the Library tab. Applies the media-type pills
+/// (All / Manga / Novel / Book) on top of [libraryTabProvider] — the pills
+/// were previously rendered but never consumed by any filter logic.
+/// The anime tab deliberately does NOT apply mediaType (it has its own
+/// dedicated screen and always shows ItemType.anime).
+final filteredMangaProvider = Provider<List<Manga>>((ref) {
+  final all = ref.watch(libraryTabProvider);
+  final options = ref.watch(libraryOptionsProvider);
+  var items = _applyLibraryOptions(all, options);
+  final ItemType? mediaFilter = switch (options.mediaType) {
+    LibraryMediaType.all => null,
+    LibraryMediaType.manga => ItemType.manga,
+    LibraryMediaType.anime => ItemType.anime,
+    LibraryMediaType.novel => ItemType.novel,
+    LibraryMediaType.book => ItemType.book,
+  };
+  if (mediaFilter != null) {
+    items = items.where((m) => m.itemType == mediaFilter).toList();
+  }
+  return items;
 });
 
 List<Manga> _applyLibraryOptions(
@@ -1377,6 +1402,25 @@ final extensionCoordinatorProvider = Provider<ExtensionCoordinator>(
     library: ref.watch(data.libraryRepositoryProvider),
   ),
 );
+
+// ---------------------------------------------------------------------------
+// Source manga preview (Browse → detail before library add)
+// ---------------------------------------------------------------------------
+
+/// Full detail + chapters for a catalog entry that is NOT yet in the
+/// library, keyed by `(sourceId, url)` — browse DTOs carry no persistent id
+/// (id 0), which is exactly why this provider exists: previously every
+/// browse tap pushed /mangaDetail/0 and died on "Not found".
+///
+/// The screen seeds the UI from the in-memory browse DTO (instant title +
+/// cover) while this provider fetches the authoritative detail through the
+/// extension coordinator.
+final sourceMangaDetailProvider = FutureProvider.autoDispose
+    .family<Manga, (int, String)>((ref, key) async {
+  final (sourceId, url) = key;
+  final coordinator = ref.watch(extensionCoordinatorProvider);
+  return await coordinator.detail(sourceId, url);
+});
 
 /// The background library-update checker. Not auto-started in this build —
 /// pull-to-refresh on the Library screen runs `runOnce()`; a future

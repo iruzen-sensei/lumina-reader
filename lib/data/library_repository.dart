@@ -52,6 +52,18 @@ class LibraryRepository {
     return map.mangaToDto(m, chapters: m.chapters.toList());
   }
 
+  /// Finds a library entry by its source URL — the stable identity of a
+  /// catalog item across Browse sessions. Used to detect "already in
+  /// library" when the user taps a browse/search result (previously every
+  /// browse item opened a fresh preview because browse DTOs carry id 0).
+  Future<dto.Manga?> getMangaBySourceUrl(String url) async {
+    if (url.isEmpty) return null;
+    final m = await _isar.mangas.filter().sourceUrlEqualTo(url).findFirst();
+    if (m == null) return null;
+    await m.chapters.load();
+    return map.mangaToDto(m, chapters: m.chapters.toList());
+  }
+
   Future<List<dto.Chapter>> getChapters(int mangaId) async {
     final m = await _isar.mangas.get(mangaId);
     if (m == null) return const [];

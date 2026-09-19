@@ -29,7 +29,9 @@ import 'package:lumina_reader/eval/model/m_models.dart';
 import 'package:lumina_reader/services/http/m_client.dart';
 
 class MangaDexSource extends BaseExtensionService {
-  MangaDexSource(super.source);
+  /// Optional injected client (fixture tests). When null a real MClient is
+  /// created lazily — same injection pattern as MadaraSource.
+  MangaDexSource(super.source, {http.Client? client}) : _client = client;
 
   static const String _api = 'https://api.mangadex.org';
   static const String _uploads = 'https://uploads.mangadex.org';

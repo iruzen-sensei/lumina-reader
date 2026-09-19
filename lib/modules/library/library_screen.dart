@@ -169,7 +169,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       await Directory(importsDir).create(recursive: true);
 
       var imported = 0;
-      var skipped = 0;
+      final failures = <String>[];
       for (final path in files.map((f) => f.path).whereType<String>()) {
         final fileName = path.split('/').last;
         final dest = '$importsDir/$fileName';
@@ -178,7 +178,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           await repo.addToLibrary(
             Manga(
               id: 0,
-              title: fileName.replaceFirst(RegExp(r'\.(epub|pdf|cbz|cbr|zip)$', caseSensitive: false), ''),
+              title: fileName.replaceFirst(
+                  RegExp(r'\.(epub|pdf|cbz|cbr|zip)$',
+                      caseSensitive: false),
+                  ''),
               sourceId: 0,
               url: dest,
               itemType: ItemType.book,
@@ -188,19 +191,27 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             ),
           );
           imported++;
-        } catch (_) {
-          skipped++;
+        } catch (e) {
+          failures.add('$fileName: $e');
         }
       }
 
       if (!mounted) return;
-      showSnack(
-        ref,
-        context,
-        skipped > 0
-            ? 'Imported $imported file(s), $skipped failed'
-            : 'Imported $imported file(s)',
-      );
+      // Imported books land on the Library tab under the "Book" media filter
+      // — tell the user where to look, otherwise successful imports look
+      // like silent failures.
+      if (imported > 0) {
+        showSnack(
+          ref,
+          context,
+          'Imported $imported file(s) — visible under '
+          'All / Book filters${failures.isNotEmpty ? ' (${failures.length} failed)' : ''}',
+        );
+      } else if (failures.isNotEmpty) {
+        showSnack(ref, context, 'Import failed: ${failures.first}');
+      } else {
+        showSnack(ref, context, 'No file selected');
+      }
     } catch (e) {
       showSnack(ref, context, 'Import failed: $e');
     }
@@ -860,7 +871,7 @@ class _LibraryListView extends ConsumerWidget {
   }
 }
 
-/// Opens imported book files (epub / pdf) in their dedicated readers;
+/// Opens imported book files (epub / pdf / cbz) in their dedicated readers;
 /// everything else goes to the detail screen. Previously EVERY tap went to
 /// the detail screen, leaving the finished epub/pdf readers unreachable.
 String _routeFor(Manga manga) {
@@ -868,6 +879,9 @@ String _routeFor(Manga manga) {
     final url = manga.url.toLowerCase();
     if (url.endsWith('.epub')) return '/epubReader/${manga.id}';
     if (url.endsWith('.pdf')) return '/pdfReader/${manga.id}';
+    if (url.endsWith('.cbz') || url.endsWith('.zip')) {
+      return '/cbzReader/${manga.id}';
+    }
   }
   return '/mangaDetail/${manga.id}';
 }

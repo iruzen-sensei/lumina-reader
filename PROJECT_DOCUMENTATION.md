@@ -553,6 +553,36 @@ This gives compatibility with 300+ Tachiyomi/Mihon sources, all Mangayomi extens
     - dependency_overrides: image: ^4.0.17 (epubx vs media_kit conflict)
     - Plus 16 more minor version updates
 
+### Bug-fix round (2026-09-19 — "extension content unreachable + imports invisible"):
+
+1. **Browse → detail routing (CRITICAL):** every browse/search tap pushed
+   `/mangaDetail/0` (catalog DTOs are in-memory, id 0, never persisted) and
+   died on "Not found" — the app could show covers but NO content was
+   reachable. Added `SourceMangaDetailScreen` (in-memory preview →
+   `ExtensionCoordinator.detail()` fetch → add-to-library / read actions),
+   the `sourceMangaDetailProvider`, the `/sourceMangaDetail` route, and an
+   `openSourceManga()` helper used by all 4 tap sites that first checks the
+   library by source URL (`getMangaBySourceUrl`) and opens the persisted
+   entry when it already exists.
+2. **Imported files invisible (CRITICAL):** the Library tab watched only the
+   manga list — imported EPUB/PDF/CBZ (ItemType.book) and novels never
+   rendered, so "Import" looked broken while silently succeeding. Added
+   `libraryTabProvider` (manga + novel + book) and wired the media-type
+   filter pills (All/Manga/Anime/Novel/Book) into `filteredMangaProvider`
+   (they were rendered but never consumed before).
+3. **CBZ reader:** new `CbzReaderScreen`/`CbzReaderView` (archive package,
+   natural page ordering, pinch-zoom PageView, page slider) + `/cbzReader`
+   route; library/detail routing now sends .cbz/.zip imports there.
+4. **MangaDex fixture tests:** captured real api.mangadex.org JSON
+   (popular/detail/feed/at-home) and added `test/mangadex_fixture_test.dart`
+   (network-independent, wired into CI gate #4); MangaDexSource gained the
+   same test-client injection pattern as MadaraSource. A live-network
+   variant lives in `test/live_mangadex_test.dart` (manual only — some CI
+   sandboxes block dart:io egress with empty 400s).
+5. **Import error surfacing:** per-file failure reasons now show in the
+   snackbar instead of a silent `skipped` counter, and the success message
+   tells the user where the entry lands (All / Book filters).
+
 ---
 
 ## Known Issues & Limitations
