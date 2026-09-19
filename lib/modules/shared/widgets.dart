@@ -16,19 +16,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme.dart';
-import '../../core/ui/heroui.dart';
+import '../../core/ui/heroui_v3.dart';
 import '../../models/models.dart';
 
-/// A rounded book / anime cover with cached network image, optional unread
-/// badge and a thin reading-progress bar pinned to the bottom.
+/// A book / anime cover card in the HeroUI + Aniyomi/Mangayomi style:
+/// rounded cover on top (unread badge + thin progress bar on the image),
+/// title + metadata lines below it. Pass [showTitle] = false when the
+/// parent already renders the title (list rows).
 class BookCover extends StatelessWidget {
   const BookCover({
     super.key,
     required this.manga,
     this.width = 110,
     this.height = 160,
-    this.radius = 12,
+    this.radius = 14,
     this.showProgress = true,
+    this.showTitle = true,
     this.selected = false,
     this.onLongPress,
     this.onTap,
@@ -39,34 +42,47 @@ class BookCover extends StatelessWidget {
   final double height;
   final double radius;
   final bool showProgress;
+  final bool showTitle;
   final bool selected;
   final VoidCallback? onLongPress;
   final VoidCallback? onTap;
 
+  static const double _titleBlock = 46;
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isAnime = manga.isAnime;
-    return GestureDetector(
+    final h = HeroScope.of(context);
+    // Grid cells pass height = double.infinity — the cover then fills the
+    // remaining space after the title block (Expanded) instead of computing
+    // `infinity - 46` which crashed layout.
+    final hasFixedHeight = height.isFinite;
+    final coverHeight =
+        hasFixedHeight ? (showTitle ? height - _titleBlock : height) : null;
+
+    final cover = _HeroPressable(
       onTap: onTap,
       onLongPress: onLongPress,
+      // StackFit.expand forces the cover Container (and the image chain
+      // inside it) to fill the parent — without it the loose constraints
+      // collapse the unloaded image to 0x0 and covers never appear.
       child: Stack(
+        fit: StackFit.expand,
         children: [
           Container(
             width: width,
-            height: height,
+            height: coverHeight,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(radius),
-              border: selected
-                  ? Border.all(color: theme.colorScheme.primary, width: 3)
-                  : null,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.25),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3),
-                ),
-              ],
+              border: selected ? Border.all(color: h.accent, width: 2.5) : null,
+              boxShadow: h.isDark
+                  ? null
+                  : [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.10),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(radius),
@@ -85,75 +101,53 @@ class BookCover extends StatelessWidget {
                     )
                   else
                     const _CoverPlaceholder(),
-                  const DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Colors.transparent, Colors.black45],
-                        stops: [0.55, 1],
-                      ),
-                    ),
-                  ),
+                  // Unread count badge (HeroUI soft-accent pill).
                   if (manga.unreadCount > 0)
                     Positioned(
                       top: 6,
                       right: 6,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
+                            horizontal: 7, vertical: 2.5),
                         decoration: BoxDecoration(
-                          color: LuminaTheme.newColor,
-                          borderRadius: BorderRadius.circular(20),
+                          color: h.accent,
+                          borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
                           '${manga.unreadCount}',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 11,
-                            fontWeight: FontWeight.bold,
+                            height: 1.2,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ),
                     ),
-                  if (isAnime)
+                  // Anime badge.
+                  if (manga.isAnime)
                     Positioned(
                       top: 6,
                       left: 6,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
+                            horizontal: 6, vertical: 2.5),
                         decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.6),
-                          borderRadius: BorderRadius.circular(4),
+                          color: Colors.black.withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(7),
                         ),
                         child: const Text(
                           'EP',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 10,
-                            fontWeight: FontWeight.bold,
+                            height: 1.2,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ),
                     ),
-                  Positioned(
-                    left: 6,
-                    right: 6,
-                    bottom: showProgress ? 10 : 6,
-                    child: Text(
-                      manga.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        height: 1.15,
-                      ),
-                    ),
-                  ),
-                  if (showProgress)
+                  if (showProgress && manga.progress > 0)
                     Positioned(
                       left: 0,
                       right: 0,
@@ -165,12 +159,12 @@ class BookCover extends StatelessWidget {
                         ),
                         child: LinearProgressIndicator(
                           value: manga.progress,
-                          minHeight: 4,
-                          backgroundColor: Colors.black.withValues(alpha: 0.4),
+                          minHeight: 3.5,
+                          backgroundColor: Colors.black.withValues(alpha: 0.35),
                           valueColor: AlwaysStoppedAnimation(
                             manga.progress >= 1
                                 ? LuminaTheme.finishedColor
-                                : LuminaTheme.readingColor,
+                                : h.accent,
                           ),
                         ),
                       ),
@@ -185,18 +179,108 @@ class BookCover extends StatelessWidget {
               right: 6,
               child: Container(
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.primary,
+                  color: h.accent,
                   shape: BoxShape.circle,
                 ),
-                padding: const EdgeInsets.all(3),
-                child: Icon(
-                  Icons.check,
-                  size: 16,
-                  color: theme.colorScheme.onPrimary,
+                padding: const EdgeInsets.all(3.5),
+                child: const Icon(
+                  Icons.check_rounded,
+                  size: 15,
+                  color: Colors.white,
                 ),
               ),
             ),
         ],
+      ),
+    );
+
+    if (!showTitle) {
+      return SizedBox(
+        width: width,
+        height: hasFixedHeight ? height : null,
+        child: cover,
+      );
+    }
+
+    return SizedBox(
+      width: width,
+      height: hasFixedHeight ? height : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: cover),
+          const SizedBox(height: 7),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 1),
+            child: Text(
+              manga.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: h.foreground,
+                fontSize: 12,
+                height: 1.22,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 1),
+            child: Text(
+              manga.totalChapters > 0
+                  ? (manga.isAnime
+                      ? '${manga.totalChapters} eps'
+                      : '${manga.totalChapters} ch')
+                  : (manga.isAnime ? 'Anime' : 'Manga'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: h.muted,
+                fontSize: 11,
+                height: 1.2,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Wraps a child with HeroUI press feedback (scale 0.97, 250ms smooth).
+class _HeroPressable extends StatefulWidget {
+  const _HeroPressable({required this.child, this.onTap, this.onLongPress});
+
+  final Widget child;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+
+  @override
+  State<_HeroPressable> createState() => _HeroPressableState();
+}
+
+class _HeroPressableState extends State<_HeroPressable> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown:
+          widget.onTap != null ? (_) => setState(() => _pressed = true) : null,
+      onTapUp:
+          widget.onTap != null ? (_) => setState(() => _pressed = false) : null,
+      onTapCancel: () => setState(() => _pressed = false),
+      onTap: widget.onTap,
+      onLongPress: widget.onLongPress,
+      child: AnimatedScale(
+        scale: _pressed ? 0.97 : 1.0,
+        duration:
+            heroAnimationsEnabled ? HeroTokens.motionTransform : Duration.zero,
+        curve: HeroTokens.easeSmooth,
+        child: widget.child,
       ),
     );
   }
@@ -220,6 +304,8 @@ class _CoverPlaceholder extends StatelessWidget {
 }
 
 /// Pill shaped chip used throughout the library / detail screens.
+/// Selected: accent-soft bg + accent fg (HeroUI soft chip). Unselected:
+/// default bg + muted fg.
 class StatusChip extends StatelessWidget {
   const StatusChip({
     super.key,
@@ -238,29 +324,26 @@ class StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // HeroUI "flat chip" look: tinted pill when selected (coloured text on
-    // a soft accent background), neutral zinc pill otherwise — replacing
-    // the previous high-contrast filled chip.
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final base = color ?? theme.colorScheme.primary;
+    final h = HeroScope.of(context);
+    final base = color ?? h.accent;
+
     final bg = selected
-        ? (isDark
-            ? base.withValues(alpha: 0.28)
-            : base.withValues(alpha: 0.14))
-        : (isDark ? HeroColors.darkContent2 : HeroColors.default100);
-    final fg = selected
-        ? (isDark ? _lighten(base) : base)
-        : (isDark ? HeroColors.default400 : HeroColors.default600);
+        ? (h.isDark
+            ? base.withValues(alpha: 0.20)
+            : base.withValues(alpha: 0.12))
+        : h.dflt;
+    final fg = selected ? (h.isDark ? _lighten(base) : _darken(base)) : h.muted;
 
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        duration:
+            heroAnimationsEnabled ? HeroTokens.motionColor : Duration.zero,
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7.5),
         decoration: BoxDecoration(
           color: bg,
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(HeroTokens.radiusChip),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -273,6 +356,7 @@ class StatusChip extends StatelessWidget {
               label,
               style: TextStyle(
                 fontSize: 12.5,
+                height: 1.2,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                 color: fg,
               ),
@@ -285,7 +369,12 @@ class StatusChip extends StatelessWidget {
 
   static Color _lighten(Color c) {
     final hsl = HSLColor.fromColor(c);
-    return hsl.withLightness((hsl.lightness + 0.15).clamp(0.0, 1.0)).toColor();
+    return hsl.withLightness((hsl.lightness + 0.14).clamp(0.0, 1.0)).toColor();
+  }
+
+  static Color _darken(Color c) {
+    final hsl = HSLColor.fromColor(c);
+    return hsl.withLightness((hsl.lightness - 0.06).clamp(0.0, 1.0)).toColor();
   }
 }
 
@@ -329,7 +418,7 @@ String formatDuration(Duration d) {
   return '$m:${s.toString().padLeft(2, '0')}';
 }
 
-/// A helper to build a consistent empty-state widget.
+/// A helper to build a consistent empty-state widget (HeroUI).
 Widget emptyState({
   required BuildContext context,
   required IconData icon,
@@ -337,39 +426,11 @@ Widget emptyState({
   String? subtitle,
   Widget? action,
 }) {
-  final theme = Theme.of(context);
-  return Center(
-    child: Padding(
-      padding: const EdgeInsets.all(32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 72, color: theme.colorScheme.outline),
-          const SizedBox(height: 16),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          if (subtitle != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-          if (action != null) ...[
-            const SizedBox(height: 20),
-            action,
-          ],
-        ],
-      ),
-    ),
+  return HeroEmptyState(
+    icon: icon,
+    title: title,
+    subtitle: subtitle,
+    action: action,
   );
 }
 

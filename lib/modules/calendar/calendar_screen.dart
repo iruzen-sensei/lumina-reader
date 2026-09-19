@@ -20,7 +20,7 @@ import 'package:go_router/go_router.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/theme.dart';
+import '../../core/ui/heroui_v3.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -42,6 +42,7 @@ class CalendarScreen extends ConsumerStatefulWidget {
 class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   @override
   Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
     final selectedDay = ref.watch(calendarSelectedDayProvider);
     final focused = ref.watch(calendarFocusedDayProvider);
     final episodes = ref.watch(airingScheduleProvider(selectedDay));
@@ -51,33 +52,35 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+              padding: const EdgeInsets.fromLTRB(20, 12, 8, 0),
               child: Row(
                 children: [
                   Text(
                     'Airing schedule',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                    style: HeroTokens.titleLarge.copyWith(color: h.foreground),
                   ),
-                  const SizedBox(width: 8),
-                  const _TrackerBadge(),
+                  const SizedBox(width: 10),
+                  // Which tracker feeds the schedule.
+                  const HeroChip(
+                    label: 'AniList',
+                    icon: Icons.auto_awesome_rounded,
+                    small: true,
+                  ),
                   const Spacer(),
-                  IconButton(
+                  HeroIconButton(
                     tooltip: 'Refresh feed',
-                    icon: const Icon(Icons.refresh),
+                    icon: Icons.refresh_rounded,
                     onPressed: () {
                       ref.invalidate(airingScheduleProvider(selectedDay));
                       showSnack(ref, context, 'Airing feed refreshed');
                     },
                   ),
-                  IconButton(
+                  HeroIconButton(
                     tooltip: 'Today',
-                    icon: const Icon(Icons.today),
+                    icon: Icons.today_rounded,
                     onPressed: () {
                       final now = DateTime.now();
-                      ref.read(calendarFocusedDayProvider.notifier).state =
-                          now;
+                      ref.read(calendarFocusedDayProvider.notifier).state = now;
                       ref.read(calendarSelectedDayProvider.notifier).state =
                           now;
                     },
@@ -89,15 +92,14 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               focusedDay: focused,
               selectedDay: selectedDay,
               onDaySelected: (selected, focused) {
-                ref.read(calendarSelectedDayProvider.notifier).state =
-                    selected;
+                ref.read(calendarSelectedDayProvider.notifier).state = selected;
                 ref.read(calendarFocusedDayProvider.notifier).state = focused;
               },
               onPageChanged: (focused) {
                 ref.read(calendarFocusedDayProvider.notifier).state = focused;
               },
             ),
-            const Divider(height: 1),
+            const HeroSeparator(),
             _DayHeader(day: selectedDay),
             Expanded(
               child: episodes.isEmpty
@@ -109,7 +111,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                           'No scheduled releases for this day. Try another date.',
                     )
                   : ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                      // Bottom nav bar clearance.
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
                       itemCount: episodes.length,
                       separatorBuilder: (_, __) => const SizedBox(height: 10),
                       itemBuilder: (context, i) =>
@@ -118,37 +121,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// Small pill that tells the user which tracker feeds the schedule.
-class _TrackerBadge extends StatelessWidget {
-  const _TrackerBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: LuminaTheme.finishedColor.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.auto_awesome, size: 12, color: LuminaTheme.finishedColor),
-          SizedBox(width: 4),
-          Text(
-            'AniList',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              color: LuminaTheme.finishedColor,
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -169,6 +141,7 @@ class _Calendar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
     final now = DateTime.now();
     final firstDay = DateTime(now.year - 1, now.month, now.day);
     final lastDay = DateTime(now.year + 2, now.month, now.day);
@@ -185,31 +158,45 @@ class _Calendar extends ConsumerWidget {
       availableCalendarFormats: const {
         CalendarFormat.month: 'Month',
       },
-      headerStyle: const HeaderStyle(
+      headerStyle: HeaderStyle(
         formatButtonVisible: false,
         titleCentered: true,
-        titleTextStyle: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        titleTextStyle: HeroTokens.body.copyWith(
+          color: h.foreground,
+          fontWeight: FontWeight.w600,
+          fontSize: 15,
+        ),
+        leftChevronIcon: Icon(Icons.chevron_left_rounded, color: h.muted),
+        rightChevronIcon: Icon(Icons.chevron_right_rounded, color: h.muted),
       ),
       calendarStyle: CalendarStyle(
+        // Selected day: accent pill with white text.
         selectedDecoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.primary,
+          color: h.accent,
           shape: BoxShape.circle,
         ),
-        selectedTextStyle: TextStyle(
-          color: Theme.of(context).colorScheme.onPrimary,
-          fontWeight: FontWeight.bold,
+        selectedTextStyle: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w600,
+          fontSize: 14,
         ),
+        // Today: accent ring (no fill).
         todayDecoration: BoxDecoration(
-          color:
-              Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
           shape: BoxShape.circle,
+          border: Border.all(color: h.accent, width: 1.6),
         ),
         todayTextStyle: TextStyle(
-          color: Theme.of(context).colorScheme.primary,
-          fontWeight: FontWeight.bold,
+          color: h.accentSoftFg,
+          fontWeight: FontWeight.w600,
+          fontSize: 14,
         ),
-        markerDecoration: const BoxDecoration(
-          color: LuminaTheme.newColor,
+        // Every other day: muted.
+        defaultTextStyle: TextStyle(color: h.muted, fontSize: 14),
+        weekendTextStyle: TextStyle(color: h.muted, fontSize: 14),
+        outsideTextStyle:
+            TextStyle(color: h.muted.withValues(alpha: 0.5), fontSize: 14),
+        markerDecoration: BoxDecoration(
+          color: h.accent,
           shape: BoxShape.circle,
         ),
         markerSize: 6,
@@ -218,12 +205,12 @@ class _Calendar extends ConsumerWidget {
       eventLoader: (day) => ref.read(airingScheduleProvider(day)),
       daysOfWeekStyle: DaysOfWeekStyle(
         weekdayStyle: TextStyle(
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
+          color: h.muted,
           fontSize: 12,
           fontWeight: FontWeight.w600,
         ),
         weekendStyle: TextStyle(
-          color: Theme.of(context).colorScheme.error,
+          color: h.muted,
           fontSize: 12,
           fontWeight: FontWeight.w600,
         ),
@@ -238,31 +225,21 @@ class _DayHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
       child: Row(
         children: [
           Text(
             _fullDate(day),
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+            style: HeroTokens.title.copyWith(color: h.foreground),
           ),
           const SizedBox(width: 8),
           if (isSameDay(day, DateTime.now()))
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: LuminaTheme.newColor,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Text(
-                'TODAY',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold),
-              ),
+            const HeroChip(
+              label: 'TODAY',
+              small: true,
+              variant: HeroChipVariant.solid,
             ),
         ],
       ),
@@ -343,130 +320,123 @@ class _AiringCardState extends ConsumerState<_AiringCard> {
 
   @override
   Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
     final e = widget.episode;
     final remaining = e.airingAt.difference(DateTime.now());
     final hasAired = remaining.isNegative;
-    final theme = Theme.of(context);
 
-    return Card(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        // REAL navigation: resolve the AniList id against the LIBRARY
-        // (previously this pushed /animeDetail/<anilistId>, which always
-        // resolved to "Not found" because the library never stored that
-        // id). Falls back to opening the AniList page in the browser.
-        onTap: () => _openAnime(),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: SizedBox(
-                  width: 56,
-                  height: 80,
-                  child: e.thumbnailUrl != null
-                      ? Image.network(
-                          e.thumbnailUrl!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            color: theme.colorScheme.surfaceContainerHighest,
-                            child: const Icon(Icons.movie),
-                          ),
-                        )
-                      : Container(
-                          color: theme.colorScheme.surfaceContainerHighest,
-                          child: const Icon(Icons.movie),
-                        ),
+    return HeroCard(
+      padding: const EdgeInsets.all(12),
+      // REAL navigation: resolve the AniList id against the LIBRARY
+      // (previously this pushed /animeDetail/<anilistId>, which always
+      // resolved to "Not found" because the library never stored that
+      // id). Falls back to opening the AniList page in the browser.
+      onTap: () => _openAnime(),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: SizedBox(
+              width: 56,
+              height: 80,
+              child: e.thumbnailUrl != null
+                  ? Image.network(
+                      e.thumbnailUrl!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        color: h.dflt,
+                        child: Icon(Icons.movie_rounded, color: h.muted),
+                      ),
+                    )
+                  : Container(
+                      color: h.dflt,
+                      child: Icon(Icons.movie_rounded, color: h.muted),
+                    ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  e.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: HeroTokens.body.copyWith(
+                    color: h.foreground,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                const SizedBox(height: 5),
+                Row(
                   children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: h.accentSoft,
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                      child: Text(
+                        'EP ${e.episodeNumber}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: h.accentSoftFg,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(Icons.schedule_rounded, size: 13, color: h.muted),
+                    const SizedBox(width: 4),
                     Text(
-                      e.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall
-                          ?.copyWith(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.primaryContainer,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            'EP ${e.episodeNumber}',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: theme.colorScheme.onPrimaryContainer,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Icon(Icons.schedule,
-                            size: 14, color: theme.colorScheme.outline),
-                        const SizedBox(width: 4),
-                        Text(
-                          _airTime(e.airingAt),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Icon(
-                          hasAired
-                              ? Icons.check_circle
-                              : Icons.hourglass_bottom,
-                          size: 14,
-                          color: hasAired
-                              ? LuminaTheme.finishedColor
-                              : LuminaTheme.unreadColor,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          hasAired
-                              ? 'Aired'
-                              : 'In ${formatDuration(remaining)}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: hasAired
-                                ? LuminaTheme.finishedColor
-                                : LuminaTheme.unreadColor,
-                          ),
-                        ),
-                      ],
+                      _airTime(e.airingAt),
+                      style: HeroTokens.caption.copyWith(
+                        color: h.foreground,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton.tonalIcon(
-                // REAL action: in-library → open detail; otherwise open the
-                // AniList page in the browser (the previous "Watch" and
-                // "Remind" handlers were snackbar-only stubs — no player
-                // navigation and no notification scheduler existed).
-                onPressed: _openAnime,
-                icon: Icon(
-                    hasAired ? Icons.play_arrow : Icons.open_in_new_rounded,
-                    size: 18),
-                label: Text(hasAired ? 'Watch' : 'AniList'),
-              ),
-            ],
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Icon(
+                      hasAired
+                          ? Icons.check_circle_rounded
+                          : Icons.hourglass_bottom_rounded,
+                      size: 14,
+                      color: hasAired ? h.success : h.warning,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      hasAired ? 'Aired' : 'In ${formatDuration(remaining)}',
+                      style: HeroTokens.caption.copyWith(
+                        color: hasAired ? h.success : h.warning,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
+          const SizedBox(width: 8),
+          HeroButton(
+            // REAL action: in-library → open detail; otherwise open the
+            // AniList page in the browser (the previous "Watch" and
+            // "Remind" handlers were snackbar-only stubs — no player
+            // navigation and no notification scheduler existed).
+            label: hasAired ? 'Watch' : 'AniList',
+            icon:
+                hasAired ? Icons.play_arrow_rounded : Icons.open_in_new_rounded,
+            size: HeroButtonSize.sm,
+            variant:
+                hasAired ? HeroButtonVariant.solid : HeroButtonVariant.soft,
+            onPressed: _openAnime,
+          ),
+        ],
       ),
     );
   }

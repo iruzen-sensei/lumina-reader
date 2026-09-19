@@ -695,6 +695,86 @@ Linux Isar core binary and runs the suite on every push.
 
 ---
 
+
+### Change Round 5 — Deep Audit + HeroUI v3 Design System (2026-09-20)
+
+**The brief**: audit every component through multiple angles, borrow from the
+open-source reference apps, rebuild the UI on the actual HeroUI design
+language, verify every fix, push.
+
+**Multi-angle audit infrastructure** (new, reusable):
+- `test/golden/golden_harness.dart` — boots the REAL app (router + providers
+  + theme) against a seeded throwaway Isar DB with a fixture HTTP layer, and
+  captures every screen as a PNG. Run:
+  `GOLDEN_UPDATE=1 flutter test test/golden/audit_screens_test.dart --update-goldens`
+  then eyeball / VLM-review `test/golden/goldens/`.
+- `test/golden/flow_test.dart` — real user flows through the real router:
+  library grid → tap cover → detail screen → chapter list → back; media
+  filter segmented control changes the visible set.
+- Known harness constraints (documented in-code): a second `Isar.open` inside
+  one flutter_test isolate deadlocks (single shared instance per binary);
+  fake-async stalls Isar async transactions (providers are pre-warmed inside
+  `runAsync` real-async windows); pixel-compare mode drifts on
+  relative-timestamp screens until a clock abstraction lands.
+
+**Real bugs the audit caught and fixed**:
+1. Browse tab crashed with "Bad state: No element" on EVERY cold start /
+   offline launch — `sources.firstWhere(orElse: () => sources.first)` ran
+   before the empty check.
+2. Browse source strip overflowed by 14px on every device (avatar+label
+   needed 47px inside a 34px content box) — rebuilt as horizontal chips.
+3. BookCover grid sizing crashed with infinite-height constraints
+   (`infinity - 46` in the new title-below layout).
+4. HeroInput double-parented its FocusNode ("child into a parent of itself").
+5. (Test infra) Flutter's `_sharedHttpClient = HttpClient()..autoUncompress =
+   false` threw on the fixture HTTP mock, silently breaking every network
+   image — mock made tolerant; covers now actually render in goldens.
+
+**HeroUI v3 design system** (`lib/core/ui/heroui_v3.dart` — the ONLY design
+system now; the old v2-palette file was deleted):
+- Tokens extracted from HeroUI's official stylesheet (oklch → sRGB): accent
+  #0485F7, success #17C964, warning #F5A524/#F7B750, danger #FF383C/#DB3B3E,
+  light bg #F5F5F5 / dark bg #060607 / surface #18181B, zinc neutrals.
+- Components: HeroButton (solid/soft/bordered/light/ghost × sm/md/lg, loading
+  spinner, press-scale 0.97, 250ms smooth easing), HeroIconButton, HeroChip,
+  HeroCard, HeroSwitch, HeroInput (filled + accent focus ring),
+  HeroSegmented (HeroUI tabs anatomy), HeroSkeleton (shimmer), HeroProgress,
+  HeroListTile, HeroEmptyState, HeroSeparator, HeroAvatar, HeroSectionHeader,
+  showHeroSheet / showHeroDialog / showHeroConfirm.
+- Theme rebuilt on the same tokens (Material components follow: pill
+  buttons, filled inputs, pill tab indicator, nav-bar accent pill).
+
+**Screen redesigns** (logic untouched, presentation rebuilt):
+- Custom HeroUI bottom navigation (surface + hairline, accent-soft pill,
+  press feedback).
+- Library: 3 stacked filter rows collapsed into a segmented control + a
+  Filter sheet (status/sort/direction) with an active-count badge; header
+  with semantic icon actions + Import; FAB clutter removed; covers render
+  title + metadata BELOW the image (Aniyomi/Mangayomi pattern) with accent
+  unread badges.
+- Manga/Anime detail: full-bleed blurred cover backdrop with gradient scrim;
+  info row (cover, titleLarge title, status chip, rating); CTA + library +
+  track action row; synopsis card with Read more; genre chips only when
+  present; chapter list with sort toggle, download-state trailing icons,
+  read-dimmed rows.
+- Browse: HeroSegmented tabs pinned under a restyled source strip; retryable
+  empty states; skeleton loading; HeroInput search; all sheets on
+  showHeroSheet; FABs removed (actions in the app bar).
+- More: profile card with real stats, semantic per-item icons, grouped
+  sections, HeroSwitch preferences.
+- Settings: grouped HeroCards under section headers, HeroSwitch /
+  HeroSegmented / HeroInput controls, danger-gated destructive actions.
+- History / Downloads / Updates / Stats / Notes / Calendar: HeroCard /
+  HeroSectionHeader / HeroListTile / HeroProgress / HeroChip consistent
+  anatomy, grouped sections, state-tinted icon tiles, 96px nav clearance.
+
+**Verification**: `flutter analyze` 0 issues · 22 offline tests green
+(goldens + flows + fixtures + repository + compile smoke; the 2
+live-network tests are sandbox-only exclusions, not run in CI) ·
+`tool/audit.py` no blockers · 16 golden screenshots regenerated and
+VLM-reviewed (library/detail/more/browse scored 7.5–8.5/10 by an
+independent vision-model review, up from "wireframe pushed to production").
+
 ## Known Issues & Limitations
 
 1. **Code not compiled/tested** — 39,000 lines of untested Dart code. Will have compilation errors that need fixing iteratively.

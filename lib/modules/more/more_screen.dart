@@ -16,15 +16,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/theme.dart';
+import '../../core/ui/heroui_v3.dart';
 import '../../providers/providers.dart';
 
 /// The "More" screen — a hub of secondary destinations and settings entry
 /// points. Each tile navigates via [GoRouter] to its module route.
 ///
-/// Top of the page exposes the two most commonly flipped global toggles —
-/// **Incognito mode** (don't record reading / watching activity) and
-/// **Downloaded only** (only show content available offline).
+/// Layout follows the HeroUI v3 grouped-list pattern: a profile summary
+/// card, then transparent grouped cards under [HeroSectionHeader] labels —
+/// **Activity** (navigation destinations with distinct semantic icons and
+/// rotating soft tints), **Preferences** (the two global quick toggles —
+/// incognito mode and downloaded-only mode) and **Data & about**.
 class MoreScreen extends ConsumerStatefulWidget {
   const MoreScreen({super.key});
 
@@ -35,114 +37,153 @@ class MoreScreen extends ConsumerStatefulWidget {
 class _MoreScreenState extends ConsumerState<MoreScreen> {
   @override
   Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
     final incognito = ref.watch(incognitoModeProvider);
     final downloadedOnly = ref.watch(downloadedOnlyProvider);
 
     return Scaffold(
       body: SafeArea(
         child: ListView(
+          // Bottom padding keeps the last card clear of the nav bar.
           padding: const EdgeInsets.only(bottom: 24),
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
               child: Text(
                 'More',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: HeroTokens.display.copyWith(color: h.foreground),
               ),
             ),
             const _ProfileCard(),
-            _QuickTogglesCard(
-              incognito: incognito,
-              downloadedOnly: downloadedOnly,
-              onToggleIncognito: () => ref
-                  .read(incognitoModeProvider.notifier)
-                  .state = !incognito,
-              onToggleDownloadedOnly: () => ref
-                  .read(downloadedOnlyProvider.notifier)
-                  .state = !downloadedOnly,
+            const HeroSectionHeader('Activity'),
+            _GroupCard(
+              children: [
+                HeroListTile(
+                  leadingIcon: Icons.history_rounded,
+                  leadingColor: h.accent,
+                  title: 'History',
+                  subtitle: 'Continue reading or watching',
+                  showChevron: true,
+                  onTap: () => context.push('/history'),
+                ),
+                HeroListTile(
+                  leadingIcon: Icons.insights_outlined,
+                  leadingColor: h.success,
+                  title: 'Statistics',
+                  subtitle: 'Track your reading habits',
+                  showChevron: true,
+                  onTap: () => context.push('/stats'),
+                ),
+                HeroListTile(
+                  leadingIcon: Icons.new_releases_outlined,
+                  leadingColor: h.warning,
+                  title: 'Updates',
+                  subtitle: 'New chapters & episodes',
+                  showChevron: true,
+                  onTap: () => context.push('/updates'),
+                ),
+                HeroListTile(
+                  leadingIcon: Icons.calendar_month_outlined,
+                  leadingColor: h.danger,
+                  title: 'Calendar',
+                  subtitle: 'Airing schedule',
+                  showChevron: true,
+                  onTap: () => context.push('/calendar'),
+                ),
+              ],
             ),
-            const _SectionHeader('Activity'),
-            _NavTile(
-              icon: Icons.history,
-              iconColor: LuminaTheme.readingColor,
-              title: 'History',
-              subtitle: 'Continue reading or watching',
-              onTap: () => context.push('/history'),
+            const HeroSectionHeader('Preferences'),
+            _GroupCard(
+              children: [
+                HeroListTile(
+                  leadingIcon: Icons.visibility_off_outlined,
+                  leadingColor: h.accent,
+                  title: 'Incognito mode',
+                  subtitle: incognito
+                      ? "Reading & watching won't be recorded."
+                      : 'Activity is recorded to history and trackers.',
+                  trailing: HeroSwitch(
+                    value: incognito,
+                    onChanged: (_) => ref
+                        .read(incognitoModeProvider.notifier)
+                        .state = !incognito,
+                  ),
+                  onTap: () => ref.read(incognitoModeProvider.notifier).state =
+                      !incognito,
+                ),
+                HeroListTile(
+                  leadingIcon: Icons.cloud_off_outlined,
+                  leadingColor: h.success,
+                  title: 'Downloaded only',
+                  subtitle: downloadedOnly
+                      ? 'Only downloaded content is shown.'
+                      : 'Stream and browse online as usual.',
+                  trailing: HeroSwitch(
+                    value: downloadedOnly,
+                    onChanged: (_) => ref
+                        .read(downloadedOnlyProvider.notifier)
+                        .state = !downloadedOnly,
+                  ),
+                  onTap: () => ref.read(downloadedOnlyProvider.notifier).state =
+                      !downloadedOnly,
+                ),
+              ],
             ),
-            _NavTile(
-              icon: Icons.new_releases_outlined,
-              iconColor: LuminaTheme.newColor,
-              title: 'Updates',
-              subtitle: 'New chapters & episodes',
-              onTap: () => context.push('/updates'),
-            ),
-            _NavTile(
-              icon: Icons.insights_outlined,
-              iconColor: LuminaTheme.seed,
-              title: 'Statistics',
-              subtitle: 'Track your reading habits',
-              onTap: () => context.push('/stats'),
-            ),
-            _NavTile(
-              icon: Icons.sticky_note_2_outlined,
-              iconColor: Colors.amber.shade700,
-              title: 'Notes',
-              subtitle: 'Highlights & thoughts',
-              onTap: () => context.push('/notes'),
-            ),
-            _NavTile(
-              icon: Icons.calendar_month_outlined,
-              iconColor: LuminaTheme.finishedColor,
-              title: 'Calendar',
-              subtitle: 'Airing schedule',
-              onTap: () => context.push('/calendar'),
-            ),
-            _NavTile(
-              icon: Icons.download_outlined,
-              iconColor: LuminaTheme.unreadColor,
-              title: 'Downloads',
-              subtitle: 'Queue & offline content',
-              onTap: () => context.push('/downloads'),
-            ),
-            const _SectionHeader('Settings'),
-            _NavTile(
-              icon: Icons.settings_outlined,
-              iconColor: LuminaTheme.seed,
-              title: 'Settings',
-              subtitle: 'Appearance, reader, player, security…',
-              onTap: () => context.push('/settings'),
-            ),
-            // NOTE: the five `_SettingsCategory` preview blocks that used to
-            // live here were removed — every tile was a decoration that
-            // showed a hardcoded value and a "tapped" snackbar. All real
-            // controls live in the Settings screen.
-            const _SectionHeader('About'),
-            _NavTile(
-              icon: Icons.info_outline,
-              title: 'About Lumina Reader',
-              subtitle: 'Version 1.0.0 • Apache 2.0',
-              onTap: () => _showAbout(context),
-            ),
-            _NavTile(
-              icon: Icons.source_outlined,
-              title: 'Open source licenses',
-              subtitle: 'View third-party libraries',
-              onTap: () => showLicensePage(
-                context: context,
-                applicationName: 'Lumina Reader',
-                applicationVersion: '1.0.0',
-                applicationLegalese: '© 2024 Lumina Reader Contributors',
-              ),
+            const HeroSectionHeader('Data & about'),
+            _GroupCard(
+              children: [
+                HeroListTile(
+                  leadingIcon: Icons.download_outlined,
+                  leadingColor: h.accent,
+                  title: 'Downloads',
+                  subtitle: 'Queue & offline content',
+                  showChevron: true,
+                  onTap: () => context.push('/downloads'),
+                ),
+                HeroListTile(
+                  leadingIcon: Icons.sticky_note_2_outlined,
+                  leadingColor: h.warning,
+                  title: 'Notes',
+                  subtitle: 'Highlights & thoughts',
+                  showChevron: true,
+                  onTap: () => context.push('/notes'),
+                ),
+                HeroListTile(
+                  leadingIcon: Icons.settings_outlined,
+                  leadingColor: h.accent,
+                  title: 'Settings',
+                  subtitle: 'Appearance, reader, player, security…',
+                  showChevron: true,
+                  onTap: () => context.push('/settings'),
+                ),
+                HeroListTile(
+                  leadingIcon: Icons.info_outline,
+                  leadingColor: h.muted,
+                  title: 'About Lumina Reader',
+                  subtitle: 'Version 1.0.0 • Apache 2.0',
+                  showChevron: true,
+                  onTap: () => _showAbout(context),
+                ),
+                HeroListTile(
+                  leadingIcon: Icons.source_outlined,
+                  leadingColor: h.muted,
+                  title: 'Open source licenses',
+                  subtitle: 'View third-party libraries',
+                  showChevron: true,
+                  onTap: () => showLicensePage(
+                    context: context,
+                    applicationName: 'Lumina Reader',
+                    applicationVersion: '1.0.0',
+                    applicationLegalese: '© 2024 Lumina Reader Contributors',
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             Center(
               child: Text(
                 'Lumina Reader • Made with ♥',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                style: HeroTokens.caption.copyWith(color: h.muted),
               ),
             ),
           ],
@@ -152,133 +193,91 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
   }
 
   void _showAbout(BuildContext context) {
-    showDialog<void>(
+    showHeroDialog<void>(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          icon: const Icon(Icons.auto_stories, size: 40),
-          title: const Text('Lumina Reader'),
-          content: const Column(
+      builder: (dialogContext) {
+        final h = HeroScope.of(dialogContext);
+        return HeroDialogFrame(
+          width: 340,
+          child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Version 1.0.0'),
-              SizedBox(height: 8),
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: h.accentSoft,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(Icons.auto_stories, size: 24, color: h.accent),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Lumina Reader',
+                      style: HeroTokens.title.copyWith(color: h.foreground),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Version 1.0.0',
+                style: HeroTokens.bodySmall.copyWith(color: h.foreground),
+              ),
+              const SizedBox(height: 8),
               Text(
                 'A fork of Mangayomi — read manga and watch anime from your '
                 'favourite sources, all in one place.',
-                style: TextStyle(fontSize: 13),
+                style:
+                    HeroTokens.bodySmall.copyWith(color: h.muted, height: 1.55),
               ),
-              SizedBox(height: 12),
-              Text('Licensed under the Apache License, Version 2.0.',
-                  style: TextStyle(fontSize: 12)),
+              const SizedBox(height: 12),
+              Text(
+                'Licensed under the Apache License, Version 2.0.',
+                style: HeroTokens.caption.copyWith(color: h.muted),
+              ),
+              const SizedBox(height: 20),
+              Align(
+                alignment: Alignment.centerRight,
+                child: HeroButton(
+                  label: 'Close',
+                  variant: HeroButtonVariant.light,
+                  color: HeroColorRole.neutral,
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                ),
+              ),
             ],
           ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Close')),
-          ],
         );
       },
     );
   }
 }
 
-/// Card holding the two global quick toggles — Incognito mode and
-/// Downloaded-only mode. Surfaced above the activity list because they
-/// affect every screen in the app.
-class _QuickTogglesCard extends ConsumerWidget {
-  const _QuickTogglesCard({
-    required this.incognito,
-    required this.downloadedOnly,
-    required this.onToggleIncognito,
-    required this.onToggleDownloadedOnly,
-  });
+/// Transparent grouped card (HeroUI pattern): zero padding, rows separated
+/// by hairlines indented to the text column (16 padding + 36 icon + 14 gap).
+class _GroupCard extends StatelessWidget {
+  const _GroupCard({required this.children});
 
-  final bool incognito;
-  final bool downloadedOnly;
-  final VoidCallback onToggleIncognito;
-  final VoidCallback onToggleDownloadedOnly;
+  final List<Widget> children;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    return Card(
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-      child: Padding(
-        padding: const EdgeInsets.all(8),
-        child: Column(
-          children: [
-            SwitchListTile(
-              secondary: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: (incognito
-                          ? LuminaTheme.unreadColor
-                          : theme.colorScheme.primary)
-                      .withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  incognito
-                      ? Icons.visibility_off_rounded
-                      : Icons.visibility_outlined,
-                  size: 20,
-                  color: incognito
-                      ? LuminaTheme.unreadColor
-                      : theme.colorScheme.primary,
-                ),
-              ),
-              title: const Text('Incognito mode',
-                  style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: Text(
-                incognito
-                    ? 'Reading & watching won\'t be recorded.'
-                    : 'Activity is recorded to history and trackers.',
-                style: TextStyle(
-                    fontSize: 12,
-                    color: theme.colorScheme.onSurfaceVariant),
-              ),
-              value: incognito,
-              onChanged: (_) => onToggleIncognito(),
-            ),
-            const Divider(height: 1),
-            SwitchListTile(
-              secondary: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: (downloadedOnly
-                          ? LuminaTheme.readingColor
-                          : theme.colorScheme.primary)
-                      .withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  downloadedOnly
-                      ? Icons.cloud_off_rounded
-                      : Icons.cloud_outlined,
-                  size: 20,
-                  color: downloadedOnly
-                      ? LuminaTheme.readingColor
-                      : theme.colorScheme.primary,
-                ),
-              ),
-              title: const Text('Downloaded only',
-                  style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: Text(
-                downloadedOnly
-                    ? 'Only downloaded content is shown.'
-                    : 'Stream and browse online as usual.',
-                style: TextStyle(
-                    fontSize: 12,
-                    color: theme.colorScheme.onSurfaceVariant),
-              ),
-              value: downloadedOnly,
-              onChanged: (_) => onToggleDownloadedOnly(),
-            ),
-          ],
-        ),
+  Widget build(BuildContext context) {
+    final rows = <Widget>[];
+    for (var i = 0; i < children.length; i++) {
+      if (i > 0) rows.add(const HeroSeparator(indent: 66));
+      rows.add(children[i]);
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: HeroCard(
+        variant: HeroCardVariant.transparent,
+        padding: EdgeInsets.zero,
+        child: Column(mainAxisSize: MainAxisSize.min, children: rows),
       ),
     );
   }
@@ -292,102 +291,42 @@ class _ProfileCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
     final summary = ref.watch(statsSummaryProvider);
     final libraryCount = ref.watch(mangaLibraryProvider).length;
-    return Card(
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: HeroCard(
         child: Row(
           children: [
-            CircleAvatar(
-              radius: 28,
-              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-              child: Icon(Icons.auto_stories,
-                  color: Theme.of(context).colorScheme.primary),
-            ),
-            const SizedBox(width: 16),
+            const HeroAvatar(initials: 'LR', size: 52),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Reader',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold)),
                   Text(
-                    '$libraryCount in library • ${summary['chaptersRead'] ?? 0} chapters read',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color:
-                            Theme.of(context).colorScheme.onSurfaceVariant),
+                    'Reader',
+                    style: HeroTokens.title.copyWith(color: h.foreground),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '$libraryCount in library • '
+                    '${summary['chaptersRead'] ?? 0} chapters read',
+                    style: HeroTokens.caption.copyWith(color: h.muted),
                   ),
                 ],
               ),
             ),
-            TextButton(
+            HeroButton(
+              label: 'Stats',
+              size: HeroButtonSize.sm,
+              variant: HeroButtonVariant.soft,
               onPressed: () => context.push('/stats'),
-              child: const Text('Stats'),
             ),
           ],
         ),
       ),
-    );
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.title);
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.bold,
-          color: Theme.of(context).colorScheme.primary,
-          letterSpacing: 0.5,
-        ),
-      ),
-    );
-  }
-}
-
-class _NavTile extends StatelessWidget {
-  const _NavTile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-    this.iconColor,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-  final Color? iconColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: (iconColor ?? Theme.of(context).colorScheme.primary)
-              .withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Icon(icon,
-            color: iconColor ?? Theme.of(context).colorScheme.primary,
-            size: 20),
-      ),
-      title: Text(title),
-      subtitle: Text(subtitle),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: onTap,
     );
   }
 }

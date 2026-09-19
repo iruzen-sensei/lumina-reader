@@ -121,8 +121,8 @@ class EpubReaderSettingsNotifier extends StateNotifier<EpubReaderSettings> {
       state = state.copyWith(keepScreenOn: !state.keepScreenOn);
 }
 
-final epubReaderSettingsProvider = StateNotifierProvider<
-    EpubReaderSettingsNotifier, EpubReaderSettings>(
+final epubReaderSettingsProvider =
+    StateNotifierProvider<EpubReaderSettingsNotifier, EpubReaderSettings>(
   (ref) => EpubReaderSettingsNotifier(),
 );
 
@@ -353,8 +353,9 @@ class _EpubReaderViewState extends ConsumerState<EpubReaderView> {
       final id = widget.mangaId;
       if (id != null) {
         try {
-          final (page, total) =
-              await ref.read(data.libraryRepositoryProvider).getBookProgress(id);
+          final (page, total) = await ref
+              .read(data.libraryRepositoryProvider)
+              .getBookProgress(id);
           if (total == chapters.length && page > 1 && page <= chapters.length) {
             resumeChapter = page - 1;
           }
@@ -380,8 +381,7 @@ class _EpubReaderViewState extends ConsumerState<EpubReaderView> {
     if (!_scrollController.hasClients) return;
     final offset = _scrollController.offset;
     final max = _scrollController.position.maxScrollExtent;
-    final progress =
-        max <= 0 ? 0.0 : (offset / max).clamp(0.0, 1.0).toDouble();
+    final progress = max <= 0 ? 0.0 : (offset / max).clamp(0.0, 1.0).toDouble();
     if ((progress - _readingProgress).abs() > 0.01) {
       setState(() => _readingProgress = progress);
       _scheduleProgressSave();
@@ -567,8 +567,8 @@ class _EpubReaderViewState extends ConsumerState<EpubReaderView> {
                   ),
                 ),
                 IconButton(
-                  icon: Icon(Icons.search,
-                      color: settings.background.foreground),
+                  icon:
+                      Icon(Icons.search, color: settings.background.foreground),
                   onPressed: _showSearchSheet,
                 ),
                 IconButton(
@@ -583,12 +583,11 @@ class _EpubReaderViewState extends ConsumerState<EpubReaderView> {
                 ),
                 IconButton(
                   icon: Icon(Icons.list, color: settings.background.foreground),
-                  onPressed: () => setState(
-                      () => _chapterListOpen = !_chapterListOpen),
+                  onPressed: () =>
+                      setState(() => _chapterListOpen = !_chapterListOpen),
                 ),
                 IconButton(
-                  icon: Icon(Icons.tune,
-                      color: settings.background.foreground),
+                  icon: Icon(Icons.tune, color: settings.background.foreground),
                   onPressed: _showSettingsSheet,
                 ),
               ],
@@ -642,8 +641,8 @@ class _EpubReaderViewState extends ConsumerState<EpubReaderView> {
                         value: _readingProgress,
                         onChanged: (v) {
                           if (_scrollController.hasClients) {
-                            final max = _scrollController
-                                .position.maxScrollExtent;
+                            final max =
+                                _scrollController.position.maxScrollExtent;
                             _scrollController.jumpTo(max * v);
                           }
                         },
@@ -692,8 +691,7 @@ class _EpubReaderViewState extends ConsumerState<EpubReaderView> {
                     IconButton(
                       icon: Icon(Icons.close,
                           color: settings.background.foreground),
-                      onPressed: () =>
-                          setState(() => _chapterListOpen = false),
+                      onPressed: () => setState(() => _chapterListOpen = false),
                     ),
                   ],
                 ),
@@ -747,8 +745,7 @@ class _EpubReaderViewState extends ConsumerState<EpubReaderView> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Bookmarks',
-                  style: Theme.of(context).textTheme.titleLarge),
+              Text('Bookmarks', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 12),
               if (_bookmarks.isEmpty)
                 const Padding(
@@ -766,8 +763,7 @@ class _EpubReaderViewState extends ConsumerState<EpubReaderView> {
                         leading: const Icon(Icons.bookmark),
                         title: Text(bm.label),
                         subtitle: Text(
-                          '${bm.createdAt.toLocal()}'
-                          .split('.').first,
+                          '${bm.createdAt.toLocal()}'.split('.').first,
                         ),
                         onTap: () {
                           Navigator.pop(context);
@@ -931,8 +927,8 @@ class _EpubContent extends StatelessWidget {
                     margin: Margins.symmetric(vertical: 12),
                   ),
                   'blockquote': Style(
-                    color: settings.background.foreground
-                        .withValues(alpha: 0.8),
+                    color:
+                        settings.background.foreground.withValues(alpha: 0.8),
                     padding: HtmlPaddings.only(left: 16),
                     border: Border(
                       left: BorderSide(

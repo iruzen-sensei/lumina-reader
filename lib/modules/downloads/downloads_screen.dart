@@ -15,7 +15,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/theme.dart';
+import '../../core/ui/heroui_v3.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../shared/widgets.dart';
@@ -25,7 +25,8 @@ import '../shared/widgets.dart';
 /// Organises [DownloadTask]s across five tabs — All / Downloading / Completed
 /// / Queued / Failed — with per-task pause, resume, cancel and retry actions,
 /// a "clear completed" batch action, and a persistent Wi-Fi-only indicator
-/// that surfaces the current download policy to the user.
+/// that surfaces the current download policy to the user. Inside the active
+/// tab the tasks are grouped by state under HeroUI section headers.
 class DownloadsScreen extends ConsumerWidget {
   const DownloadsScreen({super.key});
 
@@ -76,13 +77,7 @@ class DownloadsScreen extends ConsumerWidget {
                       title: _emptyTitle(tab),
                       subtitle: _emptySubtitle(tab),
                     )
-                  : ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 96),
-                      itemCount: visible.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (context, i) =>
-                          _DownloadCard(task: visible[i]),
-                    ),
+                  : _DownloadsList(tasks: visible),
             ),
             if (downloading.any((t) => t.state == DownloadState.downloading) ||
                 queued.isNotEmpty)
@@ -130,23 +125,21 @@ class _DownloadsHeader extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
     final tasks = ref.watch(downloadsProvider);
     final active =
         tasks.where((t) => t.state == DownloadState.downloading).toList();
     final overallProgress = active.isEmpty
         ? 0.0
-        : active.map((t) => t.progress).reduce((a, b) => a + b) /
-            active.length;
+        : active.map((t) => t.progress).reduce((a, b) => a + b) / active.length;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+      padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
       child: Row(
         children: [
           Text(
             'Downloads',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+            style: HeroTokens.titleLarge.copyWith(color: h.foreground),
           ),
           const SizedBox(width: 12),
           if (active.isNotEmpty)
@@ -154,16 +147,19 @@ class _DownloadsHeader extends ConsumerWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: LinearProgressIndicator(
-                        value: overallProgress,
-                        minHeight: 6,
-                      ),
+                    child: HeroProgress(
+                      value: overallProgress,
+                      height: 6,
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Text('${(overallProgress * 100).round()}%'),
+                  Text(
+                    '${(overallProgress * 100).round()}%',
+                    style: HeroTokens.caption.copyWith(
+                      color: h.muted,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
             )
@@ -230,20 +226,19 @@ class _DownloadsHeader extends ConsumerWidget {
 class _WifiOnlyIndicator extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
     final wifiOnly = ref.watch(wifiOnlyDownloadsProvider);
+    final color = wifiOnly ? h.accent : h.success;
     return Material(
-      color: (wifiOnly ? LuminaTheme.readingColor : LuminaTheme.finishedColor)
-          .withValues(alpha: 0.12),
+      color: wifiOnly ? h.accentSoft : h.successSoft,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         child: Row(
           children: [
             Icon(
-              wifiOnly ? Icons.wifi : Icons.signal_cellular_alt,
+              wifiOnly ? Icons.wifi_rounded : Icons.signal_cellular_alt_rounded,
               size: 18,
-              color: wifiOnly
-                  ? LuminaTheme.readingColor
-                  : LuminaTheme.finishedColor,
+              color: color,
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -251,20 +246,20 @@ class _WifiOnlyIndicator extends ConsumerWidget {
                 wifiOnly
                     ? 'Wi-Fi only — downloads pause on metered networks.'
                     : 'Mobile data allowed — downloads will use any connection.',
-                style: TextStyle(
-                  fontSize: 12,
+                style: HeroTokens.caption.copyWith(
+                  color: color,
                   fontWeight: FontWeight.w600,
-                  color: wifiOnly
-                      ? LuminaTheme.readingColor
-                      : LuminaTheme.finishedColor,
                 ),
               ),
             ),
-            TextButton(
+            HeroButton(
+              label: wifiOnly ? 'Allow mobile' : 'Wi-Fi only',
+              size: HeroButtonSize.sm,
+              variant: HeroButtonVariant.soft,
+              color: wifiOnly ? HeroColorRole.accent : HeroColorRole.success,
               onPressed: () => ref
                   .read(wifiOnlyDownloadsProvider.notifier)
                   .state = !wifiOnly,
-              child: Text(wifiOnly ? 'Allow mobile' : 'Wi-Fi only'),
             ),
           ],
         ),
@@ -292,9 +287,8 @@ class _DownloadsTabs extends ConsumerWidget {
               child: StatusChip(
                 label: '${t.label} (${counts[t] ?? 0})',
                 selected: tab == t,
-                color: _tabColor(t),
-                onTap: () =>
-                    ref.read(downloadsTabProvider.notifier).state = t,
+                color: _tabColor(context, t),
+                onTap: () => ref.read(downloadsTabProvider.notifier).state = t,
               ),
             ),
         ],
@@ -302,19 +296,73 @@ class _DownloadsTabs extends ConsumerWidget {
     );
   }
 
-  Color _tabColor(DownloadsTab t) {
+  Color _tabColor(BuildContext context, DownloadsTab t) {
+    final h = HeroScope.of(context);
     switch (t) {
       case DownloadsTab.all:
-        return LuminaTheme.seed;
+        return h.foreground;
       case DownloadsTab.downloading:
-        return LuminaTheme.readingColor;
+        return h.accent;
       case DownloadsTab.queued:
-        return LuminaTheme.unreadColor;
+        return h.foreground;
       case DownloadsTab.completed:
-        return LuminaTheme.finishedColor;
+        return h.success;
       case DownloadsTab.failed:
-        return LuminaTheme.newColor;
+        return h.danger;
     }
+  }
+}
+
+/// The scrollable body: groups the visible tasks by state under HeroUI
+/// section headers with a count chip per group.
+class _DownloadsList extends StatelessWidget {
+  const _DownloadsList({required this.tasks});
+  final List<DownloadTask> tasks;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = tasks
+        .where((t) =>
+            t.state == DownloadState.downloading ||
+            t.state == DownloadState.paused)
+        .toList();
+    final queued = tasks.where((t) => t.state == DownloadState.queued).toList();
+    final completed =
+        tasks.where((t) => t.state == DownloadState.completed).toList();
+    final failed = tasks.where((t) => t.state == DownloadState.failed).toList();
+    final cancelled =
+        tasks.where((t) => t.state == DownloadState.cancelled).toList();
+
+    final groups = <(String, HeroColorRole, List<DownloadTask>)>[
+      ('Downloading', HeroColorRole.accent, active),
+      ('Queued', HeroColorRole.neutral, queued),
+      ('Completed', HeroColorRole.success, completed),
+      ('Failed', HeroColorRole.danger, failed),
+      ('Cancelled', HeroColorRole.neutral, cancelled),
+    ];
+
+    return ListView(
+      // Bottom nav bar / batch bar clearance.
+      padding: const EdgeInsets.only(bottom: 96),
+      children: [
+        for (final (label, role, items) in groups)
+          if (items.isNotEmpty) ...[
+            HeroSectionHeader(
+              label,
+              trailing: HeroChip(
+                label: '${items.length}',
+                small: true,
+                color: role,
+              ),
+            ),
+            for (final task in items)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                child: _DownloadCard(task: task),
+              ),
+          ],
+      ],
+    );
   }
 }
 
@@ -324,88 +372,111 @@ class _DownloadCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                  child: Icon(
-                    task.isAnime ? Icons.movie : Icons.menu_book,
-                    size: 18,
-                    color: theme.colorScheme.primary,
-                  ),
+    final h = HeroScope.of(context);
+    final (tileBg, tileFg, barColor) = _stateColors(h, task.state);
+
+    return HeroCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: tileBg,
+                  borderRadius: BorderRadius.circular(11),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        task.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleSmall
-                            ?.copyWith(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        task.chapterName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant),
-                      ),
-                    ],
-                  ),
+                child: Icon(
+                  task.isAnime ? Icons.movie_rounded : Icons.menu_book_rounded,
+                  size: 20,
+                  color: tileFg,
                 ),
-                _StateBadge(state: task.state),
-              ],
-            ),
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: LinearProgressIndicator(
-                value:
-                    task.state == DownloadState.completed ? 1 : task.progress,
-                minHeight: 8,
-                backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                valueColor:
-                    AlwaysStoppedAnimation(_progressColor(task.state)),
               ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    _meta(task),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant),
-                  ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      task.chapterName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: HeroTokens.body.copyWith(
+                        color: h.foreground,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      task.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: HeroTokens.caption.copyWith(color: h.muted),
+                    ),
+                  ],
                 ),
-                ..._actions(context, ref),
-              ],
-            ),
-            if (task.state == DownloadState.failed &&
-                task.errorMessage != null) ...[
-              const SizedBox(height: 6),
-              Text(
-                task.errorMessage!,
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.error),
               ),
             ],
+          ),
+          if (task.state == DownloadState.downloading ||
+              task.state == DownloadState.paused) ...[
+            const SizedBox(height: 12),
+            HeroProgress(
+              value: task.progress,
+              height: 6,
+              color: barColor,
+            ),
           ],
-        ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _meta(task),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: HeroTokens.caption.copyWith(color: h.muted),
+                ),
+              ),
+              ..._actions(context, ref),
+            ],
+          ),
+          if (task.state == DownloadState.failed &&
+              task.errorMessage != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              task.errorMessage!,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: HeroTokens.caption.copyWith(color: h.danger),
+            ),
+          ],
+        ],
       ),
     );
+  }
+
+  /// Soft-tinted leading tile colours per download state: accent while
+  /// downloading, warning while paused, neutral while queued, success once
+  /// completed, danger when failed/cancelled.
+  (Color, Color, Color) _stateColors(HeroThemeData h, DownloadState s) {
+    switch (s) {
+      case DownloadState.downloading:
+        return (h.accentSoft, h.accentSoftFg, h.accent);
+      case DownloadState.paused:
+        return (h.warningSoft, h.warningSoftFg, h.warning);
+      case DownloadState.queued:
+        return (h.dflt, h.foreground, h.accent);
+      case DownloadState.completed:
+        return (h.successSoft, h.successSoftFg, h.success);
+      case DownloadState.failed:
+        return (h.dangerSoft, h.dangerSoftFg, h.danger);
+      case DownloadState.cancelled:
+        return (h.dflt, h.muted, h.muted);
+    }
   }
 
   String _meta(DownloadTask t) {
@@ -431,174 +502,153 @@ class _DownloadCard extends ConsumerWidget {
     switch (task.state) {
       case DownloadState.downloading:
         return [
-          IconButton(
+          HeroIconButton(
             tooltip: 'Pause',
-            icon: const Icon(Icons.pause),
+            icon: Icons.pause_rounded,
+            size: 34,
+            iconSize: 19,
+            variant: HeroColorRole.warning,
             onPressed: () => notifier.pause(task.id),
           ),
-          IconButton(
+          HeroIconButton(
             tooltip: 'Cancel',
-            icon: const Icon(Icons.cancel_outlined),
+            icon: Icons.cancel_outlined,
+            size: 34,
+            iconSize: 19,
+            variant: HeroColorRole.danger,
             onPressed: () => notifier.cancel(task.id),
           ),
         ];
       case DownloadState.paused:
         return [
-          IconButton(
+          HeroIconButton(
             tooltip: 'Resume',
-            icon: const Icon(Icons.play_arrow),
+            icon: Icons.play_arrow_rounded,
+            size: 34,
+            iconSize: 19,
+            variant: HeroColorRole.success,
             onPressed: () => notifier.resume(task.id),
           ),
-          IconButton(
+          HeroIconButton(
             tooltip: 'Cancel',
-            icon: const Icon(Icons.cancel_outlined),
+            icon: Icons.cancel_outlined,
+            size: 34,
+            iconSize: 19,
+            variant: HeroColorRole.danger,
             onPressed: () => notifier.cancel(task.id),
           ),
         ];
       case DownloadState.queued:
         return [
-          IconButton(
+          HeroIconButton(
             tooltip: 'Pause',
-            icon: const Icon(Icons.pause),
+            icon: Icons.pause_rounded,
+            size: 34,
+            iconSize: 19,
+            variant: HeroColorRole.warning,
             onPressed: () => notifier.pause(task.id),
           ),
-          IconButton(
+          HeroIconButton(
             tooltip: 'Remove',
-            icon: const Icon(Icons.delete_outline),
+            icon: Icons.delete_outline_rounded,
+            size: 34,
+            iconSize: 19,
+            variant: HeroColorRole.danger,
             onPressed: () => notifier.removeWithFiles(task.id),
           ),
         ];
       case DownloadState.failed:
         return [
-          IconButton(
+          HeroIconButton(
             tooltip: 'Retry',
-            icon: const Icon(Icons.refresh),
+            icon: Icons.refresh_rounded,
+            size: 34,
+            iconSize: 19,
+            variant: HeroColorRole.accent,
             onPressed: () => notifier.retry(task.id),
           ),
-          IconButton(
+          HeroIconButton(
             tooltip: 'Remove',
-            icon: const Icon(Icons.delete_outline),
+            icon: Icons.delete_outline_rounded,
+            size: 34,
+            iconSize: 19,
+            variant: HeroColorRole.danger,
             onPressed: () => notifier.removeWithFiles(task.id),
           ),
         ];
       case DownloadState.completed:
         return [
-          IconButton(
+          HeroIconButton(
             tooltip: 'Remove',
-            icon: const Icon(Icons.delete_outline),
+            icon: Icons.delete_outline_rounded,
+            size: 34,
+            iconSize: 19,
+            variant: HeroColorRole.danger,
             onPressed: () => notifier.removeWithFiles(task.id),
           ),
         ];
       case DownloadState.cancelled:
         return [
-          IconButton(
+          HeroIconButton(
             tooltip: 'Retry',
-            icon: const Icon(Icons.refresh),
+            icon: Icons.refresh_rounded,
+            size: 34,
+            iconSize: 19,
+            variant: HeroColorRole.accent,
             onPressed: () => notifier.retry(task.id),
           ),
-          IconButton(
+          HeroIconButton(
             tooltip: 'Remove',
-            icon: const Icon(Icons.delete_outline),
+            icon: Icons.delete_outline_rounded,
+            size: 34,
+            iconSize: 19,
+            variant: HeroColorRole.danger,
             onPressed: () => notifier.removeWithFiles(task.id),
           ),
         ];
     }
-  }
-
-  Color _progressColor(DownloadState s) {
-    switch (s) {
-      case DownloadState.downloading:
-        return LuminaTheme.readingColor;
-      case DownloadState.completed:
-        return LuminaTheme.finishedColor;
-      case DownloadState.failed:
-        return LuminaTheme.newColor;
-      case DownloadState.paused:
-        return LuminaTheme.unreadColor;
-      default:
-        return LuminaTheme.seed;
-    }
-  }
-}
-
-class _StateBadge extends StatelessWidget {
-  const _StateBadge({required this.state});
-  final DownloadState state;
-
-  @override
-  Widget build(BuildContext context) {
-    final (color, icon) = switch (state) {
-      DownloadState.downloading =>
-        (LuminaTheme.readingColor, Icons.downloading),
-      DownloadState.paused => (LuminaTheme.unreadColor, Icons.pause_circle),
-      DownloadState.queued =>
-        (LuminaTheme.unreadColor, Icons.hourglass_top),
-      DownloadState.completed =>
-        (LuminaTheme.finishedColor, Icons.check_circle),
-      DownloadState.failed => (LuminaTheme.newColor, Icons.error),
-      DownloadState.cancelled => (Colors.grey, Icons.cancel),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: color),
-          const SizedBox(width: 4),
-          Text(
-            state.label,
-            style: TextStyle(
-              color: color,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 
 class _BatchBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
     return SafeArea(
       top: false,
       child: Container(
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainer,
-          border: Border(
-            top: BorderSide(
-              color: Theme.of(context).colorScheme.outlineVariant,
-            ),
-          ),
+          color: h.surface,
+          border: Border(top: BorderSide(color: h.border)),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(
           children: [
             Expanded(
-              child: FilledButton.icon(
+              child: HeroButton(
+                label: 'Pause all',
+                icon: Icons.pause_rounded,
+                variant: HeroButtonVariant.light,
+                color: HeroColorRole.neutral,
+                fullWidth: true,
                 onPressed: () {
                   ref.read(downloadsProvider.notifier).pauseAll();
                   showSnack(ref, context, 'Paused all');
                 },
-                icon: const Icon(Icons.pause),
-                label: const Text('Pause all'),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
             Expanded(
-              child: FilledButton.tonalIcon(
+              child: HeroButton(
+                label: 'Resume all',
+                icon: Icons.play_arrow_rounded,
+                variant: HeroButtonVariant.solid,
+                color: HeroColorRole.accent,
+                fullWidth: true,
                 onPressed: () {
                   ref.read(downloadsProvider.notifier).resumeAll();
                   showSnack(ref, context, 'Resumed all');
                 },
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('Resume all'),
               ),
             ),
           ],

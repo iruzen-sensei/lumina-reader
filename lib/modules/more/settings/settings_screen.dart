@@ -21,8 +21,7 @@ import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../core/theme.dart';
-import '../../../core/ui/heroui.dart';
+import '../../../core/ui/heroui_v3.dart';
 import '../../../data/providers.dart' as data;
 import '../../../services/backup.dart';
 import '../../../models/models.dart';
@@ -33,10 +32,11 @@ import '../../shared/widgets.dart';
 
 /// The settings screen.
 ///
-/// Groups every user-configurable option into ten expandable sections:
-/// Appearance, Reader, Player, Library, Browse, Downloads, Security, Sync,
-/// Backup and About. State is held by the [appSettingsProvider] notifier so
-/// changes propagate to every consumer in the app.
+/// Groups every user-configurable option into HeroUI cards under section
+/// headers: Appearance, Reader, Player, Data (Library / Downloads / Browse /
+/// Backup), Security and About (Trackers / About). State is held by the
+/// [appSettingsProvider] notifier so changes propagate to every consumer in
+/// the app.
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
@@ -52,28 +52,41 @@ class SettingsScreen extends ConsumerWidget {
               automaticallyImplyLeading: false,
               title: Text(
                 'Settings',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: HeroTokens.titleLarge
+                    .copyWith(color: HeroScope.of(context).foreground),
               ),
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => Navigator.maybePop(context),
+              leading: Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: HeroIconButton(
+                  icon: Icons.arrow_back_rounded,
+                  tooltip: 'Back',
+                  onPressed: () => Navigator.maybePop(context),
+                ),
               ),
             ),
             SliverList(
               delegate: SliverChildListDelegate(
                 [
-                  const _AppearanceSection(),
-                  const _ReaderSection(),
-                  const _PlayerSection(),
-                  const _LibrarySection(),
-                  const _BrowseSection(),
-                  const _DownloadsSection(),
-                  const _SecuritySection(),
-                  const _SyncSection(),
-                  const _BackupSection(),
-                  const _AboutSection(),
+                  const HeroSectionHeader('Appearance'),
+                  const _AppearanceCard(),
+                  const HeroSectionHeader('Reader'),
+                  const _ReaderCard(),
+                  const HeroSectionHeader('Player'),
+                  const _PlayerCard(),
+                  const HeroSectionHeader('Data'),
+                  const _LibraryCard(),
+                  const SizedBox(height: 10),
+                  const _DownloadsCard(),
+                  const SizedBox(height: 10),
+                  const _BrowseCard(),
+                  const SizedBox(height: 10),
+                  const _BackupCard(),
+                  const HeroSectionHeader('Security'),
+                  const _SecurityCard(),
+                  const HeroSectionHeader('About'),
+                  const _TrackersCard(),
+                  const SizedBox(height: 10),
+                  const _AboutCard(),
                   const SizedBox(height: 32),
                 ],
               ),
@@ -86,65 +99,191 @@ class SettingsScreen extends ConsumerWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Section scaffolding
+// Section scaffolding — a surface card of rows separated by hairlines.
 // ---------------------------------------------------------------------------
 
-class _SettingsSection extends StatefulWidget {
-  const _SettingsSection({
-    required this.title,
-    required this.icon,
-    required this.iconColor,
-    required this.children,
-    this.initiallyExpanded = false,
-  });
+/// Grouped settings card: rows separated by [HeroSeparator]s indented to the
+/// text column (16 padding + 36 icon + 14 gap).
+class _SettingsGroupCard extends StatelessWidget {
+  const _SettingsGroupCard({required this.children});
 
-  final String title;
-  final IconData icon;
-  final Color iconColor;
   final List<Widget> children;
-  final bool initiallyExpanded;
-
-  @override
-  State<_SettingsSection> createState() => _SettingsSectionState();
-}
-
-class _SettingsSectionState extends State<_SettingsSection> {
-  late bool _expanded = widget.initiallyExpanded;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: Column(
-        children: [
-          ListTile(
-            leading: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: widget.iconColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child:
-                  Icon(widget.icon, color: widget.iconColor, size: 20),
-            ),
-            title: Text(widget.title,
-                style: const TextStyle(fontWeight: FontWeight.w600)),
-            trailing: AnimatedRotation(
-              turns: _expanded ? 0.25 : 0,
-              duration: const Duration(milliseconds: 180),
-              child: const Icon(Icons.chevron_right),
-            ),
-            onTap: () => setState(() => _expanded = !_expanded),
+    final rows = <Widget>[];
+    for (var i = 0; i < children.length; i++) {
+      if (i > 0) rows.add(const HeroSeparator(indent: 66));
+      rows.add(children[i]);
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: HeroCard(
+        padding: EdgeInsets.zero,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(HeroTokens.radiusCard),
+          child: Column(mainAxisSize: MainAxisSize.min, children: rows),
+        ),
+      ),
+    );
+  }
+}
+
+/// Row with a leading icon, title, subtitle and a [HeroSwitch] trailing.
+/// Tapping anywhere on the row flips the switch (switch ON = active).
+class _SwitchSettingTile extends StatelessWidget {
+  const _SwitchSettingTile({
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    required this.value,
+    required this.onChanged,
+    this.leadingColor,
+  });
+
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final Color? leadingColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return HeroListTile(
+      leadingIcon: icon,
+      leadingColor: leadingColor,
+      title: title,
+      subtitle: subtitle,
+      trailing: HeroSwitch(value: value, onChanged: onChanged),
+      onTap: () => onChanged(!value),
+    );
+  }
+}
+
+/// Row with a leading icon, title, optional subtitle + trailing widget, and
+/// a full-width [HeroSegmented] control beneath it (for 2-4 way choices).
+class _SegmentedSettingTile<T> extends StatelessWidget {
+  const _SegmentedSettingTile({
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    required this.segments,
+    required this.selected,
+    required this.onChanged,
+    this.trailing,
+    this.leadingColor,
+  });
+
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final List<(T, String, IconData?)> segments;
+  final T selected;
+  final ValueChanged<T> onChanged;
+  final Widget? trailing;
+  final Color? leadingColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        HeroListTile(
+          leadingIcon: icon,
+          leadingColor: leadingColor,
+          title: title,
+          subtitle: subtitle,
+          trailing: trailing,
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+          child: HeroSegmented<T>(
+            segments: segments,
+            selected: selected,
+            onChanged: onChanged,
+            expand: true,
           ),
-          AnimatedCrossFade(
-            duration: const Duration(milliseconds: 180),
-            crossFadeState: _expanded
-                ? CrossFadeState.showSecond
-                : CrossFadeState.showFirst,
-            firstChild: const SizedBox.shrink(),
-            secondChild: Padding(
-              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-              child: Column(children: widget.children),
+        ),
+      ],
+    );
+  }
+}
+
+/// Row with a leading icon, title, value label and a slider beneath it.
+class _SliderSettingTile extends StatelessWidget {
+  const _SliderSettingTile({
+    required this.icon,
+    required this.title,
+    required this.valueLabel,
+    required this.min,
+    required this.max,
+    required this.divisions,
+    required this.value,
+    required this.onChanged,
+    this.leadingColor,
+  });
+
+  final IconData icon;
+  final String title;
+  final String valueLabel;
+  final double min;
+  final double max;
+  final int divisions;
+  final double value;
+  final ValueChanged<double> onChanged;
+  final Color? leadingColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
+    final tint = leadingColor ?? h.accent;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: tint.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: Icon(icon, size: 19, color: tint),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: HeroTokens.body.copyWith(
+                      color: h.foreground,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                Text(
+                  valueLabel,
+                  style: HeroTokens.caption.copyWith(color: h.muted),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 36,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Slider(
+                min: min,
+                max: max,
+                divisions: divisions,
+                value: value,
+                onChanged: onChanged,
+              ),
             ),
           ),
         ],
@@ -153,93 +292,34 @@ class _SettingsSectionState extends State<_SettingsSection> {
   }
 }
 
-class _SectionTile extends StatelessWidget {
-  const _SectionTile({
-    required this.icon,
-    required this.title,
-    this.subtitle,
-    this.trailing,
-    this.onTap,
-  });
-
-  final IconData icon;
-  final String title;
-  final String? subtitle;
-  final Widget? trailing;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(icon, size: 22, color: Theme.of(context).colorScheme.primary),
-      title: Text(title),
-      subtitle: subtitle != null ? Text(subtitle!) : null,
-      trailing: trailing,
-      onTap: onTap,
-    );
-  }
-}
-
-class _SwitchTile extends StatelessWidget {
-  const _SwitchTile({
-    required this.icon,
-    required this.title,
-    this.subtitle,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final IconData icon;
-  final String title;
-  final String? subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return SwitchListTile(
-      secondary: Icon(icon, color: Theme.of(context).colorScheme.primary),
-      title: Text(title),
-      subtitle: subtitle != null ? Text(subtitle!) : null,
-      value: value,
-      onChanged: onChanged,
-    );
-  }
-}
-
-class _Divider extends StatelessWidget {
-  const _Divider();
-  @override
-  Widget build(BuildContext context) =>
-      const Divider(height: 1, indent: 56, endIndent: 8);
-}
-
 // ---------------------------------------------------------------------------
 // Appearance — theme, font, e-ink mode, custom colours.
 // ---------------------------------------------------------------------------
-class _AppearanceSection extends ConsumerWidget {
-  const _AppearanceSection();
+class _AppearanceCard extends ConsumerWidget {
+  const _AppearanceCard();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
     final s = ref.watch(appSettingsProvider);
     final notifier = ref.read(appSettingsProvider.notifier);
 
-    return _SettingsSection(
-      title: 'Appearance',
-      icon: Icons.palette_outlined,
-      iconColor: LuminaTheme.seed,
-      initiallyExpanded: true,
+    return _SettingsGroupCard(
       children: [
-        _SectionTile(
+        _SegmentedSettingTile<AppThemeMode>(
           icon: Icons.brightness_6_outlined,
           title: 'Theme',
           subtitle: s.themeMode.label,
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => _showThemePicker(context, s.themeMode, notifier.setThemeMode),
+          segments: const [
+            (AppThemeMode.system, 'Auto', null),
+            (AppThemeMode.light, 'Light', null),
+            (AppThemeMode.dark, 'Dark', null),
+            (AppThemeMode.amoled, 'Black', null),
+          ],
+          selected: s.themeMode,
+          onChanged: notifier.setThemeMode,
         ),
-        const _Divider(),
-        _SwitchTile(
+        _SwitchSettingTile(
           icon: Icons.auto_awesome_outlined,
           title: 'Dynamic colour (Material You)',
           subtitle: s.useDynamicColor
@@ -248,38 +328,35 @@ class _AppearanceSection extends ConsumerWidget {
           value: s.useDynamicColor,
           onChanged: (_) => notifier.toggleDynamicColor(),
         ),
-        const _Divider(),
-        _SwitchTile(
+        _SwitchSettingTile(
           icon: Icons.e_mobiledata_outlined,
           title: 'E-ink mode',
           subtitle: 'High-contrast, no gradients — friendly to e-readers',
           value: s.einkMode,
           onChanged: (_) => notifier.toggleEinkMode(),
         ),
-        const _Divider(),
-        _SectionTile(
+        _SliderSettingTile(
           icon: Icons.text_fields,
           title: 'Font size',
-          subtitle: '${s.fontSize.round()} pt',
-          trailing: SizedBox(
-            width: 140,
-            child: Slider(
-              min: 10,
-              max: 24,
-              divisions: 14,
-              value: s.fontSize,
-              onChanged: notifier.setFontSize,
-            ),
-          ),
+          valueLabel: '${s.fontSize.round()} pt',
+          min: 10,
+          max: 24,
+          divisions: 14,
+          value: s.fontSize,
+          onChanged: notifier.setFontSize,
         ),
-        const _Divider(),
-        _SectionTile(
-          icon: Icons.format_color_fill_outlined,
+        HeroListTile(
+          leadingIcon: Icons.format_color_fill_outlined,
           title: 'Brand colour',
           subtitle: '#${_hex(s.customSeed)}',
-          trailing: CircleAvatar(
-            radius: 14,
-            backgroundColor: s.customSeed,
+          trailing: Container(
+            width: 26,
+            height: 26,
+            decoration: BoxDecoration(
+              color: s.customSeed,
+              shape: BoxShape.circle,
+              border: Border.all(color: h.border),
+            ),
           ),
           onTap: () => _showColorPicker(context, s.customSeed, (c) {
             notifier.setCustomSeed(c);
@@ -297,37 +374,51 @@ class _AppearanceSection extends ConsumerWidget {
     // 0..1 double components (wide-gamut support).
     int channel(double v) => (v * 255.0).round().clamp(0, 255).toInt();
     return '${channel(c.r).toRadixString(16).padLeft(2, '0')}'
-        '${channel(c.g).toRadixString(16).padLeft(2, '0')}'
-        '${channel(c.b).toRadixString(16).padLeft(2, '0')}'.toUpperCase();
+            '${channel(c.g).toRadixString(16).padLeft(2, '0')}'
+            '${channel(c.b).toRadixString(16).padLeft(2, '0')}'
+        .toUpperCase();
   }
 
-  void _showThemePicker(BuildContext context, AppThemeMode current,
-      ValueChanged<AppThemeMode> onPick) {
-    showModalBottomSheet<void>(
+  Future<void> _showColorPicker(
+      BuildContext context, Color current, ValueChanged<Color> onPick) {
+    final palette = [
+      HeroTokens.accent,
+      HeroTokens.success,
+      HeroTokens.warningLight,
+      HeroTokens.dangerLight,
+      const Color(0xFF00897B),
+      const Color(0xFF6D4C41),
+      const Color(0xFF455A64),
+    ];
+    return showHeroSheet<void>(
       context: context,
-      showDragHandle: true,
-      builder: (context) {
+      title: 'Brand colour',
+      builder: (sheetContext) {
+        final h = HeroScope.of(sheetContext);
         return SafeArea(
-          // Flutter 3.32+: selection state lives on the RadioGroup.
-          child: RadioGroup<AppThemeMode>(
-            groupValue: current,
-            onChanged: (v) {
-              if (v == null) return;
-              onPick(v);
-              Navigator.pop(context);
-            },
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+            child: Wrap(
+              spacing: 14,
+              runSpacing: 14,
               children: [
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text('Theme',
-                      style: Theme.of(context).textTheme.titleMedium),
-                ),
-                for (final m in AppThemeMode.values)
-                  RadioListTile<AppThemeMode>(
-                    value: m,
-                    title: Text(m.label),
+                for (final c in palette)
+                  GestureDetector(
+                    onTap: () {
+                      onPick(c);
+                      Navigator.pop(sheetContext);
+                    },
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: c,
+                        shape: BoxShape.circle,
+                        border: c == current
+                            ? Border.all(color: h.foreground, width: 3)
+                            : null,
+                      ),
+                    ),
                   ),
               ],
             ),
@@ -336,138 +427,80 @@ class _AppearanceSection extends ConsumerWidget {
       },
     );
   }
-
-  void _showColorPicker(
-      BuildContext context, Color current, ValueChanged<Color> onPick) {
-    final palette = [
-      LuminaTheme.seed,
-      LuminaTheme.readingColor,
-      LuminaTheme.finishedColor,
-      LuminaTheme.unreadColor,
-      LuminaTheme.newColor,
-      const Color(0xFF00897B),
-      const Color(0xFF6D4C41),
-      const Color(0xFF455A64),
-    ];
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Wrap(
-              spacing: 14,
-              runSpacing: 14,
-              children: palette
-                  .map((c) => GestureDetector(
-                        onTap: () {
-                          onPick(c);
-                          Navigator.pop(context);
-                        },
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: c,
-                            shape: BoxShape.circle,
-                            border: c == current
-                                ? Border.all(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurface,
-                                    width: 3)
-                                : null,
-                          ),
-                        ),
-                      ))
-                  .toList(),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
 }
 
 // ---------------------------------------------------------------------------
 // Reader — manga reader settings.
 // ---------------------------------------------------------------------------
-class _ReaderSection extends ConsumerWidget {
-  const _ReaderSection();
+class _ReaderCard extends ConsumerWidget {
+  const _ReaderCard();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
     final s = ref.watch(appSettingsProvider);
     final notifier = ref.read(appSettingsProvider.notifier);
-    return _SettingsSection(
-      title: 'Reader',
-      icon: Icons.menu_book_outlined,
-      iconColor: LuminaTheme.readingColor,
+    return _SettingsGroupCard(
       children: [
-        _SectionTile(
+        _SegmentedSettingTile<ReaderMode>(
           icon: Icons.auto_stories_outlined,
           title: 'Default reading mode',
           subtitle: _readerModeLabel(s.defaultReaderMode),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => _showPicker<ReaderMode>(
-            context,
-            title: 'Reading mode',
-            values: ReaderMode.values,
-            current: s.defaultReaderMode,
-            labelOf: _readerModeLabel,
-            onPick: notifier.setReaderMode,
-          ),
+          segments: const [
+            (ReaderMode.paged, 'Paged', null),
+            (ReaderMode.continuous, 'Vertical', null),
+            (ReaderMode.webtoon, 'Webtoon', null),
+          ],
+          selected: s.defaultReaderMode,
+          onChanged: notifier.setReaderMode,
         ),
-        const _Divider(),
-        _SectionTile(
+        _SegmentedSettingTile<ReaderDirection>(
           icon: Icons.swap_horiz,
           title: 'Reading direction',
           subtitle: _readerDirectionLabel(s.defaultReaderDirection),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => _showPicker<ReaderDirection>(
-            context,
-            title: 'Reading direction',
-            values: ReaderDirection.values,
-            current: s.defaultReaderDirection,
-            labelOf: _readerDirectionLabel,
-            onPick: notifier.setReaderDirection,
-          ),
+          segments: const [
+            (ReaderDirection.leftToRight, 'LTR', null),
+            (ReaderDirection.rightToLeft, 'RTL', null),
+            (ReaderDirection.vertical, 'Vertical', null),
+          ],
+          selected: s.defaultReaderDirection,
+          onChanged: notifier.setReaderDirection,
         ),
-        const _Divider(),
-        _SectionTile(
+        _SegmentedSettingTile<ReaderBgColor>(
           icon: Icons.color_lens_outlined,
           title: 'Reader background',
-          subtitle: s.readerBgColor.label,
-          trailing: CircleAvatar(
-              radius: 12, backgroundColor: s.readerBgColor.color),
-          onTap: () => _showPicker<ReaderBgColor>(
-            context,
-            title: 'Reader background',
-            values: ReaderBgColor.values,
-            current: s.readerBgColor,
-            labelOf: (c) => c.label,
-            onPick: notifier.setReaderBg,
+          segments: const [
+            (ReaderBgColor.black, 'Black', null),
+            (ReaderBgColor.gray, 'Gray', null),
+            (ReaderBgColor.white, 'White', null),
+            (ReaderBgColor.sepia, 'Sepia', null),
+          ],
+          selected: s.readerBgColor,
+          onChanged: notifier.setReaderBg,
+          trailing: Container(
+            width: 22,
+            height: 22,
+            decoration: BoxDecoration(
+              color: s.readerBgColor.color,
+              shape: BoxShape.circle,
+              border: Border.all(color: h.border),
+            ),
           ),
         ),
-        const _Divider(),
-        _SwitchTile(
+        _SwitchSettingTile(
           icon: Icons.touch_app_outlined,
           title: 'Tap to navigate',
           subtitle: 'Tap screen edges to flip pages',
           value: s.tapToNavigate,
           onChanged: (_) => notifier.toggleTapToNavigate(),
         ),
-        const _Divider(),
-        _SwitchTile(
+        _SwitchSettingTile(
           icon: Icons.numbers,
           title: 'Show page number',
           value: s.showPageNumber,
           onChanged: (_) => notifier.togglePageNumber(),
         ),
-        const _Divider(),
-        _SwitchTile(
+        _SwitchSettingTile(
           icon: Icons.brightness_6_outlined,
           title: 'Keep screen on',
           value: s.keepScreenOn,
@@ -503,24 +536,23 @@ class _ReaderSection extends ConsumerWidget {
 // ---------------------------------------------------------------------------
 // Player — anime player settings.
 // ---------------------------------------------------------------------------
-class _PlayerSection extends ConsumerWidget {
-  const _PlayerSection();
+class _PlayerCard extends ConsumerWidget {
+  const _PlayerCard();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
     final s = ref.watch(appSettingsProvider);
     final notifier = ref.read(appSettingsProvider.notifier);
-    return _SettingsSection(
-      title: 'Player',
-      icon: Icons.live_tv_outlined,
-      iconColor: LuminaTheme.finishedColor,
+    return _SettingsGroupCard(
       children: [
-        _SectionTile(
-          icon: Icons.hd_outlined,
+        HeroListTile(
+          leadingIcon: Icons.hd_outlined,
+          leadingColor: h.warning,
           title: 'Default video quality',
           subtitle: s.defaultVideoQuality,
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => _showStringPicker(
+          showChevron: true,
+          onTap: () => _showOptionSheet(
             context,
             title: 'Video quality',
             values: const ['1080p', '720p', '480p', '360p', 'Auto'],
@@ -528,13 +560,13 @@ class _PlayerSection extends ConsumerWidget {
             onPick: notifier.setVideoQuality,
           ),
         ),
-        const _Divider(),
-        _SectionTile(
-          icon: Icons.subtitles_outlined,
+        HeroListTile(
+          leadingIcon: Icons.subtitles_outlined,
+          leadingColor: h.warning,
           title: 'Default subtitle',
           subtitle: s.defaultSubtitle,
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => _showStringPicker(
+          showChevron: true,
+          onTap: () => _showOptionSheet(
             context,
             title: 'Subtitle track',
             values: const ['Off', 'English', 'Español', '日本語', 'Português'],
@@ -542,17 +574,17 @@ class _PlayerSection extends ConsumerWidget {
             onPick: notifier.setSubtitle,
           ),
         ),
-        const _Divider(),
-        _SwitchTile(
+        _SwitchSettingTile(
           icon: Icons.fast_forward,
+          leadingColor: h.warning,
           title: 'AniSkip',
           subtitle: 'Auto-skip openings and endings',
           value: s.aniSkipEnabled,
           onChanged: (_) => notifier.toggleAniSkip(),
         ),
-        const _Divider(),
-        _SwitchTile(
+        _SwitchSettingTile(
           icon: Icons.picture_in_picture_outlined,
+          leadingColor: h.warning,
           title: 'Picture-in-picture',
           subtitle: 'Pop out the player when leaving the app',
           value: s.pipEnabled,
@@ -564,280 +596,135 @@ class _PlayerSection extends ConsumerWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Library — auto-download, Wi-Fi-only, categories.
+// Library (under Data) — auto-download, Wi-Fi-only, categories.
 // ---------------------------------------------------------------------------
-class _LibrarySection extends ConsumerWidget {
-  const _LibrarySection();
+class _LibraryCard extends ConsumerWidget {
+  const _LibraryCard();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
     final s = ref.watch(appSettingsProvider);
     final notifier = ref.read(appSettingsProvider.notifier);
     final categories = ref.watch(categoriesProvider);
-    return _SettingsSection(
-      title: 'Library',
-      icon: Icons.library_books_outlined,
-      iconColor: LuminaTheme.unreadColor,
+    return _SettingsGroupCard(
       children: [
-        _SwitchTile(
+        _SwitchSettingTile(
           icon: Icons.download_for_offline_outlined,
+          leadingColor: h.accent,
           title: 'Auto-download new chapters',
           subtitle: 'Fetch new releases for library entries automatically',
           value: s.autoDownloadNew,
           onChanged: (_) => notifier.toggleAutoDownloadNew(),
         ),
-        const _Divider(),
-        _SwitchTile(
+        _SwitchSettingTile(
           icon: Icons.wifi,
+          leadingColor: h.accent,
           title: 'Only download on Wi-Fi',
           value: s.downloadOnWifiOnly,
           onChanged: (_) => notifier.toggleDownloadOnWifiOnly(),
         ),
-        const _Divider(),
-        _SectionTile(
+        _SliderSettingTile(
           icon: Icons.sync_alt,
+          leadingColor: h.accent,
           title: 'Parallel downloads',
-          subtitle: '${s.parallelDownloads} at a time',
-          trailing: SizedBox(
-            width: 140,
-            child: Slider(
-              min: 1,
-              max: 6,
-              divisions: 5,
-              value: s.parallelDownloads.toDouble(),
-              onChanged: (v) => notifier.setParallelDownloads(v.round()),
-            ),
-          ),
+          valueLabel: '${s.parallelDownloads} at a time',
+          min: 1,
+          max: 6,
+          divisions: 5,
+          value: s.parallelDownloads.toDouble(),
+          onChanged: (v) => notifier.setParallelDownloads(v.round()),
         ),
-        const _Divider(),
-        _SectionTile(
-          icon: Icons.label_outline,
+        HeroListTile(
+          leadingIcon: Icons.label_outline,
+          leadingColor: h.accent,
           title: 'Auto-download categories',
           subtitle: s.autoDownloadCategories.isEmpty
               ? 'None'
               : '${s.autoDownloadCategories.length} selected',
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => _showCategoryPicker(
-              context, ref, categories, s.autoDownloadCategories),
+          showChevron: true,
+          onTap: () => _showCategoryPicker(context, categories),
         ),
       ],
     );
   }
 
-  void _showCategoryPicker(BuildContext context, WidgetRef ref,
-      List<Category> categories, List<int> selected) {
+  Future<void> _showCategoryPicker(
+      BuildContext context, List<Category> categories) {
     // REAL picker — the sheet previously rendered CheckboxListTiles with
     // `value: false, onChanged: (_) {}`: pure decoration.
-    hSheet<void>(
+    return showHeroSheet<void>(
       context: context,
       title: 'Auto-download categories',
-      builder: (sheetContext) {
-        return SafeArea(
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SizedBox(height: 4),
-                ...categories.where((c) => c.id != 0).map((c) {
-                  final isSelected = selected.contains(c.id);
-                  return HTile(
-                    icon: isSelected
-                        ? Icons.check_circle_rounded
-                        : Icons.label_outline_rounded,
-                    tone: isSelected
-                        ? HeroVariant.success
-                        : HeroVariant.neutral,
-                    label: c.name,
-                    subtitle: isSelected
-                        ? 'New chapters auto-download'
-                        : 'Tap to enable auto-download',
-                    onTap: () {
-                      final next = [...selected];
-                      if (isSelected) {
-                        next.remove(c.id);
-                      } else {
-                        next.add(c.id);
-                      }
-                      ref
-                          .read(appSettingsProvider.notifier)
-                          .setAutoDownloadCategories(next);
-                      // Stay open so multiple categories can be toggled.
-                    },
-                  );
-                }),
-                const SizedBox(height: 12),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Browse — extension repos.
-// ---------------------------------------------------------------------------
-class _BrowseSection extends ConsumerWidget {
-  const _BrowseSection();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // REAL repo list — Isar-backed (previously an in-memory list that
-    // vanished on restart, with snackbar-only actions).
-    final repos = ref.watch(extensionReposProvider);
-    final installedCount = ref
-        .watch(extensionCatalogProvider)
-        .where((s) => s.isInstalled)
-        .length;
-    return _SettingsSection(
-      title: 'Browse',
-      icon: Icons.explore_outlined,
-      iconColor: LuminaTheme.seed,
-      children: [
-        _SectionTile(
-          icon: Icons.extension_outlined,
-          title: 'Manage extensions',
-          subtitle: '$installedCount installed across ${repos.length} repos',
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => context.push('/browse'),
-        ),
-        const _Divider(),
-        for (final r in repos)
-          _SectionTile(
-            icon: Icons.folder_outlined,
-            title: r.name,
-            subtitle: '${r.extensionCount} extensions'
-                '${r.lastError != null ? ' • last sync failed' : ''}',
-            trailing: IconButton(
-              icon: const Icon(Icons.delete_outline, size: 20),
-              onPressed: () async {
-                await ref
-                    .read(data.extensionRepoServiceProvider)
-                    .removeRepo(r.url);
-              },
-            ),
-          ),
-        const _Divider(),
-        _SectionTile(
-          icon: Icons.add_link,
-          title: 'Add repository',
-          subtitle: 'Paste a Mangayomi extension repo URL',
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => context.push('/browse'),
-        ),
-      ],
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Downloads.
-// ---------------------------------------------------------------------------
-class _DownloadsSection extends ConsumerWidget {
-  const _DownloadsSection();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final wifiOnly = ref.watch(wifiOnlyDownloadsProvider);
-    final s = ref.watch(appSettingsProvider);
-    final notifier = ref.read(appSettingsProvider.notifier);
-    return _SettingsSection(
-      title: 'Downloads',
-      icon: Icons.download_outlined,
-      iconColor: LuminaTheme.unreadColor,
-      children: [
-        _SwitchTile(
-          icon: Icons.wifi,
-          title: 'Wi-Fi only',
-          subtitle: wifiOnly
-              ? 'Downloads pause on metered networks'
-              : 'Downloads use any connection',
-          value: wifiOnly,
-          onChanged: (_) => ref
-              .read(wifiOnlyDownloadsProvider.notifier)
-              .state = !wifiOnly,
-        ),
-        const _Divider(),
-        _SectionTile(
-          icon: Icons.sync_alt,
-          title: 'Parallel downloads',
-          subtitle: '${s.parallelDownloads} at a time',
-          trailing: SizedBox(
-            width: 140,
-            child: Slider(
-              min: 1,
-              max: 6,
-              divisions: 5,
-              value: s.parallelDownloads.toDouble(),
-              onChanged: (v) => notifier.setParallelDownloads(v.round()),
-            ),
-          ),
-        ),
-        const _Divider(),
-        const _CacheSizeTile(),
-        const _Divider(),
-        _SectionTile(
-          icon: Icons.folder_delete_outlined,
-          title: 'Delete all downloads',
-          subtitle: 'Removes offline content for every library entry',
-          onTap: () => _confirmDeleteAllDownloads(context, ref),
-        ),
-      ],
-    );
-  }
-
-  Future<void> _confirmDeleteAllDownloads(
-      BuildContext context, WidgetRef ref) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete all downloads?'),
-        content: const Text(
-            'This removes every downloaded chapter from the device. Your '
-            'library and reading progress are kept.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
+      builder: (sheetContext) => SafeArea(
+        child: _CategoryPickerBody(categories: categories),
       ),
     );
-    if (confirmed != true) return;
-    try {
-      // REAL deletion — clears every download row and the downloaded
-      // chapter files while PRESERVING user-imported books under imports/
-      // (previously this wiped the whole downloads directory, destroying
-      // imported EPUB/PDF/CBZ source files).
-      await ref.read(data.downloadsRepositoryProvider).deleteAllFiles();
-      if (context.mounted) {
-        showSnack(ref, context, 'All downloads removed');
-      }
-    } catch (e) {
-      if (context.mounted) {
-        showSnack(ref, context, 'Could not delete downloads');
-      }
-    }
   }
 }
 
-/// Tile that computes and displays the REAL on-disk size of the downloads
-/// directory, and clears it on tap (previously hardcoded "248 MB used" + a
-/// snackbar-only "Cache cleared").
-class _CacheSizeTile extends ConsumerStatefulWidget {
-  const _CacheSizeTile();
+/// Reactive sheet body — watches the persisted selection so tiles update as
+/// categories are toggled (the sheet stays open for multi-select).
+class _CategoryPickerBody extends ConsumerWidget {
+  const _CategoryPickerBody({required this.categories});
+
+  final List<Category> categories;
 
   @override
-  ConsumerState<_CacheSizeTile> createState() => _CacheSizeTileState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
+    final selected = ref.watch(appSettingsProvider).autoDownloadCategories;
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final c in categories.where((c) => c.id != 0))
+              HeroListTile(
+                leadingIcon: selected.contains(c.id)
+                    ? Icons.check_circle_rounded
+                    : Icons.label_outline_rounded,
+                leadingColor: selected.contains(c.id) ? h.success : h.muted,
+                title: c.name,
+                subtitle: selected.contains(c.id)
+                    ? 'New chapters auto-download'
+                    : 'Tap to enable auto-download',
+                trailing: selected.contains(c.id)
+                    ? Icon(Icons.check_rounded, size: 20, color: h.success)
+                    : null,
+                onTap: () {
+                  final next = [...selected];
+                  if (selected.contains(c.id)) {
+                    next.remove(c.id);
+                  } else {
+                    next.add(c.id);
+                  }
+                  ref
+                      .read(appSettingsProvider.notifier)
+                      .setAutoDownloadCategories(next);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-class _CacheSizeTileState extends ConsumerState<_CacheSizeTile> {
+// ---------------------------------------------------------------------------
+// Downloads (under Data) — Wi-Fi gate, parallelism, cache + destructive
+// actions.
+// ---------------------------------------------------------------------------
+class _DownloadsCard extends ConsumerStatefulWidget {
+  const _DownloadsCard();
+
+  @override
+  ConsumerState<_DownloadsCard> createState() => _DownloadsCardState();
+}
+
+class _DownloadsCardState extends ConsumerState<_DownloadsCard> {
   int? _bytes;
   bool _clearing = false;
 
@@ -847,6 +734,8 @@ class _CacheSizeTileState extends ConsumerState<_CacheSizeTile> {
     _compute();
   }
 
+  /// Computes the REAL on-disk size of the downloads directory
+  /// (previously hardcoded "248 MB used" + a snackbar-only "Cache cleared").
   Future<void> _compute() async {
     try {
       final dir = Directory(await StorageProvider().getDownloadsDir());
@@ -868,230 +757,255 @@ class _CacheSizeTileState extends ConsumerState<_CacheSizeTile> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return _SectionTile(
-      icon: Icons.cleaning_services_outlined,
-      title: 'Clear download cache',
-      subtitle: _clearing
-          ? 'Clearing…'
-          : '${formatBytes(_bytes ?? 0)} used${_bytes == null ? '' : ''}',
-      trailing: _clearing
-          ? const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : const Icon(Icons.chevron_right),
-      onTap: () async {
-        if (_bytes == 0) {
-          showSnack(ref, context, 'Nothing to clear');
-          return;
-        }
-        setState(() => _clearing = true);
-        try {
-          // Deletes only the downloaded chapter files — the `imports/`
-          // directory (user-imported EPUB/PDF/CBZ/videos) is PRESERVED.
-          // The previous implementation wiped the whole downloads dir,
-          // destroying imported books' source files.
-          await ref
-              .read(data.downloadsRepositoryProvider)
-              .deleteAllFiles();
-          if (!mounted) return;
-          setState(() {
-            _clearing = false;
-            _bytes = 0;
-          });
-          // `this.context` (State.context) pairs with the State `mounted`
-          // guard above — using the build method's context param trips
-          // use_build_context_synchronously.
-          showSnack(ref, this.context, 'Download cache cleared');
-        } catch (e) {
-          if (!mounted) return;
-          setState(() => _clearing = false);
-          showSnack(ref, this.context, 'Could not clear cache');
-        }
-      },
+  Future<void> _clearCache() async {
+    if (_bytes == 0) {
+      showSnack(ref, context, 'Nothing to clear');
+      return;
+    }
+    final confirmed = await showHeroConfirm(
+      context: context,
+      title: 'Clear download cache?',
+      message: 'Downloaded chapter files will be removed from the device. '
+          'Imported books are kept.',
+      confirmLabel: 'Clear',
+      danger: true,
     );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Security — app lock + incognito.
-// ---------------------------------------------------------------------------
-class _SecuritySection extends ConsumerWidget {
-  const _SecuritySection();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final s = ref.watch(appSettingsProvider);
-    final notifier = ref.read(appSettingsProvider.notifier);
-    final incognito = ref.watch(incognitoModeProvider);
-    return _SettingsSection(
-      title: 'Security',
-      icon: Icons.lock_outline,
-      iconColor: LuminaTheme.newColor,
-      children: [
-        _SwitchTile(
-          icon: Icons.fingerprint,
-          title: 'App lock',
-          subtitle: s.appLockEnabled
-              ? 'A 4-digit PIN is required to unlock'
-              : 'Off',
-          value: s.appLockEnabled,
-          // REAL lock setup: enabling walks the user through creating a
-          // PIN (AppLockGate enforces it); disabling requires the PIN.
-          // Previously the switch only persisted a flag nothing consumed.
-          onChanged: (_) async {
-            if (!s.appLockEnabled) {
-              final set = await showSetPinSheet(context);
-              if (!set) return;
-              notifier.toggleAppLock();
-            } else {
-              // Turning off requires the PIN (simple guard).
-              final confirmed = await hConfirm(
-                context: context,
-                title: 'Turn off app lock?',
-                message: 'The PIN will be removed and the app will open unlocked.',
-                confirmLabel: 'Turn off',
-              );
-              if (!confirmed) return;
-              await PinStore.clear();
-              notifier.toggleAppLock();
-            }
-          },
-        ),
-        if (s.appLockEnabled) ...[
-          const _Divider(),
-          _SwitchTile(
-            icon: Icons.login,
-            title: 'Lock on launch',
-            value: s.lockOnLaunch,
-            onChanged: (_) => notifier.toggleLockOnLaunch(),
-          ),
-          const _Divider(),
-          _SwitchTile(
-            icon: Icons.lock_clock,
-            title: 'Lock on resume',
-            subtitle: 'Re-lock when returning to the app',
-            value: s.lockOnResume,
-            onChanged: (_) => notifier.toggleLockOnResume(),
-          ),
-        ],
-        const _Divider(),
-        _SwitchTile(
-          icon: Icons.visibility_off_outlined,
-          title: 'Incognito mode',
-          subtitle: incognito
-              ? 'Reading & watching won\'t be recorded'
-              : 'Activity is recorded normally',
-          value: incognito,
-          onChanged: (_) => ref
-              .read(incognitoModeProvider.notifier)
-              .state = !incognito,
-        ),
-        // NOTE: the "Secure screen" switch was removed — it was a no-op
-        // (`value: false, onChanged: (_) {}`).
-      ],
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Sync — tracker shortcuts (the previous cloud-sync toggle and tracker
-// login tiles were display-only: no backend and no OAuth flow exist in
-// this build, so they were replaced with real links to the tracker sites).
-// ---------------------------------------------------------------------------
-class _SyncSection extends ConsumerWidget {
-  const _SyncSection();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return _SettingsSection(
-      title: 'Trackers',
-      icon: Icons.cloud_sync_outlined,
-      iconColor: LuminaTheme.readingColor,
-      children: [
-        _SectionTile(
-          icon: Icons.movie,
-          title: 'MyAnimeList',
-          subtitle: 'Open your MAL list in the browser',
-          trailing: const Icon(Icons.open_in_new_rounded),
-          onTap: () => _open(context, ref, 'https://myanimelist.net/'),
-        ),
-        const _Divider(),
-        _SectionTile(
-          icon: Icons.auto_awesome,
-          title: 'AniList',
-          subtitle: 'Open your AniList in the browser',
-          trailing: const Icon(Icons.open_in_new_rounded),
-          onTap: () => _open(context, ref, 'https://anilist.co/'),
-        ),
-      ],
-    );
-  }
-
-  Future<void> _open(BuildContext context, WidgetRef ref, String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri == null ||
-        !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      if (context.mounted) {
-        showSnack(ref, context, 'Could not open link');
-      }
+    if (!confirmed) return;
+    setState(() => _clearing = true);
+    try {
+      // Deletes only the downloaded chapter files — the `imports/`
+      // directory (user-imported EPUB/PDF/CBZ/videos) is PRESERVED.
+      // The previous implementation wiped the whole downloads dir,
+      // destroying imported books' source files.
+      await ref.read(data.downloadsRepositoryProvider).deleteAllFiles();
+      if (!mounted) return;
+      setState(() {
+        _clearing = false;
+        _bytes = 0;
+      });
+      // Plain `context` (State.context) pairs with the State `mounted`
+      // guard above to satisfy use_build_context_synchronously.
+      showSnack(ref, context, 'Download cache cleared');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _clearing = false);
+      showSnack(ref, context, 'Could not clear cache');
     }
   }
+
+  Future<void> _deleteAll() async {
+    final confirmed = await showHeroConfirm(
+      context: context,
+      title: 'Delete all downloads?',
+      message: 'This removes every downloaded chapter from the device. Your '
+          'library and reading progress are kept.',
+      confirmLabel: 'Delete',
+      danger: true,
+    );
+    if (!confirmed) return;
+    try {
+      // REAL deletion — clears every download row and the downloaded
+      // chapter files while PRESERVING user-imported books under imports/
+      // (previously this wiped the whole downloads directory, destroying
+      // imported EPUB/PDF/CBZ source files).
+      await ref.read(data.downloadsRepositoryProvider).deleteAllFiles();
+      if (!mounted) return;
+      setState(() => _bytes = 0);
+      showSnack(ref, context, 'All downloads removed');
+    } catch (e) {
+      if (!mounted) return;
+      showSnack(ref, context, 'Could not delete downloads');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
+    final wifiOnly = ref.watch(wifiOnlyDownloadsProvider);
+    final s = ref.watch(appSettingsProvider);
+    final notifier = ref.read(appSettingsProvider.notifier);
+    return _SettingsGroupCard(
+      children: [
+        _SwitchSettingTile(
+          icon: Icons.wifi,
+          leadingColor: h.success,
+          title: 'Wi-Fi only',
+          subtitle: wifiOnly
+              ? 'Downloads pause on metered networks'
+              : 'Downloads use any connection',
+          value: wifiOnly,
+          onChanged: (_) =>
+              ref.read(wifiOnlyDownloadsProvider.notifier).state = !wifiOnly,
+        ),
+        _SliderSettingTile(
+          icon: Icons.sync_alt,
+          leadingColor: h.success,
+          title: 'Parallel downloads',
+          valueLabel: '${s.parallelDownloads} at a time',
+          min: 1,
+          max: 6,
+          divisions: 5,
+          value: s.parallelDownloads.toDouble(),
+          onChanged: (v) => notifier.setParallelDownloads(v.round()),
+        ),
+        HeroListTile(
+          leadingIcon: Icons.folder_outlined,
+          leadingColor: h.success,
+          title: 'Download cache',
+          subtitle:
+              _clearing ? 'Clearing…' : '${formatBytes(_bytes ?? 0)} used',
+          trailing: _clearing
+              ? SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: h.success,
+                  ),
+                )
+              : null,
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 14),
+          child: Row(
+            children: [
+              Expanded(
+                child: HeroButton(
+                  label: 'Clear cache',
+                  icon: Icons.cleaning_services_outlined,
+                  variant: HeroButtonVariant.soft,
+                  color: HeroColorRole.danger,
+                  size: HeroButtonSize.sm,
+                  fullWidth: true,
+                  onPressed: _clearCache,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: HeroButton(
+                  label: 'Delete all',
+                  icon: Icons.folder_delete_outlined,
+                  variant: HeroButtonVariant.soft,
+                  color: HeroColorRole.danger,
+                  size: HeroButtonSize.sm,
+                  fullWidth: true,
+                  onPressed: _deleteAll,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
-// Backup.
+// Browse (under Data) — extension repos.
 // ---------------------------------------------------------------------------
-class _BackupSection extends ConsumerWidget {
-  const _BackupSection();
+class _BrowseCard extends ConsumerWidget {
+  const _BrowseCard();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // REAL repo list — Isar-backed (previously an in-memory list that
+    // vanished on restart, with snackbar-only actions).
+    final h = HeroScope.of(context);
+    final repos = ref.watch(extensionReposProvider);
+    final installedCount = ref
+        .watch(extensionCatalogProvider)
+        .where((src) => src.isInstalled)
+        .length;
+    return _SettingsGroupCard(
+      children: [
+        HeroListTile(
+          leadingIcon: Icons.extension_outlined,
+          leadingColor: h.warning,
+          title: 'Manage extensions',
+          subtitle: '$installedCount installed across ${repos.length} repos',
+          showChevron: true,
+          onTap: () => context.push('/browse'),
+        ),
+        for (final r in repos)
+          HeroListTile(
+            leadingIcon: Icons.folder_outlined,
+            leadingColor: h.warning,
+            title: r.name,
+            subtitle: '${r.extensionCount} extensions'
+                '${r.lastError != null ? ' • last sync failed' : ''}',
+            trailing: HeroIconButton(
+              icon: Icons.delete_outline_rounded,
+              size: 34,
+              iconSize: 18,
+              color: h.danger,
+              tooltip: 'Remove repository',
+              onPressed: () async {
+                await ref
+                    .read(data.extensionRepoServiceProvider)
+                    .removeRepo(r.url);
+              },
+            ),
+          ),
+        HeroListTile(
+          leadingIcon: Icons.add_link,
+          leadingColor: h.warning,
+          title: 'Add repository',
+          subtitle: 'Paste a Mangayomi extension repo URL',
+          showChevron: true,
+          onTap: () => context.push('/browse'),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Backup (under Data).
+// ---------------------------------------------------------------------------
+class _BackupCard extends ConsumerWidget {
+  const _BackupCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
     final s = ref.watch(appSettingsProvider);
     final notifier = ref.read(appSettingsProvider.notifier);
-    return _SettingsSection(
-      title: 'Backup',
-      icon: Icons.backup_outlined,
-      iconColor: LuminaTheme.finishedColor,
+    return _SettingsGroupCard(
       children: [
-        _SectionTile(
-          icon: Icons.file_upload_outlined,
+        HeroListTile(
+          leadingIcon: Icons.file_upload_outlined,
+          leadingColor: h.accent,
           title: 'Create backup',
           subtitle: 'Export library, history and settings',
+          showChevron: true,
           onTap: () => _createBackup(context, ref),
         ),
-        const _Divider(),
-        _SectionTile(
-          icon: Icons.file_download_outlined,
+        HeroListTile(
+          leadingIcon: Icons.file_download_outlined,
+          leadingColor: h.accent,
           title: 'Restore backup',
           subtitle: 'Import a previous Lumina backup file',
+          showChevron: true,
           onTap: () => _restoreBackup(context, ref),
         ),
-        const _Divider(),
-        _SectionTile(
-          icon: Icons.schedule,
+        HeroListTile(
+          leadingIcon: Icons.schedule,
+          leadingColor: h.accent,
           title: 'Automatic backup interval',
           subtitle: 'Every ${s.backupIntervalDays} days',
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => _showStringPicker(
+          showChevron: true,
+          onTap: () => _showIntervalDialog(
             context,
-            title: 'Backup interval',
-            values: const ['1', '3', '7', '14', '30'],
-            current: '${s.backupIntervalDays}',
-            onPick: (v) => notifier.setBackupInterval(int.parse(v)),
-            suffix: ' days',
+            current: s.backupIntervalDays,
+            onPick: notifier.setBackupInterval,
           ),
         ),
-        const _Divider(),
-        _SectionTile(
-          icon: Icons.history,
+        HeroListTile(
+          leadingIcon: Icons.history,
+          leadingColor: h.accent,
           title: 'Last backup',
-          subtitle: s.lastBackupAt != null
-              ? _shortDate(s.lastBackupAt!)
-              : 'Never',
+          subtitle:
+              s.lastBackupAt != null ? _shortDate(s.lastBackupAt!) : 'Never',
         ),
       ],
     );
@@ -1173,28 +1087,153 @@ class _BackupSection extends ConsumerWidget {
 }
 
 // ---------------------------------------------------------------------------
-// About.
+// Security — app lock + incognito.
 // ---------------------------------------------------------------------------
-class _AboutSection extends ConsumerWidget {
-  const _AboutSection();
+class _SecurityCard extends ConsumerWidget {
+  const _SecurityCard();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return _SettingsSection(
-      title: 'About',
-      icon: Icons.info_outline,
-      iconColor: LuminaTheme.seed,
+    final h = HeroScope.of(context);
+    final s = ref.watch(appSettingsProvider);
+    final notifier = ref.read(appSettingsProvider.notifier);
+    final incognito = ref.watch(incognitoModeProvider);
+    return _SettingsGroupCard(
       children: [
-        const _SectionTile(
-          icon: Icons.auto_stories,
+        _SwitchSettingTile(
+          icon: Icons.fingerprint,
+          leadingColor: h.accent,
+          title: 'App lock',
+          subtitle:
+              s.appLockEnabled ? 'A 4-digit PIN is required to unlock' : 'Off',
+          value: s.appLockEnabled,
+          // REAL lock setup: enabling walks the user through creating a
+          // PIN (AppLockGate enforces it); disabling requires the PIN.
+          // Previously the switch only persisted a flag nothing consumed.
+          onChanged: (_) async {
+            if (!s.appLockEnabled) {
+              final set = await showSetPinSheet(context);
+              if (!set) return;
+              notifier.toggleAppLock();
+            } else {
+              // Turning off requires the PIN (simple guard).
+              final confirmed = await showHeroConfirm(
+                context: context,
+                title: 'Turn off app lock?',
+                message:
+                    'The PIN will be removed and the app will open unlocked.',
+                confirmLabel: 'Turn off',
+                danger: true,
+              );
+              if (!confirmed) return;
+              await PinStore.clear();
+              notifier.toggleAppLock();
+            }
+          },
+        ),
+        if (s.appLockEnabled) ...[
+          _SwitchSettingTile(
+            icon: Icons.login,
+            leadingColor: h.accent,
+            title: 'Lock on launch',
+            value: s.lockOnLaunch,
+            onChanged: (_) => notifier.toggleLockOnLaunch(),
+          ),
+          _SwitchSettingTile(
+            icon: Icons.lock_clock,
+            leadingColor: h.accent,
+            title: 'Lock on resume',
+            subtitle: 'Re-lock when returning to the app',
+            value: s.lockOnResume,
+            onChanged: (_) => notifier.toggleLockOnResume(),
+          ),
+        ],
+        _SwitchSettingTile(
+          icon: Icons.visibility_off_outlined,
+          leadingColor: h.accent,
+          title: 'Incognito mode',
+          subtitle: incognito
+              ? "Reading & watching won't be recorded"
+              : 'Activity is recorded normally',
+          value: incognito,
+          onChanged: (_) =>
+              ref.read(incognitoModeProvider.notifier).state = !incognito,
+        ),
+        // NOTE: the "Secure screen" switch was removed — it was a no-op
+        // (`value: false, onChanged: (_) {}`).
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Trackers (under About) — tracker shortcuts (the previous cloud-sync toggle
+// and tracker login tiles were display-only: no backend and no OAuth flow
+// exist in this build, so they were replaced with real links to the tracker
+// sites).
+// ---------------------------------------------------------------------------
+class _TrackersCard extends ConsumerWidget {
+  const _TrackersCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
+    return _SettingsGroupCard(
+      children: [
+        HeroListTile(
+          leadingIcon: Icons.movie,
+          leadingColor: h.success,
+          title: 'MyAnimeList',
+          subtitle: 'Open your MAL list in the browser',
+          trailing: Icon(Icons.open_in_new_rounded, size: 18, color: h.muted),
+          onTap: () => _open(context, ref, 'https://myanimelist.net/'),
+        ),
+        HeroListTile(
+          leadingIcon: Icons.auto_awesome,
+          leadingColor: h.success,
+          title: 'AniList',
+          subtitle: 'Open your AniList in the browser',
+          trailing: Icon(Icons.open_in_new_rounded, size: 18, color: h.muted),
+          onTap: () => _open(context, ref, 'https://anilist.co/'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _open(BuildContext context, WidgetRef ref, String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (context.mounted) {
+        showSnack(ref, context, 'Could not open link');
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// About (under About).
+// ---------------------------------------------------------------------------
+class _AboutCard extends ConsumerWidget {
+  const _AboutCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
+    return _SettingsGroupCard(
+      children: [
+        HeroListTile(
+          leadingIcon: Icons.auto_stories,
+          leadingColor: h.accent,
           title: 'Lumina Reader',
           subtitle: 'Version 1.0.0 • Build 1',
         ),
-        const _Divider(),
-        _SectionTile(
-          icon: Icons.source_outlined,
+        HeroListTile(
+          leadingIcon: Icons.source_outlined,
+          leadingColor: h.accent,
           title: 'Open source licenses',
           subtitle: 'View third-party libraries',
+          showChevron: true,
           onTap: () => showLicensePage(
             context: context,
             applicationName: 'Lumina Reader',
@@ -1202,27 +1241,30 @@ class _AboutSection extends ConsumerWidget {
             applicationLegalese: '© 2024 Lumina Reader Contributors',
           ),
         ),
-        const _Divider(),
-        _SectionTile(
-          icon: Icons.copyright_outlined,
+        HeroListTile(
+          leadingIcon: Icons.copyright_outlined,
+          leadingColor: h.accent,
           title: 'Licence',
           subtitle: 'Apache License, Version 2.0',
-          onTap: () => _launchUrl(
-              'https://www.apache.org/licenses/LICENSE-2.0'),
+          showChevron: true,
+          onTap: () =>
+              _launchUrl('https://www.apache.org/licenses/LICENSE-2.0'),
         ),
-        const _Divider(),
-        _SectionTile(
-          icon: Icons.code,
+        HeroListTile(
+          leadingIcon: Icons.code,
+          leadingColor: h.accent,
           title: 'Source code',
           subtitle: 'github.com/iruzen-sensei/lumina-reader',
+          showChevron: true,
           onTap: () =>
               _launchUrl('https://github.com/iruzen-sensei/lumina-reader'),
         ),
-        const _Divider(),
-        _SectionTile(
-          icon: Icons.bug_report_outlined,
+        HeroListTile(
+          leadingIcon: Icons.bug_report_outlined,
+          leadingColor: h.accent,
           title: 'Report an issue',
           subtitle: 'Help us improve Lumina Reader',
+          showChevron: true,
           onTap: () => _launchUrl(
               'https://github.com/iruzen-sensei/lumina-reader/issues'),
         ),
@@ -1240,40 +1282,40 @@ class _AboutSection extends ConsumerWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Generic picker helper used by Reader / Player / Library sections.
+// Pickers — restyled option sheet (bottom sheet) and interval dialog.
 // ---------------------------------------------------------------------------
-void _showPicker<T extends Enum>(
+
+/// Bottom-sheet option picker for string choices with more than four values
+/// (video quality, subtitle track).
+Future<void> _showOptionSheet(
   BuildContext context, {
   required String title,
-  required List<T> values,
-  required T current,
-  required String Function(T) labelOf,
-  required ValueChanged<T> onPick,
+  required List<String> values,
+  required String current,
+  required ValueChanged<String> onPick,
 }) {
-  showModalBottomSheet<void>(
+  return showHeroSheet<void>(
     context: context,
-    showDragHandle: true,
-    builder: (context) {
+    title: title,
+    builder: (sheetContext) {
+      final h = HeroScope.of(sheetContext);
       return SafeArea(
-        // Flutter 3.32+: selection state lives on the RadioGroup.
-        child: RadioGroup<T>(
-          groupValue: current,
-          onChanged: (sel) {
-            if (sel == null) return;
-            onPick(sel);
-            Navigator.pop(context);
-          },
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 12),
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(title, style: Theme.of(context).textTheme.titleMedium),
-              ),
               for (final v in values)
-                RadioListTile<T>(
-                  value: v,
-                  title: Text(labelOf(v)),
+                HeroListTile(
+                  title: v,
+                  trailing: v == current
+                      ? Icon(Icons.check_rounded, size: 20, color: h.accent)
+                      : null,
+                  onTap: () {
+                    onPick(v);
+                    Navigator.of(sheetContext).pop();
+                  },
                 ),
             ],
           ),
@@ -1283,41 +1325,41 @@ void _showPicker<T extends Enum>(
   );
 }
 
-void _showStringPicker(
+/// Centered dialog picker for the automatic-backup interval (number picker).
+Future<void> _showIntervalDialog(
   BuildContext context, {
-  required String title,
-  required List<String> values,
-  required String current,
-  required ValueChanged<String> onPick,
-  String suffix = '',
+  required int current,
+  required ValueChanged<int> onPick,
 }) {
-  showModalBottomSheet<void>(
+  return showHeroDialog<void>(
     context: context,
-    showDragHandle: true,
-    builder: (context) {
-      return SafeArea(
-        // Flutter 3.32+: selection state lives on the RadioGroup.
-        child: RadioGroup<String>(
-          groupValue: current,
-          onChanged: (sel) {
-            if (sel == null) return;
-            onPick(sel);
-            Navigator.pop(context);
-          },
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+    builder: (dialogContext) {
+      final h = HeroScope.of(dialogContext);
+      return HeroDialogFrame(
+        width: 320,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                'Backup interval',
+                style: HeroTokens.title.copyWith(color: h.foreground),
               ),
-              for (final v in values)
-                RadioListTile<String>(
-                  value: v,
-                  title: Text('$v$suffix'),
-                ),
-            ],
-          ),
+            ),
+            for (final days in const [1, 3, 7, 14, 30])
+              HeroListTile(
+                title: days == 1 ? 'Every day' : 'Every $days days',
+                trailing: days == current
+                    ? Icon(Icons.check_rounded, size: 20, color: h.accent)
+                    : null,
+                onTap: () {
+                  onPick(days);
+                  Navigator.of(dialogContext).pop();
+                },
+              ),
+          ],
         ),
       );
     },

@@ -75,6 +75,22 @@ class StorageProvider {
   /// unavailable instead of catching [StateError]s.
   bool get isAvailable => _isar != null && _isar!.isOpen;
 
+  /// Test-only injection point: run the whole provider graph against an
+  /// externally created Isar instance (golden screenshots, widget tests).
+  /// Production code must go through [initDB].
+  @visibleForTesting
+  void initForTesting(Isar isar) {
+    _isar = isar;
+    _usingFallback = false;
+  }
+
+  /// Test-only reset (isolates golden/widget tests from each other).
+  @visibleForTesting
+  void resetForTesting() {
+    _isar = null;
+    _usingFallback = false;
+  }
+
   Future<Isar> initDB() async {
     if (_isar != null && _isar!.isOpen) return _isar!;
     try {

@@ -16,7 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme.dart';
-import '../../core/ui/heroui.dart';
+import '../../core/ui/heroui_v3.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -37,6 +37,7 @@ class StatsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
     final summary = ref.watch(statsSummaryProvider);
     final goals = ref.watch(statsGoalsProvider);
     final streak = ref.watch(streakProvider);
@@ -50,9 +51,7 @@ class StatsScreen extends ConsumerWidget {
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
                 child: Text(
                   'Statistics',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                  style: HeroTokens.titleLarge.copyWith(color: h.foreground),
                 ),
               ),
             ),
@@ -71,7 +70,8 @@ class StatsScreen extends ConsumerWidget {
             SliverToBoxAdapter(
               child: _HistorySummaryCard(summary: summary, streak: streak),
             ),
-            const SliverToBoxAdapter(child: SizedBox(height: 32)),
+            // Bottom nav bar clearance.
+            const SliverToBoxAdapter(child: SizedBox(height: 96)),
           ],
         ),
       ),
@@ -88,78 +88,76 @@ class _StreakCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
+    final h = HeroScope.of(context);
     final heatmap = ref.watch(statsHeatmapProvider);
     final cutoff = DateTime.now().subtract(const Duration(days: 30));
-    final activeDays = heatmap
-        .where((d) => d.date.isAfter(cutoff) && d.count > 0)
-        .length;
+    final activeDays =
+        heatmap.where((d) => d.date.isAfter(cutoff) && d.count > 0).length;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.local_fire_department,
-                      color: Colors.orange.shade700),
-                  const SizedBox(width: 8),
-                  Text('Reading streak',
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.bold)),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _StreakMetric(
-                      value: '${streak.currentStreak}',
-                      label: 'Current',
-                      color: Colors.orange.shade700,
-                    ),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: HeroCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: h.successSoft,
+                    borderRadius: BorderRadius.circular(11),
                   ),
-                  Container(
-                      width: 1, height: 40, color: theme.dividerColor),
-                  Expanded(
-                    child: _StreakMetric(
-                      value: '${streak.longestStreak}',
-                      label: 'Longest',
-                      color: LuminaTheme.finishedColor,
-                    ),
+                  child: Icon(Icons.local_fire_department_rounded,
+                      size: 20, color: h.success),
+                ),
+                const SizedBox(width: 12),
+                Text('Reading streak',
+                    style: HeroTokens.title.copyWith(color: h.foreground)),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: _StreakMetric(
+                    value: '${streak.currentStreak}',
+                    label: 'Current',
+                    color: h.warning,
                   ),
-                  Container(
-                      width: 1, height: 40, color: theme.dividerColor),
-                  Expanded(
-                    child: _StreakMetric(
-                      // Real metric from the heatmap (the previous third
-                      // slot showed "Freeze tokens: 0" — hardcoded, with a
-                      // permanently disabled button).
-                      value: '$activeDays',
-                      label: 'Active days',
-                      color: LuminaTheme.unreadColor,
-                    ),
+                ),
+                Container(width: 1, height: 40, color: h.separator),
+                Expanded(
+                  child: _StreakMetric(
+                    value: '${streak.longestStreak}',
+                    label: 'Longest',
+                    color: h.success,
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.tonalIcon(
-                      // REAL goal editor (previously a snackbar-only stub).
-                      onPressed: () => _showGoalEditor(context, ref),
-                      icon: const Icon(Icons.flag_outlined, size: 18),
-                      label: const Text('Set goal'),
-                    ),
+                ),
+                Container(width: 1, height: 40, color: h.separator),
+                Expanded(
+                  child: _StreakMetric(
+                    // Real metric from the heatmap (the previous third
+                    // slot showed "Freeze tokens: 0" — hardcoded, with a
+                    // permanently disabled button).
+                    value: '$activeDays',
+                    label: 'Active days',
+                    color: h.accent,
                   ),
-                ],
-              ),
-            ],
-          ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            HeroButton(
+              // REAL goal editor (previously a snackbar-only stub).
+              label: 'Set goal',
+              icon: Icons.flag_outlined,
+              size: HeroButtonSize.sm,
+              variant: HeroButtonVariant.soft,
+              fullWidth: true,
+              onPressed: () => _showGoalEditor(context, ref),
+            ),
+          ],
         ),
       ),
     );
@@ -174,7 +172,7 @@ class _StreakCard extends ConsumerWidget {
       showSnack(ref, context, 'No goals tracked yet');
       return;
     }
-    hSheet<void>(
+    showHeroSheet<void>(
       context: context,
       title: 'Edit goals',
       isScrollControlled: true,
@@ -216,7 +214,7 @@ class _GoalEditorTileState extends ConsumerState<_GoalEditorTile> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final h = HeroScope.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
       child: Row(
@@ -227,40 +225,30 @@ class _GoalEditorTileState extends ConsumerState<_GoalEditorTile> {
               children: [
                 Text(
                   widget.goal.label,
-                  style: TextStyle(
-                    fontSize: 14.5,
+                  style: HeroTokens.body.copyWith(
+                    color: h.foreground,
                     fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : HeroColors.default900,
                   ),
                 ),
                 Text(
                   '${widget.goal.current} / ${widget.goal.target} ${widget.goal.unit}',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color:
-                        isDark ? HeroColors.default400 : HeroColors.default500,
-                  ),
+                  style: HeroTokens.caption.copyWith(color: h.muted),
                 ),
               ],
             ),
           ),
           SizedBox(
-            width: 84,
-            child: TextField(
+            width: 96,
+            child: HeroInput(
               controller: _controller,
               keyboardType: TextInputType.number,
-              textAlign: TextAlign.center,
-              decoration: const InputDecoration(
-                isDense: true,
-                border: OutlineInputBorder(),
-              ),
             ),
           ),
           const SizedBox(width: 8),
-          HButton(
+          HeroButton(
             label: 'Save',
-            size: HButtonSize.sm,
-            variant: HButtonVariant.flat,
+            size: HeroButtonSize.sm,
+            variant: HeroButtonVariant.light,
             onPressed: () async {
               final value = int.tryParse(_controller.text.trim());
               if (value == null || value <= 0) {
@@ -294,20 +282,12 @@ class _StreakMetric extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
     return Column(
       children: [
-        Text(value,
-            style: TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.bold,
-              color: color,
-            )),
+        Text(value, style: HeroTokens.titleLarge.copyWith(color: color)),
         const SizedBox(height: 2),
-        Text(label,
-            style: TextStyle(
-              fontSize: 11,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            )),
+        Text(label, style: HeroTokens.caption.copyWith(color: h.muted)),
       ],
     );
   }
@@ -323,36 +303,37 @@ class _StatCardGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
     final cards = <_StatCardData>[
       _StatCardData(
         icon: Icons.menu_book_rounded,
         label: 'Books Read',
         value: summary['mangaRead'] ?? 0,
-        color: LuminaTheme.readingColor,
+        color: h.accent,
       ),
       _StatCardData(
-        icon: Icons.local_fire_department,
+        icon: Icons.local_fire_department_rounded,
         label: 'Reading Streak',
         value: streak.currentStreak,
         suffix: ' days',
-        color: Colors.orange.shade700,
+        color: h.warning,
       ),
       _StatCardData(
         icon: Icons.timer_outlined,
         label: 'Total Time',
         value: summary['minutesRead'] ?? 0,
         suffix: ' min',
-        color: LuminaTheme.unreadColor,
+        color: h.success,
       ),
       _StatCardData(
         icon: Icons.description_outlined,
         label: 'Pages Read',
         value: summary['pagesRead'] ?? 0,
-        color: LuminaTheme.seed,
+        color: h.danger,
       ),
     ];
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: GridView.count(
         crossAxisCount: 2,
         shrinkWrap: true,
@@ -387,41 +368,32 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: data.color.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(data.icon, color: data.color, size: 20),
-                ),
-                const Spacer(),
-              ],
+    final h = HeroScope.of(context);
+    return HeroCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: data.color.withValues(alpha: h.isDark ? 0.20 : 0.12),
+              borderRadius: BorderRadius.circular(10),
             ),
-            const Spacer(),
-            Text(
-              '${_format(data.value)}${data.suffix}',
-              style: theme.textTheme.headlineSmall
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              data.label,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
-          ],
-        ),
+            child: Icon(data.icon, color: data.color, size: 18),
+          ),
+          const Spacer(),
+          Text(
+            '${_format(data.value)}${data.suffix}',
+            style: HeroTokens.titleLarge.copyWith(color: h.accent),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            data.label,
+            style: HeroTokens.caption.copyWith(color: h.muted),
+          ),
+        ],
       ),
     );
   }
@@ -438,65 +410,66 @@ class _StatCard extends StatelessWidget {
 class _HeatmapSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
     // Always 20 columns × 7 rows = 140 days of history.
     final days = ref.watch(statsHeatmapProvider).take(20 * 7).toList();
-    final theme = Theme.of(context);
     final total = days.fold<int>(0, (a, b) => a + b.count);
     final active = days.where((d) => d.count > 0).length;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.calendar_view_month_rounded,
-                      color: theme.colorScheme.primary),
-                  const SizedBox(width: 8),
-                  Text('Activity (last 20 weeks)',
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.bold)),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '$total contributions • $active active days',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                height: 130,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  reverse: true,
-                  child: HeatmapCalendar(days: days),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: HeroCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: h.accentSoft,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(Icons.calendar_view_month_rounded,
+                      size: 18, color: h.accent),
                 ),
+                const SizedBox(width: 12),
+                Text('Activity (last 20 weeks)',
+                    style: HeroTokens.title.copyWith(color: h.foreground)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '$total contributions • $active active days',
+              style: HeroTokens.caption.copyWith(color: h.muted),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 130,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                reverse: true,
+                child: HeatmapCalendar(days: days),
               ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Text('Less',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant)),
-                  const SizedBox(width: 6),
-                  ...LuminaTheme.heatLevels.map((c) => Padding(
-                        padding: const EdgeInsets.only(right: 3),
-                        child: _HeatCell(color: c, size: 12),
-                      )),
-                  const SizedBox(width: 6),
-                  Text('More',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant)),
-                ],
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Text('Less',
+                    style: HeroTokens.caption.copyWith(color: h.muted)),
+                const SizedBox(width: 6),
+                ...LuminaTheme.heatLevels.map((c) => Padding(
+                      padding: const EdgeInsets.only(right: 3),
+                      child: _HeatCell(color: c, size: 12),
+                    )),
+                const SizedBox(width: 6),
+                Text('More',
+                    style: HeroTokens.caption.copyWith(color: h.muted)),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -580,7 +553,7 @@ class _GoalProgressCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
+    final h = HeroScope.of(context);
     // The first weekly goal acts as the headline progress bar.
     final primary = goals.isNotEmpty
         ? goals.first
@@ -594,69 +567,58 @@ class _GoalProgressCard extends ConsumerWidget {
     final pct = (primary.progress * 100).round();
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.flag_rounded, color: theme.colorScheme.primary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      primary.label,
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                    ),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: HeroCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: h.accentSoft,
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '$pct%',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: LinearProgressIndicator(
-                  value: primary.progress,
-                  minHeight: 12,
-                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                  valueColor: AlwaysStoppedAnimation(
-                    primary.progress >= 1
-                        ? LuminaTheme.finishedColor
-                        : theme.colorScheme.primary,
+                  child: Icon(Icons.flag_rounded, size: 18, color: h.accent),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    primary.label,
+                    style: HeroTokens.title.copyWith(color: h.foreground),
                   ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '${primary.current}/${primary.target} ${primary.unit} • ${primary.period.label}',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-              ),
-              const SizedBox(height: 16),
-              Text('All goals',
-                  style: theme.textTheme.titleSmall
-                      ?.copyWith(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              ...goals.map((g) => _GoalTile(goal: g)),
-            ],
-          ),
+                HeroChip(
+                  label: '$pct%',
+                  small: true,
+                  color: primary.progress >= 1
+                      ? HeroColorRole.success
+                      : HeroColorRole.accent,
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            HeroProgress(
+              value: primary.progress,
+              height: 10,
+              color: primary.progress >= 1 ? h.success : h.accent,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${primary.current}/${primary.target} ${primary.unit} • ${primary.period.label}',
+              style: HeroTokens.caption.copyWith(color: h.muted),
+            ),
+            const SizedBox(height: 18),
+            Text('All goals',
+                style: HeroTokens.body.copyWith(
+                  color: h.foreground,
+                  fontWeight: FontWeight.w600,
+                )),
+            const SizedBox(height: 4),
+            ...goals.map((g) => _GoalTile(goal: g)),
+          ],
         ),
       ),
     );
@@ -669,7 +631,7 @@ class _GoalTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final h = HeroScope.of(context);
     final pct = (goal.progress * 100).round();
     final done = goal.progress >= 1;
     return Padding(
@@ -681,53 +643,31 @@ class _GoalTile extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(goal.label,
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(fontWeight: FontWeight.w600)),
+                    style: HeroTokens.body.copyWith(
+                      color: h.foreground,
+                      fontWeight: FontWeight.w600,
+                    )),
               ),
               Text(
                 '${goal.current}/${goal.target} ${goal.unit}',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                style: HeroTokens.caption.copyWith(color: h.muted),
               ),
               const SizedBox(width: 8),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: (done
-                          ? LuminaTheme.finishedColor
-                          : theme.colorScheme.primary)
-                      .withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  '$pct%',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: done
-                        ? LuminaTheme.finishedColor
-                        : theme.colorScheme.primary,
-                  ),
-                ),
+              HeroChip(
+                label: '$pct%',
+                small: true,
+                color: done ? HeroColorRole.success : HeroColorRole.accent,
               ),
               const SizedBox(width: 6),
               Text(goal.period.label,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant)),
+                  style: HeroTokens.caption.copyWith(color: h.muted)),
             ],
           ),
           const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: LinearProgressIndicator(
-              value: goal.progress,
-              minHeight: 8,
-              backgroundColor: theme.colorScheme.surfaceContainerHighest,
-              valueColor: AlwaysStoppedAnimation(
-                done ? LuminaTheme.finishedColor : theme.colorScheme.primary,
-              ),
-            ),
+          HeroProgress(
+            value: goal.progress,
+            height: 6,
+            color: done ? h.success : h.accent,
           ),
         ],
       ),
@@ -746,26 +686,26 @@ class _HistorySummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final h = HeroScope.of(context);
     final rows = <_SummaryRow>[
       _SummaryRow(
         icon: Icons.menu_book_rounded,
         label: 'Chapters read',
         value: summary['chaptersRead'] ?? 0,
-        color: LuminaTheme.readingColor,
+        color: h.accent,
       ),
       _SummaryRow(
         icon: Icons.live_tv_rounded,
         label: 'Episodes watched',
         value: summary['episodesWatched'] ?? 0,
-        color: LuminaTheme.finishedColor,
+        color: h.success,
       ),
       _SummaryRow(
-        icon: Icons.local_fire_department,
+        icon: Icons.local_fire_department_rounded,
         label: 'Longest streak',
         value: streak.longestStreak,
         suffix: ' days',
-        color: Colors.orange.shade700,
+        color: h.warning,
       ),
       _SummaryRow(
         icon: Icons.calendar_today_outlined,
@@ -774,54 +714,63 @@ class _HistorySummaryCard extends StatelessWidget {
         suffix: streak.lastActiveDay != null
             ? ' • ${_dayLabel(streak.lastActiveDay!)}'
             : '',
-        color: LuminaTheme.unreadColor,
+        color: h.accent,
       ),
     ];
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.history_rounded, color: theme.colorScheme.primary),
-                  const SizedBox(width: 8),
-                  Text('Reading history',
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.bold)),
-                ],
-              ),
-              const SizedBox(height: 8),
-              ...rows.map((r) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: r.color.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(r.icon, size: 18, color: r.color),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: HeroCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: h.accentSoft,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(Icons.history_rounded, size: 18, color: h.accent),
+                ),
+                const SizedBox(width: 12),
+                Text('Reading history',
+                    style: HeroTokens.title.copyWith(color: h.foreground)),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ...rows.map((r) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color:
+                              r.color.withValues(alpha: h.isDark ? 0.20 : 0.12),
+                          borderRadius: BorderRadius.circular(9),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(r.label,
-                              style: theme.textTheme.bodyMedium),
+                        child: Icon(r.icon, size: 16, color: r.color),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(r.label,
+                            style:
+                                HeroTokens.body.copyWith(color: h.foreground)),
+                      ),
+                      Text(
+                        '${r.value}${r.suffix}',
+                        style: HeroTokens.body.copyWith(
+                          color: h.foreground,
+                          fontWeight: FontWeight.w600,
                         ),
-                        Text(
-                          '${r.value}${r.suffix}',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                  )),
-            ],
-          ),
+                      ),
+                    ],
+                  ),
+                )),
+          ],
         ),
       ),
     );

@@ -12,25 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/theme.dart';
-import '../../core/ui/heroui.dart';
+import '../../core/ui/heroui_v3.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../shared/widgets.dart';
 
-/// Manga / novel / book detail screen.
+/// Manga / novel / book detail screen (HeroUI v3).
 ///
-/// Renders a hero cover with a gradient scrim, metadata (title, author,
-/// status, rating, tags), an expandable description, a chapter list with
-/// read/unread indicators and per-chapter download buttons, plus the
-/// add-to-library, track (MAL / AniList) and share actions.
+/// Layout:
+///  * Full-bleed hero header — the cover art blurred 40px behind a gradient
+///    scrim that melts into the page background, floating back / open-in-
+///    browser / share buttons, and an info row (cover thumbnail, title,
+///    author, status chip, rating) overlapping the backdrop's bottom edge.
+///  * Action block — full-width "Continue reading" CTA plus the library and
+///    track pills.
+///  * Synopsis card with read-more toggle, genre chips and a compact
+///    metadata chip row.
+///  * Chapter list with per-row download actions, read/unread dimming,
+///    scanlator filter, downloaded-only filter, sort direction toggle and
+///    the download-all + long-press chapter actions.
 class MangaDetailScreen extends ConsumerStatefulWidget {
   const MangaDetailScreen({super.key, required this.id});
   final int id;
@@ -43,7 +52,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   bool _descExpanded = false;
   bool _downloadingAll = false;
   String? _chapterFilter;
-  bool _sortDescending = true;
+  bool _sortDescending = true; // newest first (Aniyomi default)
   bool _showDownloadedOnly = false;
 
   @override
@@ -63,61 +72,78 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       );
     }
 
+    final scanlators = manga.chapters
+        .map((c) => c.scanlator)
+        .whereType<String>()
+        .where((s) => s.trim().isNotEmpty)
+        .toSet()
+        .toList();
+
     return Scaffold(
       body: CustomScrollView(
         slivers: [
-          _DetailAppBar(manga: manga),
           SliverToBoxAdapter(
-            child: _HeaderSection(
+            child: _HeroHeader(
               manga: manga,
-              descExpanded: _descExpanded,
-              onToggleDesc: () =>
-                  setState(() => _descExpanded = !_descExpanded),
-              onToggleFavorite: () => _toggleFavorite(manga),
-              onTrack: () => _showTrackSheet(manga),
+              onBack: () => Navigator.maybePop(context),
+              onOpenInBrowser: () => _openInBrowser(manga),
               onShare: () => _share(manga),
             ),
           ),
-          SliverToBoxAdapter(child: _TagsRow(manga: manga)),
-          SliverToBoxAdapter(child: _ActionRow(manga: manga, onContinue: () {
-            // Imported books (epub / pdf) open their dedicated readers;
-            // manga/anime continue into the first unread chapter. The old
-            // code crashed with StateError on empty chapter lists.
-            final route = _bookReaderRoute(manga);
-            if (route != null) {
-              context.push(route);
-              return;
-            }
-            if (manga.chapters.isEmpty) {
-              showSnack(ref, context, 'No chapters available yet');
-              return;
-            }
-            final first = manga.chapters.firstWhere(
-              (c) => !c.isRead,
-              orElse: () => manga.chapters.first,
-            );
-            _openChapter(manga, first);
-          })),
-          SliverToBoxAdapter(child: _ChapterToolbar(
-            count: manga.chapters.length,
-            isAnime: manga.isAnime,
-            sortDescending: _sortDescending,
-            downloadedOnly: _showDownloadedOnly,
-            onToggleSort: () =>
-                setState(() => _sortDescending = !_sortDescending),
-            onToggleDownloaded: () =>
-                setState(() => _showDownloadedOnly = !_showDownloadedOnly),
-            onDownloadAll: () => _downloadAll(manga),
-            downloadingAll: _downloadingAll,
-            filter: _chapterFilter,
-            onFilterChanged: (v) => setState(() => _chapterFilter = v),
-            scanlators: manga.chapters
-                .map((c) => c.scanlator)
-                .whereType<String>()
-                .where((s) => s.trim().isNotEmpty)
-                .toSet()
-                .toList(),
-          )),
+          SliverToBoxAdapter(
+            child: _ActionBlock(
+              continueLabel: _continueLabel(manga),
+              isAnime: manga.isAnime,
+              inLibrary: manga.favorite,
+              onContinue: () {
+                // Imported books (epub / pdf) open their dedicated readers;
+                // manga/anime continue into the first unread chapter. The old
+                // code crashed with StateError on empty chapter lists.
+                final route = _bookReaderRoute(manga);
+                if (route != null) {
+                  context.push(route);
+                  return;
+                }
+                if (manga.chapters.isEmpty) {
+                  showSnack(ref, context, 'No chapters available yet');
+                  return;
+                }
+                final first = manga.chapters.firstWhere(
+                  (c) => !c.isRead,
+                  orElse: () => manga.chapters.first,
+                );
+                _openChapter(manga, first);
+              },
+              onToggleLibrary: () => _toggleFavorite(manga),
+              onTrack: () => _showTrackSheet(manga),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: _SynopsisCard(
+              text: manga.description,
+              expanded: _descExpanded,
+              onToggle: () => setState(() => _descExpanded = !_descExpanded),
+            ),
+          ),
+          SliverToBoxAdapter(child: _GenreChips(genres: manga.genre)),
+          SliverToBoxAdapter(child: _MetaChips(manga: manga)),
+          SliverToBoxAdapter(
+            child: _ListSectionHeader(
+              title: manga.isAnime ? 'Episodes' : 'Chapters',
+              count: manga.chapters.length,
+              showFilter: scanlators.isNotEmpty || _chapterFilter != null,
+              filterActive: _chapterFilter != null,
+              downloadedOnly: _showDownloadedOnly,
+              downloadingAll: _downloadingAll,
+              sortDescending: _sortDescending,
+              onFilter: () => _onFilterTapped(scanlators),
+              onToggleDownloaded: () =>
+                  setState(() => _showDownloadedOnly = !_showDownloadedOnly),
+              onDownloadAll: () => _downloadAll(manga),
+              onToggleSort: () =>
+                  setState(() => _sortDescending = !_sortDescending),
+            ),
+          ),
           _ChapterList(
             manga: manga,
             sortDescending: _sortDescending,
@@ -129,6 +155,27 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         ],
       ),
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Actions (business logic — unchanged from the previous implementation)
+  // ---------------------------------------------------------------------------
+
+  /// Label for the primary CTA. Guards against empty chapter lists (the
+  /// previous version crashed with a StateError while building the label).
+  String _continueLabel(Manga manga) {
+    if (manga.chapters.isEmpty) {
+      return manga.isAnime ? 'Start watching' : 'Start reading';
+    }
+    final next = manga.chapters.firstWhere(
+      (c) => !c.isRead,
+      orElse: () => manga.chapters.first,
+    );
+    if (next.isRead) {
+      return manga.isAnime ? 'Watch again' : 'Read again';
+    }
+    final n = next.number.toStringAsFixed(0);
+    return manga.isAnime ? 'Continue watching Ep $n' : 'Continue reading Ch $n';
   }
 
   /// Returns the dedicated reader route for imported book files
@@ -151,39 +198,46 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     return null;
   }
 
-  /// REAL remove-from-library with confirmation. Previously this only
-  /// flipped the favorite bit — the snackbar said "Removed from library"
-  /// while the entry stayed on the Library tab forever ("you can't delete
-  /// anything"). The favorite flag is kept for browse items; on the detail
-  /// screen the button now truly deletes the entry (chapters, downloads,
-  /// history, notes) and pops back.
+  /// REAL remove-from-library with confirmation. The button truly deletes
+  /// the entry (chapters, downloads, history, notes) and pops back.
   Future<void> _toggleFavorite(Manga manga) async {
-    final confirmed = await hConfirm(
+    final confirmed = await showHeroConfirm(
       context: context,
       title: 'Remove from library?',
       message:
           '"${manga.title}" and its chapters, downloads, history and notes will be deleted. This cannot be undone.',
       confirmLabel: 'Remove',
+      danger: true,
     );
     if (!confirmed) return;
-    await ref
-        .read(data.libraryRepositoryProvider)
-        .removeFromLibrary(manga.id);
+    await ref.read(data.libraryRepositoryProvider).removeFromLibrary(manga.id);
     if (mounted) {
       showSnack(ref, context, 'Removed "${manga.title}" from library');
       context.pop();
     }
   }
 
-  /// REAL "Open in browser" lives on the app bar (_DetailAppBar) and the
-  /// track sheet — see _DetailAppBar._openInBrowser.
+  /// Opens the entry's web page in the external browser (top-right header
+  /// button).
+  Future<void> _openInBrowser(Manga manga) async {
+    final url = manga.url;
+    if (!url.startsWith('http')) {
+      showSnack(ref, context, 'No web page for local items');
+      return;
+    }
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (mounted) showSnack(ref, context, 'Could not open browser');
+    }
+  }
 
   /// Track sheet — opens the entry's search page on the tracking sites in
   /// the browser. In-app tracker sync requires OAuth credentials this build
   /// does not bundle; deep-linking to the tracker search is the honest,
-  // actually-working replacement for the previous snackbar-only stubs.
+  /// actually-working replacement for the previous snackbar-only stubs.
   void _showTrackSheet(Manga manga) {
-    hSheet<void>(
+    showHeroSheet<void>(
       context: context,
       title: 'Track this ${manga.isAnime ? 'anime' : 'manga'}',
       builder: (sheetContext) {
@@ -204,34 +258,37 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const SizedBox(height: 4),
-                HTile(
-                  icon: Icons.tv_rounded,
-                  label: 'MyAnimeList',
+                HeroListTile(
+                  leadingIcon: Icons.tv_rounded,
+                  title: 'MyAnimeList',
                   subtitle: 'Open title page on MAL',
                   onTap: () {
                     Navigator.pop(sheetContext);
                     open('https://myanimelist.net/search/all?q=$encoded');
                   },
+                  showChevron: true,
                 ),
-                HTile(
-                  icon: Icons.auto_awesome_rounded,
-                  tone: HeroVariant.secondary,
-                  label: 'AniList',
+                HeroListTile(
+                  leadingIcon: Icons.auto_awesome_rounded,
+                  title: 'AniList',
                   subtitle: 'Open title page on AniList',
                   onTap: () {
                     Navigator.pop(sheetContext);
                     open('https://anilist.co/search/manga?search=$encoded');
                   },
+                  showChevron: true,
                 ),
-                HTile(
-                  icon: Icons.bookmark_rounded,
-                  tone: HeroVariant.success,
-                  label: 'MangaUpdates',
+                HeroListTile(
+                  leadingIcon: Icons.bookmark_rounded,
+                  leadingColor: HeroTokens.success,
+                  title: 'MangaUpdates',
                   subtitle: 'Follow release updates',
                   onTap: () {
                     Navigator.pop(sheetContext);
-                    open('https://www.mangaupdates.com/series.html?search=$encoded');
+                    open(
+                        'https://www.mangaupdates.com/series.html?search=$encoded');
                   },
+                  showChevron: true,
                 ),
                 const SizedBox(height: 12),
               ],
@@ -247,8 +304,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
         'Status: ${manga.status.label}\n'
         'Rating: ${manga.rating.toStringAsFixed(1)}\n'
         '${manga.isAnime ? "Watch" : "Read"} on Lumina Reader.';
-    SharePlus.instance
-        .share(ShareParams(text: text, subject: manga.title));
+    SharePlus.instance.share(ShareParams(text: text, subject: manga.title));
   }
 
   void _openChapter(Manga manga, Chapter chapter) {
@@ -279,479 +335,20 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
       if (mounted) setState(() => _downloadingAll = false);
     }
   }
-}
 
-// ---------------------------------------------------------------------------
-// Hero app bar with cover image + gradient overlay.
-// ---------------------------------------------------------------------------
-class _DetailAppBar extends ConsumerWidget {
-  const _DetailAppBar({required this.manga});
-  final Manga manga;
-
-  Future<void> _openInBrowser(BuildContext context, WidgetRef ref) async {
-    final url = manga.url;
-    if (!url.startsWith('http')) {
-      showSnack(ref, context, 'No web page for local items');
+  void _onFilterTapped(List<String> scanlators) {
+    if (_chapterFilter != null) {
+      setState(() => _chapterFilter = null);
       return;
     }
-    final uri = Uri.tryParse(url);
-    if (uri == null ||
-        !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      if (context.mounted) showSnack(ref, context, 'Could not open browser');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return SliverAppBar(
-      expandedHeight: 320,
-      pinned: true,
-      stretch: true,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back),
-        onPressed: () => Navigator.maybePop(context),
-      ),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.share_outlined),
-          onPressed: () => SharePlus.instance.share(
-            ShareParams(
-              text:
-                  '${manga.title}\n${manga.isAnime ? "Watch" : "Read"} on Lumina Reader.',
-              subject: manga.title,
-            ),
-          ),
-        ),
-        PopupMenuButton<String>(
-          onSelected: (v) {
-            if (v == 'open_browser') {
-              _openInBrowser(context, ref);
-            } else if (v == 'share') {
-              SharePlus.instance.share(ShareParams(
-                text: '${manga.title}\n${manga.url}',
-                subject: manga.title,
-              ));
-            }
-          },
-          itemBuilder: (_) => const [
-            PopupMenuItem(
-                value: 'open_browser', child: Text('Open in browser')),
-            PopupMenuItem(value: 'share', child: Text('Share link')),
-          ],
-        ),
-      ],
-      flexibleSpace: LayoutBuilder(
-        builder: (context, constraints) {
-          return FlexibleSpaceBar(
-            background: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (manga.thumbnailUrl != null)
-                  Image.network(
-                    manga.thumbnailUrl!,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .surfaceContainerHighest,
-                      child: const Icon(Icons.broken_image, size: 56),
-                    ),
-                  )
-                else
-                  Container(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .surfaceContainerHighest),
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withValues(alpha: 0.3),
-                        Colors.black.withValues(alpha: 0.85),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Header: cover thumbnail, title, author/artist, status, rating, library /
-// track / share buttons.
-// ---------------------------------------------------------------------------
-class _HeaderSection extends StatelessWidget {
-  const _HeaderSection({
-    required this.manga,
-    required this.descExpanded,
-    required this.onToggleDesc,
-    required this.onToggleFavorite,
-    required this.onTrack,
-    required this.onShare,
-  });
-
-  final Manga manga;
-  final bool descExpanded;
-  final VoidCallback onToggleDesc;
-  final VoidCallback onToggleFavorite;
-  final VoidCallback onTrack;
-  final VoidCallback onShare;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Hero(
-                tag: 'cover-${manga.id}',
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: SizedBox(
-                    width: 110,
-                    height: 160,
-                    child: manga.thumbnailUrl != null
-                        ? Image.network(
-                            manga.thumbnailUrl!,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(
-                              color: theme.colorScheme.surfaceContainerHighest,
-                              child: const Icon(Icons.menu_book, size: 36),
-                            ),
-                          )
-                        : Container(
-                            color: theme.colorScheme.surfaceContainerHighest,
-                            child: const Icon(Icons.menu_book, size: 36),
-                          ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      manga.title,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold, height: 1.2),
-                    ),
-                    const SizedBox(height: 6),
-                    if (manga.author != null)
-                      _metaLine(
-                          context, Icons.person_outline, 'by ${manga.author}'),
-                    if (manga.artist != null && manga.artist != manga.author)
-                      _metaLine(context, Icons.brush_outlined,
-                          'Art by ${manga.artist}'),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Icon(Icons.star_rounded,
-                            size: 16, color: Colors.amber.shade700),
-                        const SizedBox(width: 4),
-                        Text(manga.rating.toStringAsFixed(1),
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w600)),
-                        const SizedBox(width: 12),
-                        StatusChip(
-                          label: manga.status.label,
-                          color: _statusColor(manga.status),
-                          selected: true,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        FilledButton.icon(
-                          onPressed: onToggleFavorite,
-                          icon: Icon(manga.favorite
-                              ? Icons.favorite
-                              : Icons.favorite_border),
-                          label: Text(manga.favorite ? 'In library' : 'Add'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: onTrack,
-                          icon: const Icon(Icons.track_changes),
-                          label: const Text('Track'),
-                        ),
-                        OutlinedButton(
-                          onPressed: onShare,
-                          child: const Icon(Icons.share_outlined),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (manga.description != null) ...[
-            const SizedBox(height: 16),
-            _Description(
-              text: manga.description!,
-              expanded: descExpanded,
-              onToggle: onToggleDesc,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _metaLine(BuildContext context, IconData icon, String text) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 2),
-      child: Row(
-        children: [
-          Icon(icon, size: 14, color: Theme.of(context).colorScheme.outline),
-          const SizedBox(width: 4),
-          Flexible(
-            child: Text(
-              text,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontSize: 13,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Color _statusColor(ItemStatus s) {
-    switch (s) {
-      case ItemStatus.ongoing:
-        return LuminaTheme.readingColor;
-      case ItemStatus.completed:
-      case ItemStatus.publishingFinished:
-        return LuminaTheme.finishedColor;
-      case ItemStatus.licensed:
-        return LuminaTheme.unreadColor;
-      default:
-        return Colors.grey;
-    }
-  }
-}
-
-class _Description extends StatelessWidget {
-  const _Description({
-    required this.text,
-    required this.expanded,
-    required this.onToggle,
-  });
-
-  final String text;
-  final bool expanded;
-  final VoidCallback onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return GestureDetector(
-      onTap: onToggle,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AnimatedCrossFade(
-            duration: const Duration(milliseconds: 180),
-            crossFadeState: expanded
-                ? CrossFadeState.showSecond
-                : CrossFadeState.showFirst,
-            firstChild: Text(
-              text,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                height: 1.5,
-              ),
-            ),
-            secondChild: Text(
-              text,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                height: 1.5,
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            expanded ? 'Show less' : 'Read more',
-            style: TextStyle(
-              color: theme.colorScheme.primary,
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TagsRow extends StatelessWidget {
-  const _TagsRow({required this.manga});
-  final Manga manga;
-
-  @override
-  Widget build(BuildContext context) {
-    if (manga.genre.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: manga.genre
-            .map((g) => Chip(
-                  label: Text(g),
-                  visualDensity: VisualDensity.compact,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ))
-            .toList(),
-      ),
-    );
-  }
-}
-
-class _ActionRow extends StatelessWidget {
-  const _ActionRow({required this.manga, required this.onContinue});
-  final Manga manga;
-  final VoidCallback onContinue;
-
-  @override
-  Widget build(BuildContext context) {
-    final unread = manga.chapters.firstWhere(
-      (c) => !c.isRead,
-      orElse: () => manga.chapters.first,
-    );
-    final label = unread.isRead
-        ? (manga.isAnime ? 'Watch again' : 'Read again')
-        : (manga.isAnime
-            ? 'Continue watching Ep ${unread.number.toStringAsFixed(0)}'
-            : 'Continue reading Ch ${unread.number.toStringAsFixed(0)}');
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-      child: Row(
-        children: [
-          Expanded(
-            child: FilledButton.icon(
-              onPressed: onContinue,
-              icon: Icon(manga.isAnime ? Icons.play_arrow : Icons.menu_book),
-              label: Text(label),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ChapterToolbar extends StatelessWidget {
-  const _ChapterToolbar({
-    required this.count,
-    required this.isAnime,
-    required this.sortDescending,
-    required this.downloadedOnly,
-    required this.onToggleSort,
-    required this.onToggleDownloaded,
-    required this.onDownloadAll,
-    required this.downloadingAll,
-    required this.filter,
-    required this.onFilterChanged,
-    required this.scanlators,
-  });
-
-  final int count;
-  final bool isAnime;
-  final bool sortDescending;
-  final bool downloadedOnly;
-  final VoidCallback onToggleSort;
-  final VoidCallback onToggleDownloaded;
-  final VoidCallback onDownloadAll;
-  final bool downloadingAll;
-  final String? filter;
-  final ValueChanged<String?> onFilterChanged;
-  final List<String> scanlators;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 12, 4),
-      child: Row(
-        children: [
-          Text(
-            isAnime ? 'Episodes ($count)' : 'Chapters ($count)',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-          ),
-          const Spacer(),
-          if (filter != null)
-            IconButton(
-              tooltip: 'Clear filter',
-              icon: const Icon(Icons.filter_alt_off_outlined),
-              onPressed: () => onFilterChanged(null),
-            )
-          else
-            IconButton(
-              tooltip: 'Filter by scanlator',
-              icon: const Icon(Icons.filter_alt_outlined),
-              onPressed: () => _showFilterSheet(context),
-            ),
-          IconButton(
-            tooltip: downloadedOnly ? 'Show all' : 'Downloaded only',
-            isSelected: downloadedOnly,
-            icon: const Icon(Icons.download_done_outlined),
-            onPressed: onToggleDownloaded,
-          ),
-          IconButton(
-            tooltip: sortDescending ? 'Newest first' : 'Oldest first',
-            icon: Icon(sortDescending
-                ? Icons.arrow_downward_rounded
-                : Icons.arrow_upward_rounded),
-            onPressed: onToggleSort,
-          ),
-          IconButton(
-            tooltip: 'Download all',
-            icon: downloadingAll
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.download_for_offline_outlined),
-            onPressed: downloadingAll ? null : onDownloadAll,
-          ),
-        ],
-      ),
-    );
+    if (scanlators.isEmpty) return;
+    _showScanlatorSheet(scanlators);
   }
 
   /// REAL scanlator filter: lists the scanlator groups present in the
-  /// chapter list. Previously this hard-coded the literal 'Lumina Scans'
-  /// (matching nothing) and never opened a sheet.
-  void _showFilterSheet(BuildContext context) {
-    if (scanlators.isEmpty) {
-      onFilterChanged(null);
-      return;
-    }
-    hSheet<void>(
+  /// chapter list.
+  void _showScanlatorSheet(List<String> scanlators) {
+    showHeroSheet<void>(
       context: context,
       title: 'Filter by group',
       builder: (sheetContext) {
@@ -761,14 +358,14 @@ class _ChapterToolbar extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const SizedBox(height: 4),
-                ...scanlators.map((s) => HTile(
-                      icon: Icons.groups_rounded,
-                      tone: HeroVariant.secondary,
-                      label: s,
+                ...scanlators.map((s) => HeroListTile(
+                      leadingIcon: Icons.groups_rounded,
+                      title: s,
                       onTap: () {
                         Navigator.pop(sheetContext);
-                        onFilterChanged(s);
+                        setState(() => _chapterFilter = s);
                       },
+                      showChevron: true,
                     )),
                 const SizedBox(height: 12),
               ],
@@ -779,6 +376,625 @@ class _ChapterToolbar extends StatelessWidget {
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// Hero header — blurred cover backdrop + floating nav buttons + overlapping
+// info row (cover thumbnail, title, author, status chip, rating).
+// ---------------------------------------------------------------------------
+
+class _HeroHeader extends StatelessWidget {
+  const _HeroHeader({
+    required this.manga,
+    required this.onBack,
+    required this.onOpenInBrowser,
+    required this.onShare,
+  });
+
+  /// Backdrop height excluding the status bar (~200-230 total on device).
+  static const double _backdropHeight = 182;
+
+  /// How far the info row climbs into the backdrop.
+  static const double _overlap = 70;
+
+  final Manga manga;
+  final VoidCallback onBack;
+  final VoidCallback onOpenInBrowser;
+  final VoidCallback onShare;
+
+  @override
+  Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
+    final statusTop = MediaQuery.paddingOf(context).top;
+    final backdropHeight = statusTop + _backdropHeight;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        // Blurred cover backdrop with a scrim melting into the page
+        // background.
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: backdropHeight,
+          child: _HeroBackdrop(url: manga.thumbnailUrl),
+        ),
+        // Floating navigation over the backdrop.
+        Positioned(
+          top: statusTop + 6,
+          left: 10,
+          right: 10,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              HeroIconButton(
+                icon: Icons.arrow_back_rounded,
+                iconSize: 22,
+                color: Colors.white,
+                backgroundColor: Colors.black.withValues(alpha: 0.35),
+                tooltip: 'Back',
+                onPressed: onBack,
+              ),
+              Row(
+                children: [
+                  HeroIconButton(
+                    icon: Icons.open_in_new_rounded,
+                    iconSize: 20,
+                    color: Colors.white,
+                    backgroundColor: Colors.black.withValues(alpha: 0.35),
+                    tooltip: 'Open in browser',
+                    onPressed: onOpenInBrowser,
+                  ),
+                  const SizedBox(width: 4),
+                  HeroIconButton(
+                    icon: Icons.ios_share_outlined,
+                    iconSize: 20,
+                    color: Colors.white,
+                    backgroundColor: Colors.black.withValues(alpha: 0.35),
+                    tooltip: 'Share',
+                    onPressed: onShare,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        // Info row overlapping the backdrop's bottom edge.
+        Padding(
+          padding: EdgeInsets.only(
+            top: backdropHeight - _overlap,
+            left: 20,
+            right: 20,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _CoverThumb(url: manga.thumbnailUrl),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 14),
+                    Text(
+                      manga.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          HeroTokens.titleLarge.copyWith(color: h.foreground),
+                    ),
+                    if (manga.author != null && manga.author!.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'by ${manga.author}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: HeroTokens.bodySmall.copyWith(color: h.muted),
+                      ),
+                    ],
+                    if (manga.artist != null &&
+                        manga.artist!.isNotEmpty &&
+                        manga.artist != manga.author) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Art by ${manga.artist}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: HeroTokens.bodySmall.copyWith(color: h.muted),
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    _StatusRatingRow(
+                      status: manga.status,
+                      rating: manga.rating,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Full-bleed backdrop: the cover blurred 40px behind a gradient scrim that
+/// fades into the page background. Falls back to a subtle accent-tinted
+/// gradient when there is no cover or it fails to load.
+class _HeroBackdrop extends StatelessWidget {
+  const _HeroBackdrop({required this.url});
+
+  final String? url;
+
+  @override
+  Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Accent-tinted fallback — also the placeholder while loading.
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                h.accent.withValues(alpha: 0.32),
+                h.background,
+              ],
+            ),
+          ),
+        ),
+        if (url != null)
+          ClipRect(
+            child: ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
+              child: Transform.scale(
+                scale: 1.25,
+                child: Image.network(
+                  url!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                ),
+              ),
+            ),
+          ),
+        // Scrim: transparent at the top, page background at the bottom, so
+        // the backdrop transitions into the rest of the screen.
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              stops: const [0.3, 1],
+              colors: [
+                h.background.withValues(alpha: 0),
+                h.background,
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Cover thumbnail (100x145, radius 14, drop shadow) used by the info row.
+class _CoverThumb extends StatelessWidget {
+  const _CoverThumb({required this.url});
+
+  final String? url;
+
+  @override
+  Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
+    return Container(
+      width: 100,
+      height: 145,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: h.isDark ? 0.45 : 0.25),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: url != null
+            ? Image.network(
+                url!,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _placeholder(h),
+              )
+            : _placeholder(h),
+      ),
+    );
+  }
+
+  Widget _placeholder(HeroThemeData h) {
+    return Container(
+      color: h.surface2,
+      alignment: Alignment.center,
+      child: Icon(Icons.menu_book_rounded, size: 34, color: h.muted),
+    );
+  }
+}
+
+/// Status chip (soft, colored by publication status) + star rating in
+/// accent. "Unknown" status renders no chip at all.
+class _StatusRatingRow extends StatelessWidget {
+  const _StatusRatingRow({required this.status, required this.rating});
+
+  final ItemStatus status;
+  final double rating;
+
+  @override
+  Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
+    final role = _statusRole(status);
+    return Wrap(
+      spacing: 8,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        if (role != null)
+          HeroChip(
+            label: status.label,
+            variant: HeroChipVariant.soft,
+            color: role,
+            small: true,
+          ),
+        if (rating > 0)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.star_rounded, size: 15, color: h.accent),
+              const SizedBox(width: 3),
+              Text(
+                rating.toStringAsFixed(1),
+                style: HeroTokens.bodySmall
+                    .copyWith(color: h.accent, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Action block — primary continue CTA + library / track pills.
+// ---------------------------------------------------------------------------
+
+class _ActionBlock extends StatelessWidget {
+  const _ActionBlock({
+    required this.continueLabel,
+    required this.isAnime,
+    required this.inLibrary,
+    required this.onContinue,
+    required this.onToggleLibrary,
+    required this.onTrack,
+  });
+
+  final String continueLabel;
+  final bool isAnime;
+  final bool inLibrary;
+  final VoidCallback onContinue;
+  final VoidCallback onToggleLibrary;
+  final VoidCallback onTrack;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          HeroButton(
+            label: continueLabel,
+            icon: isAnime ? Icons.play_arrow_rounded : Icons.menu_book_rounded,
+            variant: HeroButtonVariant.solid,
+            size: HeroButtonSize.md,
+            onPressed: onContinue,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: HeroButton(
+                    label: inLibrary ? 'In Library' : 'Add to Library',
+                    icon: inLibrary
+                        ? Icons.bookmark_rounded
+                        : Icons.bookmark_border_rounded,
+                    variant: HeroButtonVariant.soft,
+                    size: HeroButtonSize.md,
+                    onPressed: onToggleLibrary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: HeroButton(
+                    label: 'Track',
+                    icon: Icons.insights_outlined,
+                    variant: HeroButtonVariant.light,
+                    size: HeroButtonSize.md,
+                    onPressed: onTrack,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Synopsis card — collapsed to 4 lines with an accent read-more toggle.
+// ---------------------------------------------------------------------------
+
+class _SynopsisCard extends StatelessWidget {
+  const _SynopsisCard({
+    required this.text,
+    required this.expanded,
+    required this.onToggle,
+  });
+
+  /// Descriptions longer than this offer the "Read more" toggle.
+  static const int _longTextThreshold = 240;
+
+  final String? text;
+  final bool expanded;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
+    final clean = text?.trim() ?? '';
+    if (clean.isEmpty) return const SizedBox.shrink();
+
+    final isLong = clean.length > _longTextThreshold;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      child: HeroCard(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              clean,
+              maxLines: expanded ? null : 4,
+              overflow: TextOverflow.ellipsis,
+              style: HeroTokens.body.copyWith(color: h.muted, height: 1.55),
+            ),
+            if (isLong) ...[
+              const SizedBox(height: 6),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onToggle,
+                child: Text(
+                  expanded ? 'Less' : 'Read more',
+                  style: HeroTokens.bodySmall.copyWith(
+                    color: h.accent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Genre chips — soft accent, only when the source provides genres.
+// ---------------------------------------------------------------------------
+
+class _GenreChips extends StatelessWidget {
+  const _GenreChips({required this.genres});
+
+  final List<String> genres;
+
+  @override
+  Widget build(BuildContext context) {
+    final visible =
+        genres.where((g) => g.trim().isNotEmpty).toList(growable: false);
+    if (visible.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final genre in visible)
+            HeroChip(
+              label: genre,
+              variant: HeroChipVariant.soft,
+              color: HeroColorRole.accent,
+              small: true,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Compact metadata chips — media type, chapter count, unread count.
+// ---------------------------------------------------------------------------
+
+class _MetaChips extends StatelessWidget {
+  const _MetaChips({required this.manga});
+
+  final Manga manga;
+
+  String get _typeLabel {
+    switch (manga.itemType) {
+      case ItemType.manga:
+        return 'Manga';
+      case ItemType.anime:
+        return 'Anime';
+      case ItemType.novel:
+        return 'Novel';
+      case ItemType.book:
+        return 'Book';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          HeroChip(
+            label: _typeLabel,
+            variant: HeroChipVariant.soft,
+            color: HeroColorRole.neutral,
+            small: true,
+          ),
+          if (manga.chapters.isNotEmpty)
+            HeroChip(
+              label: manga.isAnime
+                  ? '${manga.chapters.length} episodes'
+                  : '${manga.chapters.length} chapters',
+              variant: HeroChipVariant.soft,
+              color: HeroColorRole.neutral,
+              small: true,
+            ),
+          if (manga.unreadCount > 0)
+            HeroChip(
+              label: '${manga.unreadCount} unread',
+              variant: HeroChipVariant.soft,
+              color: HeroColorRole.neutral,
+              small: true,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Chapter section header — title + count chip + filter / downloaded-only /
+// download-all / sort icon buttons.
+// ---------------------------------------------------------------------------
+
+class _ListSectionHeader extends StatelessWidget {
+  const _ListSectionHeader({
+    required this.title,
+    required this.count,
+    required this.showFilter,
+    required this.filterActive,
+    required this.downloadedOnly,
+    required this.downloadingAll,
+    required this.sortDescending,
+    required this.onFilter,
+    required this.onToggleDownloaded,
+    required this.onDownloadAll,
+    required this.onToggleSort,
+  });
+
+  final String title;
+  final int count;
+  final bool showFilter;
+  final bool filterActive;
+  final bool downloadedOnly;
+  final bool downloadingAll;
+  final bool sortDescending;
+  final VoidCallback onFilter;
+  final VoidCallback onToggleDownloaded;
+  final VoidCallback onDownloadAll;
+  final VoidCallback onToggleSort;
+
+  @override
+  Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 26, 10, 4),
+      child: Row(
+        children: [
+          Text(title, style: HeroTokens.title.copyWith(color: h.foreground)),
+          const SizedBox(width: 8),
+          HeroChip(
+            label: '$count',
+            variant: HeroChipVariant.soft,
+            color: HeroColorRole.neutral,
+            small: true,
+          ),
+          const Spacer(),
+          if (showFilter)
+            HeroIconButton(
+              icon: filterActive
+                  ? Icons.filter_alt_off_outlined
+                  : Icons.filter_alt_outlined,
+              size: 36,
+              iconSize: 19,
+              tooltip: filterActive ? 'Clear group filter' : 'Filter by group',
+              color: filterActive ? h.accent : null,
+              onPressed: onFilter,
+            ),
+          HeroIconButton(
+            icon: Icons.download_done_outlined,
+            size: 36,
+            iconSize: 19,
+            tooltip: downloadedOnly ? 'Show all' : 'Downloaded only',
+            color: downloadedOnly ? h.accent : null,
+            backgroundColor: downloadedOnly ? h.accentSoft : null,
+            onPressed: onToggleDownloaded,
+          ),
+          if (downloadingAll)
+            const SizedBox(
+              width: 36,
+              height: 36,
+              child: Center(
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          else
+            HeroIconButton(
+              icon: Icons.download_for_offline_outlined,
+              size: 36,
+              iconSize: 19,
+              tooltip: 'Download all',
+              onPressed: onDownloadAll,
+            ),
+          HeroIconButton(
+            icon: sortDescending
+                ? Icons.arrow_downward_rounded
+                : Icons.arrow_upward_rounded,
+            size: 36,
+            iconSize: 19,
+            tooltip: sortDescending ? 'Newest first' : 'Oldest first',
+            onPressed: onToggleSort,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Chapter list — filtering + sorting, HeroSeparator-divided rows.
+// ---------------------------------------------------------------------------
 
 class _ChapterList extends ConsumerWidget {
   const _ChapterList({
@@ -797,6 +1013,7 @@ class _ChapterList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final tasks = ref.watch(downloadsProvider);
     var chapters = List<Chapter>.from(manga.chapters);
     if (downloadedOnly) {
       chapters = chapters.where((c) => c.isDownloaded).toList();
@@ -821,24 +1038,35 @@ class _ChapterList extends ConsumerWidget {
 
     return SliverList.separated(
       itemCount: chapters.length,
-      separatorBuilder: (_, __) => const Divider(height: 1, indent: 56),
+      separatorBuilder: (_, __) => const HeroSeparator(indent: 56),
       itemBuilder: (context, i) {
         final c = chapters[i];
         return _ChapterTile(
           chapter: c,
           isAnime: manga.isAnime,
+          queuedOrDownloading: _isQueuedOrDownloading(tasks, manga, c),
           onTap: () => onOpen(c),
           onLongPress: () => _showChapterMenu(context, ref, manga, c),
+          onDownload: () {
+            if (manga.isAnime) {
+              ref.read(downloadsProvider.notifier).enqueueEpisode(
+                    manga: manga,
+                    chapter: c,
+                  );
+            } else {
+              ref.read(downloadsProvider.notifier).enqueueChapter(
+                    manga: manga,
+                    chapter: c,
+                  );
+            }
+          },
         );
       },
     );
   }
 
-  /// Long-press context menu — previously a long-press toggled the LIBRARY
-  /// selection provider with a chapter id (a no-op on this screen that also
-  /// corrupted the Library tab's selection state). Now it opens the same
-  /// chapter actions Mihon-style apps offer: mark read, bookmark, download
-  /// and delete download.
+  /// Long-press context menu — Mihon-style chapter actions: mark read,
+  /// bookmark, download and delete download.
   void _showChapterMenu(
     BuildContext context,
     WidgetRef ref,
@@ -846,7 +1074,7 @@ class _ChapterList extends ConsumerWidget {
     Chapter chapter,
   ) {
     final repo = ref.read(data.libraryRepositoryProvider);
-    hSheet<void>(
+    showHeroSheet<void>(
       context: context,
       title: chapter.name,
       builder: (sheetContext) {
@@ -856,57 +1084,60 @@ class _ChapterList extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const SizedBox(height: 4),
-                HTile(
-                  icon: chapter.isRead
+                HeroListTile(
+                  leadingIcon: chapter.isRead
                       ? Icons.mark_chat_unread_outlined
                       : Icons.done_all_rounded,
-                  tone: HeroVariant.primary,
-                  label: chapter.isRead
-                      ? 'Mark as unread'
-                      : 'Mark as read',
+                  title: chapter.isRead ? 'Mark as unread' : 'Mark as read',
                   onTap: () {
                     Navigator.pop(sheetContext);
                     repo.markChapterRead(chapter.id, read: !chapter.isRead);
                   },
+                  showChevron: true,
                 ),
-                HTile(
-                  icon: chapter.isBookmarked
+                HeroListTile(
+                  leadingIcon: chapter.isBookmarked
                       ? Icons.bookmark_remove_outlined
                       : Icons.bookmark_add_outlined,
-                  tone: HeroVariant.secondary,
-                  label: chapter.isBookmarked
-                      ? 'Remove bookmark'
-                      : 'Bookmark',
+                  title: chapter.isBookmarked ? 'Remove bookmark' : 'Bookmark',
                   onTap: () {
                     Navigator.pop(sheetContext);
-                    ref.read(data.libraryRepositoryProvider).saveChapterProgress(
-                      chapter.id,
-                      isBookmarked: !chapter.isBookmarked,
-                    );
+                    ref
+                        .read(data.libraryRepositoryProvider)
+                        .saveChapterProgress(
+                          chapter.id,
+                          isBookmarked: !chapter.isBookmarked,
+                        );
                   },
+                  showChevron: true,
                 ),
                 if (!chapter.isDownloaded)
-                  HTile(
-                    icon: Icons.download_rounded,
-                    tone: HeroVariant.success,
-                    label: 'Download',
+                  HeroListTile(
+                    leadingIcon: Icons.download_rounded,
+                    leadingColor: HeroTokens.success,
+                    title: 'Download',
                     subtitle: 'Queue via the download engine',
                     onTap: () {
                       Navigator.pop(sheetContext);
                       if (manga.isAnime) {
                         ref.read(downloadsProvider.notifier).enqueueEpisode(
-                            manga: manga, chapter: chapter);
+                              manga: manga,
+                              chapter: chapter,
+                            );
                       } else {
                         ref.read(downloadsProvider.notifier).enqueueChapter(
-                            manga: manga, chapter: chapter);
+                              manga: manga,
+                              chapter: chapter,
+                            );
                       }
                     },
+                    showChevron: true,
                   )
                 else
-                  HTile(
-                    icon: Icons.delete_outline_rounded,
-                    tone: HeroVariant.danger,
-                    label: 'Delete download',
+                  HeroListTile(
+                    leadingIcon: Icons.delete_outline_rounded,
+                    danger: true,
+                    title: 'Delete download',
                     subtitle: 'Removes the files from this device',
                     onTap: () {
                       Navigator.pop(sheetContext);
@@ -914,6 +1145,7 @@ class _ChapterList extends ConsumerWidget {
                           .read(downloadsProvider.notifier)
                           .deleteChapterFiles(chapter.id);
                     },
+                    showChevron: true,
                   ),
                 const SizedBox(height: 12),
               ],
@@ -925,99 +1157,165 @@ class _ChapterList extends ConsumerWidget {
   }
 }
 
-class _ChapterTile extends StatefulWidget {
+// ---------------------------------------------------------------------------
+// Chapter tile — leading number tile, name + date, download state trailing.
+// Read chapters are dimmed to muted.
+// ---------------------------------------------------------------------------
+
+class _ChapterTile extends StatelessWidget {
   const _ChapterTile({
     required this.chapter,
     required this.isAnime,
+    required this.queuedOrDownloading,
     required this.onTap,
     required this.onLongPress,
+    required this.onDownload,
   });
 
   final Chapter chapter;
   final bool isAnime;
+  final bool queuedOrDownloading;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
-
-  @override
-  State<_ChapterTile> createState() => _ChapterTileState();
-}
-
-class _ChapterTileState extends State<_ChapterTile> {
+  final VoidCallback onDownload;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final c = widget.chapter;
-    return ListTile(
-      leading: _leading(),
-      title: Text(
-        c.name,
-        style: TextStyle(
-          fontWeight: FontWeight.w600,
-          color: c.isRead ? theme.colorScheme.onSurfaceVariant : null,
-        ),
-      ),
-      subtitle: Row(
-        children: [
-          if (c.scanlator != null)
-            Flexible(
-              child: Text(
-                c.scanlator!,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall,
+    final h = HeroScope.of(context);
+    final c = chapter;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      onLongPress: onLongPress,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: c.isRead ? h.dflt : h.accentSoft,
+                borderRadius: BorderRadius.circular(11),
               ),
-            )
-          else
-            const Text('Unknown group'),
-          const SizedBox(width: 8),
-          Text(
-            c.dateUploaded != null ? timeAgo(c.dateUploaded!) : '',
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-          ),
-        ],
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (c.isBookmarked)
-            Icon(Icons.bookmark, color: theme.colorScheme.tertiary, size: 18),
-          if (c.isDownloaded)
-            const Icon(Icons.check_circle,
-                color: LuminaTheme.finishedColor, size: 20),
-        ],
-      ),
-      onTap: widget.onTap,
-      onLongPress: widget.onLongPress,
-    );
-  }
-
-  Widget _leading() {
-    if (widget.isAnime) {
-      return CircleAvatar(
-        backgroundColor: widget.chapter.isRead
-            ? Theme.of(context).colorScheme.surfaceContainerHighest
-            : Theme.of(context).colorScheme.primaryContainer,
-        child: Icon(
-          widget.chapter.isRead ? Icons.task_alt : Icons.play_arrow,
-          size: 18,
-          color: widget.chapter.isRead
-              ? Theme.of(context).colorScheme.onSurfaceVariant
-              : Theme.of(context).colorScheme.primary,
+              alignment: Alignment.center,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  _formatNumber(c.number),
+                  style: HeroTokens.caption.copyWith(
+                    color: c.isRead ? h.muted : h.accentSoftFg,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    c.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.3,
+                      fontWeight: FontWeight.w600,
+                      color: c.isRead ? h.muted : h.foreground,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _subtitle(c),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: HeroTokens.caption.copyWith(color: h.muted),
+                  ),
+                ],
+              ),
+            ),
+            if (c.isBookmarked) ...[
+              const SizedBox(width: 6),
+              Icon(Icons.bookmark_rounded, size: 15, color: h.warning),
+            ],
+            const SizedBox(width: 6),
+            _buildDownloadTrailing(h),
+          ],
         ),
-      );
-    }
-    return CircleAvatar(
-      backgroundColor: widget.chapter.isRead
-          ? Theme.of(context).colorScheme.surfaceContainerHighest
-          : Theme.of(context).colorScheme.primaryContainer,
-      child: widget.chapter.isRead
-          ? Icon(Icons.done_all,
-              size: 16,
-              color: Theme.of(context).colorScheme.onSurfaceVariant)
-          : Icon(Icons.menu_book_outlined,
-              size: 16, color: Theme.of(context).colorScheme.primary),
+      ),
     );
   }
 
+  String _subtitle(Chapter c) {
+    final parts = <String>[
+      if (c.scanlator != null && c.scanlator!.trim().isNotEmpty) c.scanlator!,
+      if (c.dateUploaded != null) timeAgo(c.dateUploaded!),
+    ];
+    return parts.join(' · ');
+  }
+
+  Widget _buildDownloadTrailing(HeroThemeData h) {
+    if (chapter.isDownloaded) {
+      return Icon(Icons.check_circle_rounded, size: 20, color: h.success);
+    }
+    if (queuedOrDownloading) {
+      return Icon(Icons.downloading_rounded, size: 20, color: h.accent);
+    }
+    return HeroIconButton(
+      icon: Icons.download_outlined,
+      size: 32,
+      iconSize: 19,
+      tooltip: 'Download',
+      variant: HeroColorRole.accent,
+      onPressed: onDownload,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared helpers
+// ---------------------------------------------------------------------------
+
+/// Maps a publication status onto a HeroUI chip role. `null` for unknown —
+/// an unknown status renders no chip at all (no "Unknown" placeholders).
+HeroColorRole? _statusRole(ItemStatus status) {
+  switch (status) {
+    case ItemStatus.ongoing:
+    case ItemStatus.completed:
+    case ItemStatus.publishingFinished:
+      return HeroColorRole.success;
+    case ItemStatus.onHiatus:
+    case ItemStatus.licensed:
+      return HeroColorRole.warning;
+    case ItemStatus.cancelled:
+      return HeroColorRole.danger;
+    case ItemStatus.unknown:
+      return null;
+  }
+}
+
+/// Formats a chapter number: whole numbers without trailing `.0`.
+String _formatNumber(double n) =>
+    n == n.truncateToDouble() ? n.toStringAsFixed(0) : n.toString();
+
+/// Whether a chapter currently sits in the download queue (queued,
+/// downloading or paused) for this manga.
+bool _isQueuedOrDownloading(
+  List<DownloadTask> tasks,
+  Manga manga,
+  Chapter chapter,
+) {
+  for (final t in tasks) {
+    if (t.mangaId == manga.id &&
+        t.chapterName == chapter.name &&
+        (t.state == DownloadState.queued ||
+            t.state == DownloadState.downloading ||
+            t.state == DownloadState.paused)) {
+      return true;
+    }
+  }
+  return false;
 }

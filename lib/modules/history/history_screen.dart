@@ -16,7 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/theme.dart';
+import '../../core/ui/heroui_v3.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../shared/widgets.dart';
@@ -44,6 +44,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
     final allHistory = ref.watch(historyProvider);
     // Client-side search filter (title / chapter name).
     final query = _searchController.text.trim().toLowerCase();
@@ -66,22 +67,23 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
               automaticallyImplyLeading: false,
               title: Text(
                 'History',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: HeroTokens.titleLarge.copyWith(color: h.foreground),
               ),
               actions: [
-                IconButton(
+                HeroIconButton(
                   tooltip: 'Search history',
-                  icon: Icon(_searchVisible ? Icons.close : Icons.search),
+                  icon: _searchVisible
+                      ? Icons.close_rounded
+                      : Icons.search_rounded,
                   onPressed: () => setState(() {
                     _searchVisible = !_searchVisible;
                     if (!_searchVisible) _searchController.clear();
                   }),
                 ),
-                IconButton(
+                HeroIconButton(
                   tooltip: 'Clear history',
-                  icon: const Icon(Icons.delete_sweep_outlined),
+                  icon: Icons.delete_sweep_outlined,
+                  variant: HeroColorRole.danger,
                   onPressed: () => _confirmClear(),
                 ),
               ],
@@ -90,16 +92,12 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                  child: TextField(
+                  child: HeroInput(
                     controller: _searchController,
+                    hint: 'Search history…',
+                    prefixIcon: Icons.search_rounded,
                     autofocus: true,
                     onChanged: (v) => setState(() {}),
-                    decoration: const InputDecoration(
-                      hintText: 'Search history…',
-                      prefixIcon: Icon(Icons.search),
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
                   ),
                 ),
               ),
@@ -111,6 +109,12 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                   title: 'No history yet',
                   subtitle:
                       'Chapters you read and episodes you watch will show up here.',
+                  action: HeroButton(
+                    label: 'Browse library',
+                    icon: Icons.local_library_outlined,
+                    variant: HeroButtonVariant.soft,
+                    onPressed: () => context.go('/library'),
+                  ),
                 ),
               )
             else
@@ -118,7 +122,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                     day: e.key,
                     entries: e.value,
                   )),
-            const SliverToBoxAdapter(child: SizedBox(height: 24)),
+            // Bottom nav bar clearance.
+            const SliverToBoxAdapter(child: SizedBox(height: 96)),
           ],
         ),
       ),
@@ -135,39 +140,25 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     return {for (final k in sortedKeys) k: map[k]!};
   }
 
-  void _confirmClear() {
-    showDialog<void>(
+  Future<void> _confirmClear() async {
+    final confirmed = await showHeroConfirm(
       context: context,
-      builder: (context) => AlertDialog(
-        icon: const Icon(Icons.warning_amber_rounded),
-        title: const Text('Clear history?'),
-        content: const Text(
-            'This permanently removes your reading and watching history. '
-            'This action cannot be undone.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error),
-            onPressed: () async {
-              Navigator.pop(context);
-              // REAL clear — previously a snackbar-only stub.
-              try {
-                await ref.read(historyProvider.notifier).clearAll();
-                if (!mounted) return;
-                showSnack(ref, this.context, 'History cleared');
-              } catch (e) {
-                if (!mounted) return;
-                showSnack(ref, this.context, 'Could not clear history');
-              }
-            },
-            child: const Text('Clear'),
-          ),
-        ],
-      ),
+      title: 'Clear history?',
+      message: 'This permanently removes your reading and watching history. '
+          'This action cannot be undone.',
+      confirmLabel: 'Clear',
+      danger: true,
     );
+    if (!confirmed || !mounted) return;
+    // REAL clear — previously a snackbar-only stub.
+    try {
+      await ref.read(historyProvider.notifier).clearAll();
+      if (!mounted) return;
+      showSnack(ref, context, 'History cleared');
+    } catch (e) {
+      if (!mounted) return;
+      showSnack(ref, context, 'Could not clear history');
+    }
   }
 }
 
@@ -181,22 +172,18 @@ class _DayGroup extends ConsumerWidget {
     return SliverMainAxisGroup(
       slivers: [
         SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-            child: Text(
-              _dayLabel(day),
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.primary,
-                letterSpacing: 0.4,
-              ),
+          child: HeroSectionHeader(
+            _dayLabel(day),
+            trailing: HeroChip(
+              label: '${entries.length}',
+              small: true,
+              color: HeroColorRole.neutral,
             ),
           ),
         ),
         SliverList.separated(
           itemCount: entries.length,
-          separatorBuilder: (_, __) => const Divider(height: 1, indent: 84),
+          separatorBuilder: (_, __) => const HeroSeparator(indent: 76),
           itemBuilder: (context, i) => _HistoryTile(entry: entries[i]),
         ),
       ],
@@ -212,8 +199,18 @@ class _DayGroup extends ConsumerWidget {
     if (d == yesterday) return 'YESTERDAY';
     if (d.isAfter(weekAgo) && d.isBefore(today)) return 'THIS WEEK';
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
     ];
     return '${months[d.month - 1].toUpperCase()} ${d.day}, ${d.year}';
   }
@@ -225,15 +222,15 @@ class _HistoryTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
+    final h = HeroScope.of(context);
     return Dismissible(
       key: ValueKey(entry.id),
       direction: DismissDirection.endToStart,
       background: Container(
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
-        color: theme.colorScheme.errorContainer,
-        child: Icon(Icons.delete_outline, color: theme.colorScheme.error),
+        color: h.dangerSoft,
+        child: Icon(Icons.delete_outline_rounded, color: h.danger),
       ),
       onDismissed: (_) async {
         // REAL removal — the Isar watch drops the row (previously the
@@ -245,116 +242,74 @@ class _HistoryTile extends ConsumerWidget {
           showSnack(ref, context, 'Removed from history');
         }
       },
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-        leading: SizedBox(
-          width: 56,
-          height: 80,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (entry.thumbnailUrl != null)
-                  Image.network(
-                    entry.thumbnailUrl!,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      color: theme.colorScheme.surfaceContainerHighest,
-                      child:
-                          Icon(entry.isAnime ? Icons.movie : Icons.menu_book),
-                    ),
-                  )
-                else
-                  Container(
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    child:
-                        Icon(entry.isAnime ? Icons.movie : Icons.menu_book),
-                  ),
-                if (entry.isAnime)
-                  Positioned(
-                    top: 4,
-                    left: 4,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.6),
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                      child: const Text('EP',
-                          style:
-                              TextStyle(color: Colors.white, fontSize: 9)),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-        title: Text(
-          entry.mangaTitle,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 2),
-            Text(
-              entry.chapterName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  fontSize: 12,
-                  color: theme.colorScheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Icon(
-                  entry.isAnime ? Icons.live_tv : Icons.menu_book,
-                  size: 13,
-                  color: theme.colorScheme.outline,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  '${(entry.progress * 100).round()}% • ${timeAgo(entry.readAt)}',
-                  style: TextStyle(
-                      fontSize: 11, color: theme.colorScheme.outline),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(3),
-              child: LinearProgressIndicator(
-                value: entry.progress,
-                minHeight: 3,
-                backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                valueColor: AlwaysStoppedAnimation(entry.progress >= 1
-                    ? LuminaTheme.finishedColor
-                    : LuminaTheme.readingColor),
-              ),
-            ),
-          ],
-        ),
-        isThreeLine: true,
-        trailing: IconButton(
-          tooltip:
-              entry.isAnime ? 'Continue watching' : 'Continue reading',
-          icon: Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primaryContainer,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(Icons.play_arrow,
-                color: theme.colorScheme.primary, size: 20),
-          ),
-          onPressed: () => _resume(context),
-        ),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: () => _resume(context),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              BookCover(
+                manga: Manga(
+                  id: entry.mangaId,
+                  title: entry.mangaTitle,
+                  sourceId: 0,
+                  url: '',
+                  itemType: entry.isAnime ? ItemType.anime : ItemType.manga,
+                  thumbnailUrl: entry.thumbnailUrl,
+                ),
+                width: 48,
+                height: 68,
+                radius: 8,
+                showTitle: false,
+                showProgress: false,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      entry.mangaTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: HeroTokens.body.copyWith(
+                        color: h.foreground,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${entry.chapterName} · ${timeAgo(entry.readAt)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: HeroTokens.caption.copyWith(color: h.muted),
+                    ),
+                    if (entry.progress > 0) ...[
+                      const SizedBox(height: 7),
+                      HeroProgress(
+                        value: entry.progress,
+                        height: 4,
+                        color: entry.progress >= 1 ? h.success : h.accent,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 4),
+              HeroIconButton(
+                tooltip:
+                    entry.isAnime ? 'Continue watching' : 'Continue reading',
+                icon: Icons.play_arrow_rounded,
+                iconSize: 24,
+                size: 40,
+                variant: HeroColorRole.accent,
+                backgroundColor: h.accentSoft,
+                onPressed: () => _resume(context),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

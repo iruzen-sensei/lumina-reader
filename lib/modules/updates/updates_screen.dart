@@ -16,8 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/theme.dart';
-import '../../core/ui/heroui.dart';
+import '../../core/ui/heroui_v3.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -53,10 +52,12 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
     final updates = ref.watch(updatesProvider);
     final filter = ref.watch(updatesFilterProvider);
-    final filtered =
-        filter == null ? updates : updates.where((u) => u.isRead == filter).toList();
+    final filtered = filter == null
+        ? updates
+        : updates.where((u) => u.isRead == filter).toList();
     final groups = _groupByDay(filtered);
 
     return Scaffold(
@@ -65,73 +66,79 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
           onRefresh: _onRefresh,
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            SliverAppBar(
-              pinned: false,
-              floating: true,
-              automaticallyImplyLeading: false,
-              title: Text(
-                'Updates',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+            slivers: [
+              SliverAppBar(
+                pinned: false,
+                floating: true,
+                automaticallyImplyLeading: false,
+                title: Text(
+                  'Updates',
+                  style: HeroTokens.titleLarge.copyWith(color: h.foreground),
+                ),
+                actions: [
+                  PopupMenuButton<String>(
+                    tooltip: 'Filter',
+                    icon: const Icon(Icons.filter_list_rounded),
+                    onSelected: (v) {
+                      switch (v) {
+                        case 'all':
+                          ref.read(updatesFilterProvider.notifier).state = null;
+                          break;
+                        case 'unread':
+                          ref.read(updatesFilterProvider.notifier).state =
+                              false;
+                          break;
+                        case 'read':
+                          ref.read(updatesFilterProvider.notifier).state = true;
+                          break;
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(
+                          value: 'all', child: Text('Show all')),
+                      const PopupMenuItem(
+                          value: 'unread', child: Text('Unread only')),
+                      const PopupMenuItem(
+                          value: 'read', child: Text('Read only')),
+                    ],
+                  ),
+                  HeroIconButton(
+                    tooltip: 'Mark all read',
+                    icon: Icons.done_all_rounded,
+                    onPressed: () async {
+                      // REAL persistence — previously a snackbar-only stub.
+                      await ref.read(updatesProvider.notifier).markAllRead();
+                      if (context.mounted) {
+                        showSnack(ref, context, 'Marked all as read');
+                      }
+                    },
+                  ),
+                ],
               ),
-              actions: [
-                PopupMenuButton<String>(
-                  tooltip: 'Filter',
-                  icon: const Icon(Icons.filter_list_rounded),
-                  onSelected: (v) {
-                    switch (v) {
-                      case 'all':
-                        ref.read(updatesFilterProvider.notifier).state = null;
-                        break;
-                      case 'unread':
-                        ref.read(updatesFilterProvider.notifier).state = false;
-                        break;
-                      case 'read':
-                        ref.read(updatesFilterProvider.notifier).state = true;
-                        break;
-                    }
-                  },
-                  itemBuilder: (_) => [
-                    const PopupMenuItem(
-                        value: 'all', child: Text('Show all')),
-                    const PopupMenuItem(
-                        value: 'unread', child: Text('Unread only')),
-                    const PopupMenuItem(
-                        value: 'read', child: Text('Read only')),
-                  ],
-                ),
-                IconButton(
-                  tooltip: 'Mark all read',
-                  icon: const Icon(Icons.done_all),
-                  onPressed: () async {
-                    // REAL persistence — previously a snackbar-only stub.
-                    await ref.read(updatesProvider.notifier).markAllRead();
-                    if (context.mounted) {
-                      showSnack(ref, context, 'Marked all as read');
-                    }
-                  },
-                ),
-              ],
-            ),
-            if (filtered.isEmpty)
-              SliverFillRemaining(
-                child: emptyState(
-                  context: context,
-                  icon: Icons.system_update_outlined,
-                  title: 'No new updates',
-                  subtitle:
-                      'Pull to refresh, or wait for the next sync interval.',
-                ),
-              )
-            else
-              ...groups.entries.map((e) => _DayGroup(
-                    day: e.key,
-                    items: e.value,
-                  )),
-            const SliverToBoxAdapter(child: SizedBox(height: 24)),
-          ],
+              if (filtered.isEmpty)
+                SliverFillRemaining(
+                  child: emptyState(
+                    context: context,
+                    icon: Icons.system_update_outlined,
+                    title: 'No new updates',
+                    subtitle:
+                        'Pull to refresh, or wait for the next sync interval.',
+                    action: HeroButton(
+                      label: 'Check for updates',
+                      icon: Icons.refresh_rounded,
+                      variant: HeroButtonVariant.soft,
+                      onPressed: () => _onRefresh(),
+                    ),
+                  ),
+                )
+              else
+                ...groups.entries.map((e) => _DayGroup(
+                      day: e.key,
+                      items: e.value,
+                    )),
+              // Bottom nav bar clearance.
+              const SliverToBoxAdapter(child: SizedBox(height: 96)),
+            ],
           ),
         ),
       ),
@@ -159,22 +166,18 @@ class _DayGroup extends ConsumerWidget {
     return SliverMainAxisGroup(
       slivers: [
         SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-            child: Text(
-              _dayLabel(day),
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.primary,
-                letterSpacing: 0.4,
-              ),
+          child: HeroSectionHeader(
+            _dayLabel(day),
+            trailing: HeroChip(
+              label: '${items.length}',
+              small: true,
+              color: HeroColorRole.neutral,
             ),
           ),
         ),
         SliverList.separated(
           itemCount: items.length,
-          separatorBuilder: (_, __) => const Divider(height: 1, indent: 76),
+          separatorBuilder: (_, __) => const HeroSeparator(indent: 76),
           itemBuilder: (context, i) => _UpdateTile(item: items[i]),
         ),
       ],
@@ -190,8 +193,18 @@ class _DayGroup extends ConsumerWidget {
     if (d == yesterday) return 'YESTERDAY';
     if (d.isAfter(weekAgo) && d.isBefore(today)) return 'THIS WEEK';
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
     ];
     return '${months[d.month - 1].toUpperCase()} ${d.day}, ${d.year}';
   }
@@ -225,137 +238,10 @@ class _UpdateTileState extends ConsumerState<_UpdateTile> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final h = HeroScope.of(context);
     final item = widget.item;
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-      leading: SizedBox(
-        width: 50,
-        height: 72,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (item.thumbnailUrl != null)
-                Image.network(
-                  item.thumbnailUrl!,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    child: Icon(item.isAnime ? Icons.movie : Icons.menu_book),
-                  ),
-                )
-              else
-                Container(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  child: Icon(item.isAnime ? Icons.movie : Icons.menu_book),
-                ),
-            ],
-          ),
-        ),
-      ),
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(
-              item.mangaTitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color:
-                    _isRead ? theme.colorScheme.onSurfaceVariant : null,
-              ),
-            ),
-          ),
-          if (!_isRead)
-            Container(
-              width: 8,
-              height: 8,
-              margin: const EdgeInsets.only(left: 6),
-              decoration: const BoxDecoration(
-                color: LuminaTheme.newColor,
-                shape: BoxShape.circle,
-              ),
-            ),
-        ],
-      ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 2),
-          Text(
-            item.chapterName,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-                fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
-          ),
-          const SizedBox(height: 2),
-          Row(
-            children: [
-              if (item.scanlator != null) ...[
-                Icon(Icons.group_outlined,
-                    size: 12, color: theme.colorScheme.outline),
-                const SizedBox(width: 3),
-                Flexible(
-                  child: Text(
-                    item.scanlator!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: 11, color: theme.colorScheme.outline),
-                  ),
-                ),
-                const SizedBox(width: 8),
-              ],
-              Icon(Icons.schedule,
-                  size: 12, color: theme.colorScheme.outline),
-              const SizedBox(width: 3),
-              Text(
-                timeAgo(item.date),
-                style: TextStyle(
-                    fontSize: 11, color: theme.colorScheme.outline),
-              ),
-            ],
-          ),
-        ],
-      ),
-      isThreeLine: true,
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            tooltip: _isRead
-                ? (item.isAnime ? 'Mark as unseen' : 'Mark as unread')
-                : (item.isAnime ? 'Mark as seen' : 'Mark as read'),
-            icon: Icon(
-              _isRead
-                  ? Icons.visibility_outlined
-                  : Icons.visibility_off_outlined,
-              size: 20,
-              color: _isRead
-                  ? theme.colorScheme.outline
-                  : LuminaTheme.readingColor,
-            ),
-            onPressed: () {
-              // Persist through the notifier — previously this only
-              // flipped a local copy that reset on the next rebuild.
-              final next = !_isRead;
-              setState(() => _isRead = next);
-              ref
-                  .read(updatesProvider.notifier)
-                  .setRead(widget.item.id, read: next);
-            },
-          ),
-          IconButton(
-            tooltip: _isDownloaded ? 'Delete download' : 'Download',
-            icon: _downloadIcon(),
-            onPressed: _toggleDownload,
-          ),
-        ],
-      ),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () {
         // Open the reader / player for the new chapter / episode.
         if (item.isAnime) {
@@ -364,21 +250,141 @@ class _UpdateTileState extends ConsumerState<_UpdateTile> {
           context.push('/mangaDetail/${item.mangaId}');
         }
       },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            BookCover(
+              manga: Manga(
+                id: item.mangaId,
+                title: item.mangaTitle,
+                sourceId: 0,
+                url: '',
+                itemType: item.isAnime ? ItemType.anime : ItemType.manga,
+                thumbnailUrl: item.thumbnailUrl,
+              ),
+              width: 48,
+              height: 68,
+              radius: 8,
+              showTitle: false,
+              showProgress: false,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          item.mangaTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: HeroTokens.body.copyWith(
+                            color: _isRead ? h.muted : h.foreground,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      // Unread indicator: small accent dot.
+                      if (!_isRead)
+                        Container(
+                          width: 8,
+                          height: 8,
+                          margin: const EdgeInsets.only(left: 6),
+                          decoration: BoxDecoration(
+                            color: h.accent,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    item.chapterName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: HeroTokens.caption.copyWith(color: h.muted),
+                  ),
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      if (item.scanlator != null) ...[
+                        Icon(Icons.group_outlined, size: 12, color: h.muted),
+                        const SizedBox(width: 3),
+                        Flexible(
+                          child: Text(
+                            item.scanlator!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: HeroTokens.caption.copyWith(color: h.muted),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      Icon(Icons.schedule_rounded, size: 12, color: h.muted),
+                      const SizedBox(width: 3),
+                      Text(
+                        timeAgo(item.date),
+                        style: HeroTokens.caption.copyWith(color: h.muted),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 4),
+            HeroIconButton(
+              tooltip: _isRead
+                  ? (item.isAnime ? 'Mark as unseen' : 'Mark as unread')
+                  : (item.isAnime ? 'Mark as seen' : 'Mark as read'),
+              icon: _isRead
+                  ? Icons.visibility_outlined
+                  : Icons.visibility_off_rounded,
+              size: 36,
+              iconSize: 20,
+              color: _isRead ? null : h.accent,
+              onPressed: () {
+                // Persist through the notifier — previously this only
+                // flipped a local copy that reset on the next rebuild.
+                final next = !_isRead;
+                setState(() => _isRead = next);
+                ref
+                    .read(updatesProvider.notifier)
+                    .setRead(widget.item.id, read: next);
+              },
+            ),
+            _downloadButton(h),
+          ],
+        ),
+      ),
     );
   }
 
-  Widget _downloadIcon() {
+  Widget _downloadButton(HeroThemeData h) {
     if (_downloading) {
       return const SizedBox(
-        width: 18,
-        height: 18,
-        child: CircularProgressIndicator(strokeWidth: 2),
+        width: 36,
+        height: 36,
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
       );
     }
-    if (_isDownloaded) {
-      return const Icon(Icons.check_circle, color: LuminaTheme.finishedColor);
-    }
-    return const Icon(Icons.download_outlined);
+    return HeroIconButton(
+      tooltip: _isDownloaded ? 'Delete download' : 'Download',
+      icon:
+          _isDownloaded ? Icons.check_circle_rounded : Icons.download_outlined,
+      size: 36,
+      iconSize: 20,
+      variant: _isDownloaded ? HeroColorRole.success : HeroColorRole.neutral,
+      onPressed: _toggleDownload,
+    );
   }
 
   Future<void> _toggleDownload() async {
@@ -387,7 +393,7 @@ class _UpdateTileState extends ConsumerState<_UpdateTile> {
       // REAL delete — removes the downloaded files + queue rows and
       // resets the chapter flag (previously "flip visual state only").
       if (item.chapterId == null) return;
-      final confirmed = await hConfirm(
+      final confirmed = await showHeroConfirm(
         context: context,
         title: 'Delete download?',
         message:
@@ -414,9 +420,8 @@ class _UpdateTileState extends ConsumerState<_UpdateTile> {
       // download (previously a fake 700 ms "downloaded" animation).
       final repo = ref.read(data.libraryRepositoryProvider);
       final manga = await repo.getManga(item.mangaId);
-      final chapter = manga?.chapters
-          .where((c) => c.id == item.chapterId)
-          .firstOrNull;
+      final chapter =
+          manga?.chapters.where((c) => c.id == item.chapterId).firstOrNull;
       if (manga == null || chapter == null) {
         if (mounted) {
           showSnack(ref, context, 'Chapter unavailable for download');

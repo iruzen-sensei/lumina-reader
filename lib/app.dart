@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/theme.dart';
+import 'core/ui/heroui_v3.dart';
 import 'modules/shared/app_lock.dart';
 import 'providers/providers.dart';
 import 'router/router.dart';
@@ -59,6 +60,19 @@ class LuminaApp extends ConsumerWidget {
                 : TextScaler.linear(textScale),
           ),
           child: child ?? const SizedBox.shrink(),
+        );
+
+        // HeroUI v3 design-system scope: resolves semantic tokens for every
+        // Hero* widget below (light/dark rows from the official palette).
+        final platformDark = mediaQuery.platformBrightness == Brightness.dark;
+        final effectiveDark = switch (settings.themeMode) {
+          AppThemeMode.system => platformDark,
+          AppThemeMode.light => false,
+          AppThemeMode.dark || AppThemeMode.amoled => true,
+        };
+        app = HeroScope(
+          data: effectiveDark ? HeroThemeData.dark() : HeroThemeData.light(),
+          child: app,
         );
 
         // E-ink mode: strip colour to grayscale e-paper look.

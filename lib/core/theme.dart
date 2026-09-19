@@ -12,235 +12,435 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import 'package:flex_color_scheme/flex_color_scheme.dart';
 import 'package:flutter/material.dart';
 
-import 'ui/heroui.dart';
+import 'ui/heroui_v3.dart';
 
-/// Lumina Reader theme — rebuilt on the HeroUI design language.
+/// Lumina Reader theme — HeroUI v3 design language.
 ///
-/// The palette, radii and component themes mirror HeroUI
-/// (https://heroui.com): primary blue #006FEE, secondary purple #7828C8,
-/// zinc neutral ramp, 8px control radius / 14px card radius, pill chips.
-/// Static colour helpers used across modules (status chips, heat-map…) are
-/// preserved and remapped to HeroUI tokens.
+/// Palette and component anatomy mirror the official HeroUI default theme
+/// (https://heroui.com, packages/styles v3): accent #0485F7, success #17C964,
+/// warning #F5A524/#F7B750, danger #FF383C/#DB3B3E, zinc-neutral surfaces
+/// (light bg #F5F5F5 / surface white; dark bg #060607 / surface #18181B),
+/// pill buttons, 16px chips, 24px cards, 12px fields.
+///
+/// The Material [ThemeData] below keeps every remaining Material widget
+/// (NavigationBars, AppBars, TabBars, dialogs…) on-system so screens can
+/// adopt the explicit HeroUI widgets incrementally without visual drift.
 class LuminaTheme {
   LuminaTheme._();
 
-  /// Brand seed (HeroUI primary). Used as the FlexColorScheme key colour
+  /// Brand seed (HeroUI v3 accent). Used as the FlexColorScheme key colour
   /// and the default custom-seed in Settings.
-  static const Color seed = HeroColors.primary;
+  static const Color seed = HeroTokens.accent;
 
-  // -- HeroUI light scheme ---------------------------------------------------
-  static const FlexSchemeColor _heroLight = FlexSchemeColor(
-    primary: HeroColors.primary, // #006FEE
-    primaryContainer: HeroColors.primary50, // #E6F1FD
-    secondary: HeroColors.secondary, // #7828C8
-    secondaryContainer: Color(0xFFF5EDFC),
-    tertiary: HeroColors.success, // #17C964
-    tertiaryContainer: Color(0xFFEAFBF1),
-    appBarColor: Colors.white,
-    error: HeroColors.danger, // #F31260
-    errorContainer: Color(0xFFFDE9F0),
-  );
-
-  // -- HeroUI dark scheme ----------------------------------------------------
-  static const FlexSchemeColor _heroDark = FlexSchemeColor(
-    primary: HeroColors.primary400, // #3696FB
-    primaryContainer: Color(0xFF103B7D),
-    secondary: HeroColors.secondary400, // #9B4DD9
-    secondaryContainer: Color(0xFF3B1D63),
-    tertiary: Color(0xFF3DD68C),
-    tertiaryContainer: Color(0xFF0B3F26),
-    appBarColor: HeroColors.darkContent1, // #18181B
-    error: Color(0xFFF43D78),
-    errorContainer: Color(0xFF5C0E2D),
-  );
-
-  static ThemeData light() => _finish(_lightScheme(), Brightness.light);
-
-  static ThemeData dark({bool trueBlack = false}) =>
-      _finish(_darkScheme(trueBlack), Brightness.dark);
-
-  static ThemeData _lightScheme() => FlexColorScheme.light(
-        colors: _heroLight,
-        surfaceMode: FlexSurfaceMode.level,
-        blendLevel: 6,
-        appBarStyle: FlexAppBarStyle.surface,
-        appBarOpacity: 1,
-        transparentStatusBar: true,
-        tabBarStyle: FlexTabBarStyle.forBackground,
-        subThemesData: const FlexSubThemesData(
-          interactionEffects: true,
-          tintedDisabledControls: true,
-          useM2StyleDividerInM3: true,
-          inputDecoratorIsFilled: true,
-          inputDecoratorBorderType: FlexInputBorderType.outline,
-          inputDecoratorUnfocusedBorderIsColored: false,
-          cardRadius: 14.0,
-          chipRadius: 999.0,
-          tooltipRadius: 8.0,
-          tooltipWaitDuration: Duration(milliseconds: 600),
-          drawerIndicatorRadius: 10.0,
-          appBarScrolledUnderElevation: 4.0,
-        ),
-        keyColors: const FlexKeyColors(
-          useKeyColors: true,
-          keepPrimary: true,
-          keepSecondary: true,
-          keepTertiary: true,
-        ),
-        visualDensity: FlexColorScheme.comfortablePlatformDensity,
-        useMaterial3: true,
-        swapLegacyOnMaterial3: true,
-      ).toTheme;
-
-  static ThemeData _darkScheme(bool trueBlack) => FlexColorScheme.dark(
-        colors: _heroDark,
-        surfaceMode: FlexSurfaceMode.level,
-        blendLevel: 6,
-        appBarStyle: FlexAppBarStyle.background,
-        appBarOpacity: 1,
-        transparentStatusBar: true,
-        tabBarStyle: FlexTabBarStyle.forBackground,
-        darkIsTrueBlack: trueBlack, // AMOLED pure black
-        subThemesData: const FlexSubThemesData(
-          interactionEffects: true,
-          tintedDisabledControls: true,
-          useM2StyleDividerInM3: true,
-          inputDecoratorIsFilled: true,
-          inputDecoratorBorderType: FlexInputBorderType.outline,
-          inputDecoratorUnfocusedBorderIsColored: false,
-          cardRadius: 14.0,
-          chipRadius: 999.0,
-          tooltipRadius: 8.0,
-          tooltipWaitDuration: Duration(milliseconds: 600),
-          drawerIndicatorRadius: 10.0,
-          appBarScrolledUnderElevation: 4.0,
-        ),
-        keyColors: const FlexKeyColors(
-          useKeyColors: true,
-          keepPrimary: true,
-          keepSecondary: true,
-          keepTertiary: true,
-        ),
-        visualDensity: FlexColorScheme.comfortablePlatformDensity,
-        useMaterial3: true,
-        swapLegacyOnMaterial3: true,
-      ).toTheme;
-
-  /// HeroUI component theming applied on top of the Flex base.
-  static ThemeData _finish(ThemeData theme, Brightness brightness) {
-    final isDark = brightness == Brightness.dark;
-    final scheme = theme.colorScheme;
-    final content1 = isDark ? HeroColors.darkContent1 : Colors.white;
-    final content2 = isDark ? HeroColors.darkContent2 : HeroColors.default100;
-
-    return theme.copyWith(
-      scaffoldBackgroundColor: isDark ? Colors.black : Colors.white,
-      dialogTheme: DialogThemeData(
-        backgroundColor: content1,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(HeroColors.radiusCard),
-        ),
-      ),
-      bottomSheetTheme: const BottomSheetThemeData(
-        backgroundColor: Colors.transparent,
-        modalBackgroundColor: Colors.transparent,
-        shape: RoundedRectangleBorder(
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(HeroColors.radiusSheet)),
-        ),
-        showDragHandle: true,
-      ),
-      snackBarTheme: SnackBarThemeData(
-        behavior: SnackBarBehavior.floating,
-        backgroundColor:
-            isDark ? HeroColors.darkContent3 : HeroColors.default900,
-        contentTextStyle: const TextStyle(
-          color: Colors.white,
-          fontSize: 13.5,
-          fontWeight: FontWeight.w500,
-        ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(HeroColors.radiusMedium),
-        ),
-      ),
-      tabBarTheme: TabBarThemeData(
-        labelColor: scheme.primary,
-        unselectedLabelColor:
-            isDark ? HeroColors.default400 : HeroColors.default500,
-        indicatorSize: TabBarIndicatorSize.label,
-        dividerColor: Colors.transparent,
-        indicator: BoxDecoration(
-          color: scheme.primary.withValues(alpha: isDark ? 0.25 : 0.12),
-          borderRadius: BorderRadius.circular(999),
-        ),
-      ),
-      listTileTheme: ListTileThemeData(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(HeroColors.radiusLarge),
-        ),
-      ),
-      switchTheme: SwitchThemeData(
-        thumbColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) return Colors.white;
-          return HeroColors.default400;
-        }),
-        trackColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) return scheme.primary;
-          return content2;
-        }),
-        trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
-      ),
-      dividerTheme: DividerThemeData(
-        color: isDark ? HeroColors.darkContent3 : HeroColors.default200,
-        thickness: 1,
-        space: 1,
-      ),
-      progressIndicatorTheme: ProgressIndicatorThemeData(
-        color: scheme.primary,
-        linearTrackColor: content2,
-        circularTrackColor: content2,
-      ),
-      chipTheme: theme.chipTheme.copyWith(
-        backgroundColor: content2,
-        selectedColor: scheme.primary.withValues(alpha: isDark ? 0.25 : 0.12),
-        labelStyle: TextStyle(
-            color: isDark ? Colors.white : HeroColors.default900,
-            fontWeight: FontWeight.w500),
-        side: const BorderSide(color: Colors.transparent),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(999),
-        ),
-      ),
-    );
-  }
+  // -- Semantic status colours (referenced across modules) ------------------
 
   /// Colour used for the "reading" status chips and progress indicators.
-  static const Color readingColor = HeroColors.primary;
+  static const Color readingColor = HeroTokens.accent;
 
   /// Colour used for the "finished" status chips and badges.
-  static const Color finishedColor = HeroColors.success;
+  static const Color finishedColor = HeroTokens.success;
 
   /// Colour used for the "unread" filter chip.
-  static const Color unreadColor = Color(0xFFF5A524);
+  static const Color unreadColor = HeroTokens.warningLight;
 
   /// Colour used to indicate a freshly downloaded/unread item.
-  static const Color newColor = HeroColors.danger;
+  static const Color newColor = HeroTokens.dangerLight;
 
   /// Five-step gradient used for the activity heat-map (least → most active).
   static const List<Color> heatLevels = [
-    Color(0xFF18181B),
-    Color(0xFF005BC4),
-    Color(0xFF006FEE),
-    Color(0xFF3696FB),
-    Color(0xFFBAE0FD),
+    Color(0xFF232325),
+    Color(0xFF0B4E8F),
+    Color(0xFF0485F7),
+    Color(0xFF53A8F8),
+    Color(0xFFB9DBFE),
   ];
 
   /// Linear gradient painted behind detail screen headers.
   static const List<Color> headerGradient = [
-    Color(0xFF103B7D),
-    Color(0xFF18181B),
+    Color(0xFF0E2C4E),
+    Color(0xFF060607),
   ];
+
+  // ---------------------------------------------------------------------------
+  // Light
+  // ---------------------------------------------------------------------------
+
+  static ThemeData light() => _build(Brightness.light, HeroThemeData.light());
+
+  // ---------------------------------------------------------------------------
+  // Dark
+  // ---------------------------------------------------------------------------
+
+  static ThemeData dark({bool trueBlack = false}) {
+    final base = _build(Brightness.dark, HeroThemeData.dark());
+    if (!trueBlack) return base;
+    // AMOLED: near-black background, keep surfaces distinguishable.
+    return base.copyWith(
+      scaffoldBackgroundColor: Colors.black,
+      canvasColor: Colors.black,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Builder
+  // ---------------------------------------------------------------------------
+
+  static ThemeData _build(Brightness brightness, HeroThemeData h) {
+    final isDark = brightness == Brightness.dark;
+
+    final scheme = ColorScheme(
+      brightness: brightness,
+      primary: h.accent,
+      onPrimary: Colors.white,
+      primaryContainer: h.accentSoft,
+      onPrimaryContainer: h.accentSoftFg,
+      secondary: h.success,
+      onSecondary: Colors.white,
+      secondaryContainer: h.successSoft,
+      onSecondaryContainer: h.successSoftFg,
+      tertiary: h.warning,
+      onTertiary: Colors.white,
+      tertiaryContainer: h.warningSoft,
+      onTertiaryContainer: h.warningSoftFg,
+      error: h.danger,
+      onError: Colors.white,
+      errorContainer: h.dangerSoft,
+      onErrorContainer: h.dangerSoftFg,
+      surface: h.surface,
+      onSurface: h.foreground,
+      surfaceContainerHighest: h.surface2,
+      surfaceContainerHigh: h.surface2,
+      surfaceContainerLow: h.isDark ? h.background : h.surface2,
+      surfaceContainer: h.surface2,
+      surfaceDim: h.isDark ? h.background : h.surface3,
+      surfaceBright: h.isDark ? h.surface2 : Colors.white,
+      onSurfaceVariant: h.muted,
+      outline: h.border,
+      outlineVariant: h.separator,
+      inverseSurface: isDark ? h.foreground : h.surface,
+      onInverseSurface: isDark ? h.surface : h.foreground,
+      shadow: Colors.black,
+      scrim: Colors.black,
+    );
+
+    final textTheme = Typography.blackMountainView
+        .apply(bodyColor: h.foreground, displayColor: h.foreground)
+        .merge(_textTheme(isDark));
+
+    return ThemeData(
+      useMaterial3: true,
+      brightness: brightness,
+      colorScheme: scheme,
+      scaffoldBackgroundColor: h.background,
+      canvasColor: h.background,
+      textTheme: textTheme,
+      splashFactory: InkSparkle.splashFactory,
+      visualDensity: VisualDensity.standard,
+      fontFamily: 'Roboto',
+    ).copyWith(
+      // -- AppBar: flat surface, no elevation, centered-free left title -----
+      appBarTheme: AppBarTheme(
+        backgroundColor: h.background,
+        foregroundColor: h.foreground,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0.6,
+        centerTitle: false,
+        titleTextStyle: HeroTokens.title.copyWith(color: h.foreground),
+        iconTheme: IconThemeData(color: h.foreground, size: 22),
+        actionsIconTheme: IconThemeData(color: h.foreground, size: 22),
+      ),
+      // -- Bottom navigation: HeroUI-style pill indicator ------------------
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: h.isDark ? h.surface : h.surface,
+        surfaceTintColor: Colors.transparent,
+        indicatorColor: h.accentSoft,
+        height: 68,
+        elevation: 0,
+        labelTextStyle: WidgetStateProperty.resolveWith(
+          (states) => TextStyle(
+            fontSize: 11.5,
+            fontWeight: states.contains(WidgetState.selected)
+                ? FontWeight.w600
+                : FontWeight.w500,
+            color: states.contains(WidgetState.selected)
+                ? h.accentSoftFg
+                : h.muted,
+          ),
+        ),
+        iconTheme: WidgetStateProperty.resolveWith(
+          (states) => IconThemeData(
+            size: 23,
+            color: states.contains(WidgetState.selected)
+                ? h.accent
+                : h.muted,
+          ),
+        ),
+      ),
+      navigationRailTheme: NavigationRailThemeData(
+        backgroundColor: h.background,
+        indicatorColor: h.accentSoft,
+        selectedIconTheme: IconThemeData(color: h.accent),
+        selectedLabelTextStyle: TextStyle(
+            color: h.accentSoftFg, fontWeight: FontWeight.w600, fontSize: 12),
+        unselectedLabelTextStyle: TextStyle(color: h.muted, fontSize: 12),
+        unselectedIconTheme: IconThemeData(color: h.muted),
+      ),
+      // -- Buttons -----------------------------------------------------------
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: h.accent,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: h.dflt,
+          disabledForegroundColor: h.muted,
+          textStyle: const TextStyle(
+              fontSize: 14, fontWeight: FontWeight.w500, height: 1),
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          minimumSize: const Size(0, 42),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(HeroTokens.radiusButton),
+          ),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: h.accent,
+          textStyle: const TextStyle(
+              fontSize: 14, fontWeight: FontWeight.w500, height: 1),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(HeroTokens.radiusButton),
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: h.accent,
+          side: BorderSide(color: h.accent.withValues(alpha: 0.5)),
+          textStyle: const TextStyle(
+              fontSize: 14, fontWeight: FontWeight.w500, height: 1),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(HeroTokens.radiusButton),
+          ),
+        ),
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          foregroundColor: h.foreground,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
+        ),
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: h.accent,
+        foregroundColor: Colors.white,
+        elevation: 2,
+        highlightElevation: 4,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+        ),
+      ),
+      // -- Tabs: pill indicator on surface2 ----------------------------------
+      tabBarTheme: TabBarThemeData(
+        labelColor: h.foreground,
+        unselectedLabelColor: h.muted,
+        labelStyle:
+            const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+        unselectedLabelStyle:
+            const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500),
+        indicatorSize: TabBarIndicatorSize.label,
+        dividerColor: Colors.transparent,
+        indicator: BoxDecoration(
+          color: h.dflt,
+          borderRadius: BorderRadius.circular(999),
+        ),
+      ),
+      // -- Inputs: filled, radius 12, accent focus ---------------------------
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: h.surface2,
+        hintStyle: TextStyle(color: h.muted),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(HeroTokens.radiusField),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(HeroTokens.radiusField),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(HeroTokens.radiusField),
+          borderSide: BorderSide(color: h.accent, width: 1.6),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(HeroTokens.radiusField),
+          borderSide: BorderSide(color: h.danger, width: 1.2),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(HeroTokens.radiusField),
+          borderSide: BorderSide(color: h.danger, width: 1.6),
+        ),
+      ),
+      // -- Switch ------------------------------------------------------------
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.disabled)) {
+            return h.muted.withValues(alpha: 0.4);
+          }
+          return Colors.white;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.disabled)) {
+            return h.dflt;
+          }
+          if (states.contains(WidgetState.selected)) return h.accent;
+          return h.dflt;
+        }),
+        trackOutlineColor:
+            const WidgetStatePropertyAll(Colors.transparent),
+        thumbIcon: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return Icon(Icons.check_rounded,
+                size: 15, color: h.accent.withValues(alpha: 0.9));
+          }
+          return null;
+        }),
+      ),
+      // -- Checkbox / radio ----------------------------------------------------
+      checkboxTheme: CheckboxThemeData(
+        fillColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return h.accent;
+          return Colors.transparent;
+        }),
+        side: BorderSide(color: h.border, width: 1.6),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(6),
+        ),
+      ),
+      radioTheme: RadioThemeData(
+        fillColor: WidgetStateProperty.resolveWith((states) =>
+            states.contains(WidgetState.selected) ? h.accent : h.muted),
+      ),
+      // -- Cards / dialogs / sheets -------------------------------------------
+      cardTheme: CardThemeData(
+        color: h.surface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(HeroTokens.radiusCard),
+          side: BorderSide(
+              color: h.isDark ? h.border : h.separator, width: 1),
+        ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: h.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: h.surface,
+        surfaceTintColor: Colors.transparent,
+        modalBackgroundColor: h.surface,
+        showDragHandle: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: isDark ? h.surface3 : h.foreground,
+        contentTextStyle: TextStyle(
+          color: isDark ? h.foreground : Colors.white,
+          fontSize: 13.5,
+          fontWeight: FontWeight.w500,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: h.dflt,
+        selectedColor: h.accentSoft,
+        labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+        labelStyle: TextStyle(
+          color: isDark ? h.foreground : h.foreground,
+          fontWeight: FontWeight.w500,
+          fontSize: 12.5,
+        ),
+        side: const BorderSide(color: Colors.transparent),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(HeroTokens.radiusChip),
+        ),
+      ),
+      dividerTheme: DividerThemeData(
+        color: h.separator,
+        thickness: 1,
+        space: 1,
+      ),
+      listTileTheme: ListTileThemeData(
+        iconColor: h.foreground,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+      ),
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        color: h.accent,
+        linearTrackColor: h.dflt,
+        circularTrackColor: h.dflt,
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: h.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+      ),
+      tooltipTheme: TooltipThemeData(
+        decoration: BoxDecoration(
+          color: isDark ? h.surface3 : h.foreground,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        textStyle: TextStyle(
+          color: isDark ? h.foreground : Colors.white,
+          fontSize: 12,
+        ),
+        waitDuration: const Duration(milliseconds: 600),
+      ),
+      sliderTheme: SliderThemeData(
+        activeTrackColor: h.accent,
+        inactiveTrackColor: h.dflt,
+        thumbColor: Colors.white,
+        overlayColor: h.accent.withValues(alpha: 0.12),
+      ),
+    );
+  }
+
+  static TextTheme _textTheme(bool isDark) {
+    final fg = isDark ? HeroTokens.darkForeground : HeroTokens.lightForeground;
+    final muted = isDark ? HeroTokens.darkMuted : HeroTokens.lightMuted;
+    return TextTheme(
+      displayLarge: HeroTokens.display.copyWith(color: fg),
+      displayMedium:
+          HeroTokens.display.copyWith(color: fg, fontSize: 26),
+      headlineLarge: HeroTokens.titleLarge.copyWith(color: fg),
+      headlineMedium: HeroTokens.title.copyWith(color: fg, fontSize: 19),
+      headlineSmall: HeroTokens.title.copyWith(color: fg),
+      titleLarge: HeroTokens.title.copyWith(color: fg),
+      titleMedium: HeroTokens.body
+          .copyWith(color: fg, fontWeight: FontWeight.w600, fontSize: 15),
+      titleSmall: HeroTokens.bodySmall
+          .copyWith(color: fg, fontWeight: FontWeight.w600),
+      bodyLarge: HeroTokens.body.copyWith(color: fg, fontSize: 15),
+      bodyMedium: HeroTokens.body.copyWith(color: fg),
+      bodySmall: HeroTokens.bodySmall.copyWith(color: muted),
+      labelLarge: HeroTokens.bodySmall.copyWith(
+          color: fg, fontWeight: FontWeight.w600),
+      labelMedium: HeroTokens.caption.copyWith(color: muted),
+      labelSmall: HeroTokens.caption.copyWith(color: muted, fontSize: 11),
+    );
+  }
 }

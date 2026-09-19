@@ -20,7 +20,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme.dart';
-import '../../core/ui/heroui.dart';
+import '../../core/ui/heroui_v3.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -36,8 +36,7 @@ class AnimeLibraryScreen extends ConsumerStatefulWidget {
   const AnimeLibraryScreen({super.key});
 
   @override
-  ConsumerState<AnimeLibraryScreen> createState() =>
-      _AnimeLibraryScreenState();
+  ConsumerState<AnimeLibraryScreen> createState() => _AnimeLibraryScreenState();
 }
 
 class _AnimeLibraryScreenState extends ConsumerState<AnimeLibraryScreen> {
@@ -83,8 +82,7 @@ class _AnimeLibraryScreenState extends ConsumerState<AnimeLibraryScreen> {
           final entry = Manga(
             id: 0,
             title: fileName.replaceFirst(
-                RegExp(r'\.(mp4|mkv|webm|avi|mov)$', caseSensitive: false),
-                ''),
+                RegExp(r'\.(mp4|mkv|webm|avi|mov)$', caseSensitive: false), ''),
             sourceId: 0,
             url: dest,
             itemType: ItemType.anime,
@@ -224,8 +222,8 @@ class _AnimeAppBar extends StatelessWidget implements PreferredSizeWidget {
                     onPressed: onSearchToggle,
                   ),
                   Consumer(builder: (context, ref, _) {
-                    final view = ref.watch(
-                        libraryOptionsProvider.select((o) => o.view));
+                    final view =
+                        ref.watch(libraryOptionsProvider.select((o) => o.view));
                     return IconButton(
                       tooltip:
                           view == LibraryView.grid ? 'List view' : 'Grid view',
@@ -319,8 +317,7 @@ class _CategoryTabs extends StatelessWidget {
 class _FilterRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final filter =
-        ref.watch(libraryOptionsProvider.select((o) => o.filter));
+    final filter = ref.watch(libraryOptionsProvider.select((o) => o.filter));
     return SizedBox(
       height: 44,
       child: ListView(
@@ -377,14 +374,14 @@ class _AnimeSelectionBar extends ConsumerWidget {
     final selection = ref.watch(animeLibrarySelectionProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Material(
-      color: isDark ? HeroColors.darkContent1 : Colors.white,
+      color: isDark ? HeroTokens.darkSurface : Colors.white,
       child: SafeArea(
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
           child: Row(
             children: [
-              HIconButton(
+              HeroIconButton(
                 icon: Icons.close_rounded,
                 onPressed: () =>
                     ref.read(animeLibrarySelectionProvider.notifier).clear(),
@@ -393,11 +390,11 @@ class _AnimeSelectionBar extends ConsumerWidget {
                 '${selection.length} selected',
                 style: TextStyle(
                   fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white : HeroColors.default900,
+                  color: isDark ? Colors.white : HeroTokens.lightForeground,
                 ),
               ),
               const Spacer(),
-              HIconButton(
+              HeroIconButton(
                 tooltip: 'Select all',
                 icon: Icons.select_all_outlined,
                 onPressed: () {
@@ -407,10 +404,10 @@ class _AnimeSelectionBar extends ConsumerWidget {
                       .addAll(all.map((m) => m.id));
                 },
               ),
-              HIconButton(
+              HeroIconButton(
                 tooltip: 'Mark as seen',
                 icon: Icons.done_all_rounded,
-                color: HeroVariant.success,
+                variant: HeroColorRole.success,
                 onPressed: () async {
                   final repo = ref.read(data.libraryRepositoryProvider);
                   for (final id in selection) {
@@ -418,16 +415,17 @@ class _AnimeSelectionBar extends ConsumerWidget {
                   }
                   ref.read(animeLibrarySelectionProvider.notifier).clear();
                   if (context.mounted) {
-                    showSnack(ref, context, 'Marked ${selection.length} as seen');
+                    showSnack(
+                        ref, context, 'Marked ${selection.length} as seen');
                   }
                 },
               ),
-              HIconButton(
+              HeroIconButton(
                 tooltip: 'Remove from library',
                 icon: Icons.delete_outline_rounded,
-                color: HeroVariant.danger,
+                variant: HeroColorRole.danger,
                 onPressed: () async {
-                  final confirmed = await hConfirm(
+                  final confirmed = await showHeroConfirm(
                     context: context,
                     title:
                         'Remove ${selection.length} ${selection.length == 1 ? 'entry' : 'entries'}?',
@@ -500,8 +498,8 @@ class _AnimeGridView extends ConsumerWidget {
       itemCount: items.length,
       itemBuilder: (context, i) {
         final anime = items[i];
-        final selected = ref.watch(animeLibrarySelectionProvider
-            .select((s) => s.contains(anime.id)));
+        final selected = ref.watch(
+            animeLibrarySelectionProvider.select((s) => s.contains(anime.id)));
         return BookCover(
           manga: anime,
           width: double.infinity,
@@ -510,9 +508,7 @@ class _AnimeGridView extends ConsumerWidget {
           onTap: () {
             final sel = ref.read(animeLibrarySelectionProvider);
             if (sel.isNotEmpty) {
-              ref
-                  .read(animeLibrarySelectionProvider.notifier)
-                  .toggle(anime.id);
+              ref.read(animeLibrarySelectionProvider.notifier).toggle(anime.id);
             } else {
               context.push('/animeDetail/${anime.id}');
             }
@@ -537,8 +533,8 @@ class _AnimeListView extends ConsumerWidget {
       separatorBuilder: (_, __) => const Divider(height: 1, indent: 88),
       itemBuilder: (context, i) {
         final anime = items[i];
-        final selected = ref.watch(animeLibrarySelectionProvider
-            .select((s) => s.contains(anime.id)));
+        final selected = ref.watch(
+            animeLibrarySelectionProvider.select((s) => s.contains(anime.id)));
         return ListTile(
           contentPadding: const EdgeInsets.symmetric(vertical: 4),
           leading: SizedBox(
@@ -566,8 +562,7 @@ class _AnimeListView extends ConsumerWidget {
               Row(
                 children: [
                   Icon(Icons.play_circle_outline,
-                      size: 14,
-                      color: Theme.of(context).colorScheme.outline),
+                      size: 14, color: Theme.of(context).colorScheme.outline),
                   const SizedBox(width: 4),
                   Text(
                     '${anime.readCount}/${anime.totalChapters} eps',
@@ -587,8 +582,8 @@ class _AnimeListView extends ConsumerWidget {
                       ),
                       child: Text(
                         '${anime.unreadCount}',
-                        style: const TextStyle(
-                            color: Colors.white, fontSize: 11),
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 11),
                       ),
                     ),
                   ],
@@ -600,9 +595,8 @@ class _AnimeListView extends ConsumerWidget {
                 child: LinearProgressIndicator(
                   value: anime.progress,
                   minHeight: 5,
-                  backgroundColor: Theme.of(context)
-                      .colorScheme
-                      .surfaceContainerHighest,
+                  backgroundColor:
+                      Theme.of(context).colorScheme.surfaceContainerHighest,
                   valueColor: AlwaysStoppedAnimation(
                     anime.progress >= 1
                         ? LuminaTheme.finishedColor
@@ -615,16 +609,13 @@ class _AnimeListView extends ConsumerWidget {
           onTap: () {
             final sel = ref.read(animeLibrarySelectionProvider);
             if (sel.isNotEmpty) {
-              ref
-                  .read(animeLibrarySelectionProvider.notifier)
-                  .toggle(anime.id);
+              ref.read(animeLibrarySelectionProvider.notifier).toggle(anime.id);
             } else {
               context.push('/animeDetail/${anime.id}');
             }
           },
-          onLongPress: () => ref
-              .read(animeLibrarySelectionProvider.notifier)
-              .toggle(anime.id),
+          onLongPress: () =>
+              ref.read(animeLibrarySelectionProvider.notifier).toggle(anime.id),
         );
       },
     );

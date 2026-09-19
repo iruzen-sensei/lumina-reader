@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/ui/heroui_v3.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../shared/widgets.dart';
@@ -45,6 +46,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
     final notes = ref.watch(filteredNotesProvider);
     final books = ref.watch(notesProvider).map((n) => n.mangaId).toSet();
 
@@ -59,19 +61,14 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                   children: [
                     Text(
                       'Notes',
-                      style: Theme.of(context)
-                          .textTheme
-                          .headlineSmall
-                          ?.copyWith(fontWeight: FontWeight.bold),
+                      style:
+                          HeroTokens.titleLarge.copyWith(color: h.foreground),
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      '${notes.length}',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant,
-                          ),
+                    HeroChip(
+                      label: '${notes.length}',
+                      small: true,
+                      color: HeroColorRole.neutral,
                     ),
                   ],
                 ),
@@ -80,17 +77,12 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: TextField(
+                child: HeroInput(
                   controller: _searchController,
+                  hint: 'Search notes…',
+                  prefixIcon: Icons.search_rounded,
                   onChanged: (v) =>
                       ref.read(notesSearchProvider.notifier).state = v,
-                  decoration: const InputDecoration(
-                    hintText: 'Search notes…',
-                    prefixIcon: Icon(Icons.search),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.all(Radius.circular(16)),
-                    ),
-                  ),
                 ),
               ),
             ),
@@ -98,7 +90,8 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
             SliverToBoxAdapter(child: _FilterTabs()),
             SliverToBoxAdapter(child: _BookFilterRow(bookIds: books.toList())),
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+              // Bottom nav bar clearance.
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
               sliver: notes.isEmpty
                   ? SliverToBoxAdapter(
                       child: emptyState(
@@ -107,6 +100,12 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                         title: 'No notes yet',
                         subtitle:
                             'Highlight text in the reader or jot down a thought to see it here.',
+                        action: HeroButton(
+                          label: 'New note',
+                          icon: Icons.note_add_rounded,
+                          variant: HeroButtonVariant.soft,
+                          onPressed: () => _showCreateSheet(context),
+                        ),
                       ),
                     )
                   : SliverList.separated(
@@ -142,24 +141,15 @@ class _FilterTabs extends ConsumerWidget {
     final filter = ref.watch(notesFilterProvider);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: SegmentedButton<NotesFilter>(
+      child: HeroSegmented<NotesFilter>(
+        expand: true,
         segments: const [
-          ButtonSegment(
-              value: NotesFilter.all,
-              label: Text('All'),
-              icon: Icon(Icons.list)),
-          ButtonSegment(
-              value: NotesFilter.highlights,
-              label: Text('Highlights'),
-              icon: Icon(Icons.highlight)),
-          ButtonSegment(
-              value: NotesFilter.thoughts,
-              label: Text('Thoughts'),
-              icon: Icon(Icons.lightbulb_outline)),
+          (NotesFilter.all, 'All', Icons.list_rounded),
+          (NotesFilter.highlights, 'Highlights', Icons.highlight_rounded),
+          (NotesFilter.thoughts, 'Thoughts', Icons.lightbulb_outline_rounded),
         ],
-        selected: {filter},
-        onSelectionChanged: (s) =>
-            ref.read(notesFilterProvider.notifier).state = s.first,
+        selected: filter,
+        onChanged: (f) => ref.read(notesFilterProvider.notifier).state = f,
       ),
     );
   }
@@ -191,13 +181,11 @@ class _BookFilterRow extends ConsumerWidget {
             );
           }
           final id = bookIds[i - 1];
-          final title =
-              allNotes.firstWhere((n) => n.mangaId == id).mangaTitle;
+          final title = allNotes.firstWhere((n) => n.mangaId == id).mangaTitle;
           return StatusChip(
             label: title,
             selected: selectedBook == id,
-            onTap: () =>
-                ref.read(notesBookFilterProvider.notifier).state = id,
+            onTap: () => ref.read(notesBookFilterProvider.notifier).state = id,
           );
         },
       ),
@@ -211,7 +199,7 @@ class _NoteCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
+    final h = HeroScope.of(context);
     return Dismissible(
       key: ValueKey(note.id),
       direction: DismissDirection.endToStart,
@@ -219,10 +207,10 @@ class _NoteCard extends ConsumerWidget {
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
         decoration: BoxDecoration(
-          color: theme.colorScheme.errorContainer,
-          borderRadius: BorderRadius.circular(16),
+          color: h.dangerSoft,
+          borderRadius: BorderRadius.circular(HeroTokens.radiusCard),
         ),
-        child: Icon(Icons.delete_outline, color: theme.colorScheme.error),
+        child: Icon(Icons.delete_outline_rounded, color: h.danger),
       ),
       confirmDismiss: (_) async {
         return await _confirmDelete(context);
@@ -230,185 +218,141 @@ class _NoteCard extends ConsumerWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(HeroTokens.radiusCard),
           onTap: () => _showEditSheet(context, ref),
-          child: Container(
-            decoration: BoxDecoration(
-              color: note.color.color.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: note.color.color.withValues(alpha: 0.5),
-                width: 1,
-              ),
-            ),
-            child: IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Color-coded left border that doubles as the semantic
-                  // indicator. The bar is wider on cards tagged "red" /
-                  // "critical" so urgent notes stand out in the list.
-                  Container(
-                    width: 6,
-                    decoration: BoxDecoration(
-                      color: note.color.color,
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(16),
-                        bottomLeft: Radius.circular(16),
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: note.color.color.withValues(alpha: 0.25),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      note.type == NoteType.highlight
-                                          ? Icons.highlight
-                                          : Icons.lightbulb_outline,
-                                      size: 13,
-                                      color: _darken(note.color.color),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      note.type.label,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
+          child: HeroCard(
+            padding: EdgeInsets.zero,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(HeroTokens.radiusCard),
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // 3px color bar carrying the note's semantic colour.
+                    Container(width: 3, color: note.color.color),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: note.color.color
+                                        .withValues(alpha: 0.14),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        note.type == NoteType.highlight
+                                            ? Icons.highlight
+                                            : Icons.lightbulb_outline,
+                                        size: 13,
                                         color: _darken(note.color.color),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  note.mangaTitle,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                      color:
-                                          theme.colorScheme.onSurfaceVariant),
-                                ),
-                              ),
-                              Text(
-                                timeAgo(note.createdAt),
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                    color:
-                                        theme.colorScheme.onSurfaceVariant),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          if (note.chapterId != null || note.page > 0)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Wrap(
-                                spacing: 10,
-                                runSpacing: 4,
-                                children: [
-                                  if (note.chapterId != null)
-                                    _MetaPill(
-                                      icon: Icons.bookmark_outlined,
-                                      label: 'Chapter ${note.chapterId}',
-                                    ),
-                                  if (note.page > 0)
-                                    _MetaPill(
-                                      icon: Icons.menu_book,
-                                      label: 'Page ${note.page + 1}',
-                                    ),
-                                  _MetaPill(
-                                    icon: Icons.schedule,
-                                    label: _fullTimestamp(note.createdAt),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        note.type.label,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: _darken(note.color.color),
+                                        ),
+                                      ),
+                                    ],
                                   ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              note.content,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: HeroTokens.body.copyWith(
+                                color: h.foreground,
+                                height: 1.5,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _metaLine(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style:
+                                  HeroTokens.caption.copyWith(color: h.muted),
+                            ),
+                            if (note.tags.isNotEmpty) ...[
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: [
+                                  for (final t in note.tags)
+                                    HeroChip(
+                                      label: '#$t',
+                                      small: true,
+                                      color: HeroColorRole.neutral,
+                                    ),
                                 ],
                               ),
-                            ),
-                          Text(
-                            note.content,
-                            style: theme.textTheme.bodyLarge
-                                ?.copyWith(height: 1.4),
-                          ),
-                          if (note.tags.isNotEmpty) ...[
+                            ],
                             const SizedBox(height: 10),
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 6,
-                              children: note.tags
-                                  .map((t) => Chip(
-                                        label: Text('#$t',
-                                            style:
-                                                const TextStyle(fontSize: 11)),
-                                        visualDensity: VisualDensity.compact,
-                                        materialTapTargetSize:
-                                            MaterialTapTargetSize.shrinkWrap,
-                                        padding: EdgeInsets.zero,
-                                      ))
-                                  .toList(),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                _ActionChip(
+                                  icon: Icons.copy_outlined,
+                                  label: 'Copy',
+                                  color: h.accent,
+                                  onTap: () async {
+                                    await Clipboard.setData(
+                                        ClipboardData(text: note.content));
+                                    if (context.mounted) {
+                                      showSnack(ref, context, 'Note copied');
+                                    }
+                                  },
+                                ),
+                                const SizedBox(width: 6),
+                                _ActionChip(
+                                  icon: Icons.edit_outlined,
+                                  label: 'Edit',
+                                  color: h.accent,
+                                  onTap: () => _showEditSheet(context, ref),
+                                ),
+                                const SizedBox(width: 6),
+                                _ActionChip(
+                                  icon: Icons.delete_outline,
+                                  label: 'Delete',
+                                  color: h.danger,
+                                  onTap: () async {
+                                    if (await _confirmDelete(context) &&
+                                        context.mounted) {
+                                      // REAL deletion — the notifier watches
+                                      // the Isar collection so the list updates.
+                                      await ref
+                                          .read(notesProvider.notifier)
+                                          .delete(note.id);
+                                      if (context.mounted) {
+                                        showSnack(ref, context, 'Note deleted');
+                                      }
+                                    }
+                                  },
+                                ),
+                              ],
                             ),
                           ],
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              _ActionChip(
-                                icon: Icons.copy_outlined,
-                                label: 'Copy',
-                                onTap: () async {
-                                  await Clipboard.setData(
-                                      ClipboardData(text: note.content));
-                                  if (context.mounted) {
-                                    showSnack(ref, context, 'Note copied');
-                                  }
-                                },
-                              ),
-                              const SizedBox(width: 6),
-                              _ActionChip(
-                                icon: Icons.edit_outlined,
-                                label: 'Edit',
-                                onTap: () => _showEditSheet(context, ref),
-                              ),
-                              const SizedBox(width: 6),
-                              _ActionChip(
-                                icon: Icons.delete_outline,
-                                label: 'Delete',
-                                color: theme.colorScheme.error,
-                                onTap: () async {
-                                  if (await _confirmDelete(context) &&
-                                      context.mounted) {
-                                    // REAL deletion — the notifier watches
-                                    // the Isar collection so the list updates.
-                                    await ref
-                                        .read(notesProvider.notifier)
-                                        .delete(note.id);
-                                    if (context.mounted) {
-                                      showSnack(ref, context, 'Note deleted');
-                                    }
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -417,27 +361,26 @@ class _NoteCard extends ConsumerWidget {
     );
   }
 
+  /// One muted caption line: manga · chapter · page · time ago.
+  String _metaLine() {
+    final parts = <String>[
+      if (note.mangaTitle.isNotEmpty) note.mangaTitle,
+      if (note.chapterId != null) 'Chapter ${note.chapterId}',
+      if (note.page > 0) 'Page ${note.page + 1}',
+      timeAgo(note.createdAt),
+    ];
+    return parts.join(' · ');
+  }
+
   Future<bool> _confirmDelete(BuildContext context) async {
-    final result = await showDialog<bool>(
+    final result = await showHeroConfirm(
       context: context,
-      builder: (context) => AlertDialog(
-        icon: const Icon(Icons.delete_outline),
-        title: const Text('Delete note?'),
-        content: const Text('This note will be permanently removed.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+      title: 'Delete note?',
+      message: 'This note will be permanently removed.',
+      confirmLabel: 'Delete',
+      danger: true,
     );
-    return result ?? false;
+    return result;
   }
 
   void _showEditSheet(BuildContext context, WidgetRef ref) {
@@ -451,38 +394,7 @@ class _NoteCard extends ConsumerWidget {
 
   Color _darken(Color c) {
     final hsl = HSLColor.fromColor(c);
-    return hsl
-        .withLightness((hsl.lightness - 0.35).clamp(0.0, 1.0))
-        .toColor();
-  }
-
-  String _fullTimestamp(DateTime d) {
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
-  }
-}
-
-class _MetaPill extends StatelessWidget {
-  const _MetaPill({required this.icon, required this.label});
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 12, color: Theme.of(context).colorScheme.outline),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            color: Theme.of(context).colorScheme.outline,
-          ),
-        ),
-      ],
-    );
+    return hsl.withLightness((hsl.lightness - 0.35).clamp(0.0, 1.0)).toColor();
   }
 }
 
@@ -501,7 +413,8 @@ class _ActionChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = color ?? Theme.of(context).colorScheme.primary;
+    final h = HeroScope.of(context);
+    final c = color ?? h.accent;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
@@ -546,6 +459,7 @@ class _CreateNoteSheetState extends ConsumerState<_CreateNoteSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
     return Padding(
       padding: EdgeInsets.fromLTRB(
           20, 0, 20, MediaQuery.of(context).viewInsets.bottom + 20),
@@ -554,39 +468,25 @@ class _CreateNoteSheetState extends ConsumerState<_CreateNoteSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('New note',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.bold)),
+              style: HeroTokens.title.copyWith(color: h.foreground)),
           const SizedBox(height: 12),
-          SegmentedButton<NoteType>(
+          HeroSegmented<NoteType>(
             segments: const [
-              ButtonSegment(
-                  value: NoteType.thought,
-                  label: Text('Thought'),
-                  icon: Icon(Icons.lightbulb_outline)),
-              ButtonSegment(
-                  value: NoteType.highlight,
-                  label: Text('Highlight'),
-                  icon: Icon(Icons.highlight)),
+              (NoteType.thought, 'Thought', Icons.lightbulb_outline_rounded),
+              (NoteType.highlight, 'Highlight', Icons.highlight_rounded),
             ],
-            selected: {_type},
-            onSelectionChanged: (s) => setState(() => _type = s.first),
+            selected: _type,
+            onChanged: (t) => setState(() => _type = t),
           ),
           const SizedBox(height: 12),
-          TextField(
+          HeroInput(
             controller: _controller,
+            hint: 'Write your note…',
             maxLines: 4,
             autofocus: true,
-            decoration: const InputDecoration(
-              hintText: 'Write your note…',
-              border: OutlineInputBorder(),
-            ),
           ),
           const SizedBox(height: 12),
-          Text('Color',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          Text('Color', style: HeroTokens.caption.copyWith(color: h.muted)),
           const SizedBox(height: 6),
           _ColorPicker(
             color: _color,
@@ -596,11 +496,15 @@ class _CreateNoteSheetState extends ConsumerState<_CreateNoteSheet> {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel')),
-              const SizedBox(width: 8),
-              FilledButton(
+              HeroButton(
+                label: 'Cancel',
+                variant: HeroButtonVariant.light,
+                color: HeroColorRole.neutral,
+                onPressed: () => Navigator.pop(context),
+              ),
+              const SizedBox(width: 10),
+              HeroButton(
+                label: 'Save',
                 onPressed: () async {
                   final text = _controller.text.trim();
                   if (text.isEmpty) return;
@@ -623,7 +527,6 @@ class _CreateNoteSheetState extends ConsumerState<_CreateNoteSheet> {
                     }
                   }
                 },
-                child: const Text('Save'),
               ),
             ],
           ),
@@ -654,6 +557,7 @@ class _EditNoteSheetState extends ConsumerState<_EditNoteSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
     return Padding(
       padding: EdgeInsets.fromLTRB(
           20, 0, 20, MediaQuery.of(context).viewInsets.bottom + 20),
@@ -662,21 +566,15 @@ class _EditNoteSheetState extends ConsumerState<_EditNoteSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Edit note',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.bold)),
+              style: HeroTokens.title.copyWith(color: h.foreground)),
           const SizedBox(height: 12),
-          TextField(
+          HeroInput(
             controller: _controller,
             maxLines: 6,
             autofocus: true,
-            decoration: const InputDecoration(border: OutlineInputBorder()),
           ),
           const SizedBox(height: 12),
-          Text('Color',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          Text('Color', style: HeroTokens.caption.copyWith(color: h.muted)),
           const SizedBox(height: 6),
           _ColorPicker(
             color: _color,
@@ -686,11 +584,15 @@ class _EditNoteSheetState extends ConsumerState<_EditNoteSheet> {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel')),
-              const SizedBox(width: 8),
-              FilledButton(
+              HeroButton(
+                label: 'Cancel',
+                variant: HeroButtonVariant.light,
+                color: HeroColorRole.neutral,
+                onPressed: () => Navigator.pop(context),
+              ),
+              const SizedBox(width: 10),
+              HeroButton(
+                label: 'Save',
                 onPressed: () async {
                   final text = _controller.text.trim();
                   if (text.isEmpty) return;
@@ -712,7 +614,6 @@ class _EditNoteSheetState extends ConsumerState<_EditNoteSheet> {
                     }
                   }
                 },
-                child: const Text('Save'),
               ),
             ],
           ),
@@ -732,6 +633,7 @@ class _ColorPicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
     return Wrap(
       spacing: 10,
       runSpacing: 10,
@@ -747,14 +649,11 @@ class _ColorPicker extends StatelessWidget {
                       color: c.color,
                       shape: BoxShape.circle,
                       border: color == c
-                          ? Border.all(
-                              color: Theme.of(context).colorScheme.onSurface,
-                              width: 3)
+                          ? Border.all(color: h.foreground, width: 3)
                           : null,
                     ),
-                    child: color == c
-                        ? const Icon(Icons.check, size: 18)
-                        : null,
+                    child:
+                        color == c ? const Icon(Icons.check, size: 18) : null,
                   ),
                 ),
               ))

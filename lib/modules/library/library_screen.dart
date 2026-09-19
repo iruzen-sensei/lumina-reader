@@ -22,7 +22,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme.dart';
-import '../../core/ui/heroui.dart';
+import '../../core/ui/heroui_v3.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -88,12 +88,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               },
               onSearchChanged: (v) =>
                   ref.read(libraryOptionsProvider.notifier).setQuery(v),
-              onToggleIncognito: () => ref
-                  .read(incognitoModeProvider.notifier)
-                  .state = !incognito,
+              onToggleIncognito: () =>
+                  ref.read(incognitoModeProvider.notifier).state = !incognito,
               onToggleDownloadedOnly: () => ref
                   .read(downloadedOnlyProvider.notifier)
                   .state = !downloadedOnly,
+              onImport: _importLocalFile,
             ),
             _CategoryTabs(
               categories: categories,
@@ -101,8 +101,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               onSelect: (id) =>
                   ref.read(libraryOptionsProvider.notifier).setCategory(id),
             ),
-            _StatusFilterRow(),
-            _MediaTypeFilterRow(),
+            _LibraryFilterBar(),
             if (selection.isNotEmpty) _SelectionBar(),
             Expanded(
               child: RefreshIndicator(
@@ -116,13 +115,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           ],
         ),
       ),
-      floatingActionButton: selection.isNotEmpty
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: _importLocalFile,
-              icon: const Icon(Icons.file_download_outlined),
-              label: const Text('Import'),
-            ),
     );
   }
 
@@ -188,8 +180,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               url: dest,
               // .txt imports are novels (opened in the novel reader);
               // everything else is a book (epub / pdf / cbz readers).
-              itemType:
-                  isTxt ? ItemType.novel : ItemType.book,
+              itemType: isTxt ? ItemType.novel : ItemType.book,
               genre: const ['Local file'],
               status: ItemStatus.unknown,
               dateAdded: DateTime.now(),
@@ -244,6 +235,7 @@ class _LibraryHeader extends StatelessWidget implements PreferredSizeWidget {
     required this.onSearchChanged,
     required this.onToggleIncognito,
     required this.onToggleDownloadedOnly,
+    required this.onImport,
   });
 
   final bool incognito;
@@ -254,138 +246,113 @@ class _LibraryHeader extends StatelessWidget implements PreferredSizeWidget {
   final ValueChanged<String> onSearchChanged;
   final VoidCallback onToggleIncognito;
   final VoidCallback onToggleDownloadedOnly;
+  final VoidCallback onImport;
 
   @override
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
 
   @override
   Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
     return AnimatedSize(
       duration: const Duration(milliseconds: 200),
       child: searchVisible
           ? Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-              child: TextField(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: HeroInput(
                 controller: searchController,
+                hint: 'Search library…',
+                prefixIcon: Icons.search_rounded,
                 autofocus: true,
                 onChanged: onSearchChanged,
-                decoration: InputDecoration(
-                  hintText: 'Search library…',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: onSearchToggle,
-                  ),
-                  border: const OutlineInputBorder(
-                    borderRadius: BorderRadius.all(Radius.circular(16)),
-                  ),
+                suffix: HeroIconButton(
+                  icon: Icons.close_rounded,
+                  iconSize: 19,
+                  size: 32,
+                  onPressed: onSearchToggle,
                 ),
               ),
             )
           : Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 12, 4),
+              padding: const EdgeInsets.fromLTRB(20, 8, 10, 2),
               child: Row(
                 children: [
-                  Text(
-                    'Library',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
+                  Expanded(
+                    child: Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        Text(
+                          'Library',
+                          style: HeroTokens.titleLarge.copyWith(
+                            color: h.foreground,
+                          ),
                         ),
+                        if (incognito)
+                          _QuickBadge(
+                            icon: Icons.visibility_off_rounded,
+                            label: 'Incognito',
+                            color: LuminaTheme.unreadColor,
+                            onTap: onToggleIncognito,
+                          ),
+                        if (downloadedOnly)
+                          _QuickBadge(
+                            icon: Icons.cloud_off_outlined,
+                            label: 'Downloaded',
+                            color: LuminaTheme.readingColor,
+                            onTap: onToggleDownloadedOnly,
+                          ),
+                      ],
+                    ),
                   ),
-                  if (incognito) ...[
-                    const SizedBox(width: 6),
-                    _QuickBadge(
-                      icon: Icons.visibility_off,
-                      label: 'Incognito',
-                      color: LuminaTheme.unreadColor,
-                      onTap: onToggleIncognito,
-                    ),
-                  ],
-                  if (downloadedOnly) ...[
-                    const SizedBox(width: 6),
-                    _QuickBadge(
-                      icon: Icons.cloud_off_outlined,
-                      label: 'Downloaded',
-                      color: LuminaTheme.readingColor,
-                      onTap: onToggleDownloadedOnly,
-                    ),
-                  ],
-                  const Spacer(),
-                  IconButton(
+                  HeroIconButton(
+                    tooltip: 'Import files',
+                    icon: Icons.file_upload_outlined,
+                    onPressed: onImport,
+                  ),
+                  HeroIconButton(
                     tooltip: 'Incognito mode',
-                    icon: Icon(
-                      incognito
-                          ? Icons.visibility_off_rounded
-                          : Icons.visibility_outlined,
-                      color: incognito ? LuminaTheme.unreadColor : null,
-                    ),
+                    icon: incognito
+                        ? Icons.visibility_off_rounded
+                        : Icons.visibility_outlined,
+                    color: incognito ? LuminaTheme.unreadColor : null,
+                    variant: incognito
+                        ? HeroColorRole.warning
+                        : HeroColorRole.neutral,
                     onPressed: onToggleIncognito,
                   ),
-                  IconButton(
+                  HeroIconButton(
                     tooltip: 'Downloaded only',
-                    icon: Icon(
-                      downloadedOnly
-                          ? Icons.cloud_off_rounded
-                          : Icons.cloud_outlined,
-                      color: downloadedOnly ? LuminaTheme.readingColor : null,
-                    ),
+                    icon: downloadedOnly
+                        ? Icons.cloud_off_rounded
+                        : Icons.cloud_outlined,
+                    color: downloadedOnly ? LuminaTheme.readingColor : null,
+                    variant: downloadedOnly
+                        ? HeroColorRole.accent
+                        : HeroColorRole.neutral,
                     onPressed: onToggleDownloadedOnly,
                   ),
-                  IconButton(
+                  HeroIconButton(
                     tooltip: 'Search',
-                    icon: const Icon(Icons.search),
+                    icon: Icons.search_rounded,
                     onPressed: onSearchToggle,
                   ),
                   Consumer(builder: (context, ref, _) {
-                    final view = ref.watch(
-                        libraryOptionsProvider.select((o) => o.view));
-                    return IconButton(
+                    final view =
+                        ref.watch(libraryOptionsProvider.select((o) => o.view));
+                    return HeroIconButton(
                       tooltip:
                           view == LibraryView.grid ? 'List view' : 'Grid view',
-                      icon: Icon(view == LibraryView.grid
+                      icon: view == LibraryView.grid
                           ? Icons.view_list_rounded
-                          : Icons.grid_view_rounded),
+                          : Icons.grid_view_rounded,
                       onPressed: () {
                         ref.read(libraryOptionsProvider.notifier).setView(
                               view == LibraryView.grid
                                   ? LibraryView.list
                                   : LibraryView.grid,
                             );
-                      },
-                    );
-                  }),
-                  Consumer(builder: (context, ref, _) {
-                    return PopupMenuButton<String>(
-                      tooltip: 'Sort',
-                      icon: const Icon(Icons.sort_rounded),
-                      onSelected: (value) {
-                        final notifier =
-                            ref.read(libraryOptionsProvider.notifier);
-                        if (value == 'desc') {
-                          notifier.toggleSortDirection();
-                        } else {
-                          final sort = LibrarySort.values.firstWhere(
-                              (s) => s.name == value,
-                              orElse: () => LibrarySort.title);
-                          notifier.setSort(sort);
-                        }
-                      },
-                      itemBuilder: (context) {
-                        final options = ref.read(libraryOptionsProvider);
-                        return [
-                          for (final s in LibrarySort.values)
-                            CheckedPopupMenuItem(
-                              value: s.name,
-                              checked: options.sort == s,
-                              child: Text(s.label),
-                            ),
-                          const PopupMenuDivider(),
-                          CheckedPopupMenuItem(
-                            value: 'desc',
-                            checked: options.sortDescending,
-                            child: const Text('Descending'),
-                          ),
-                        ];
                       },
                     );
                   }),
@@ -475,101 +442,168 @@ class _CategoryTabs extends StatelessWidget {
   }
 }
 
-class _StatusFilterRow extends ConsumerWidget {
+/// ONE compact row replacing the previous three always-visible filter rows
+/// (status pills + media pills + category tabs all stacked = 30% of the
+/// viewport). Media type lives in a segmented control; status + sort live
+/// behind a single Filter button that shows an active-count badge.
+class _LibraryFilterBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final filter = ref.watch(libraryOptionsProvider.select((o) => o.filter));
-    return SizedBox(
-      height: 44,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    final options = ref.watch(libraryOptionsProvider);
+    final activeCount = (options.filter != LibraryFilter.all ? 1 : 0) +
+        (options.sortDescending ? 1 : 0) +
+        (options.sort != LibrarySort.title ? 1 : 0);
+
+    final mediaValues = [
+      LibraryMediaType.all,
+      LibraryMediaType.manga,
+      LibraryMediaType.novel,
+      LibraryMediaType.book,
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+      child: Row(
         children: [
-          StatusChip(
-            label: LibraryFilter.all.label,
-            selected: filter == LibraryFilter.all,
-            color: LuminaTheme.seed,
-            onTap: () => ref
-                .read(libraryOptionsProvider.notifier)
-                .setFilter(LibraryFilter.all),
+          Expanded(
+            child: HeroSegmented<LibraryMediaType>(
+              segments: [
+                for (final m in mediaValues) (m, m.label, null),
+              ],
+              selected: options.mediaType,
+              onChanged: (m) =>
+                  ref.read(libraryOptionsProvider.notifier).setMediaType(m),
+            ),
           ),
           const SizedBox(width: 8),
-          StatusChip(
-            label: LibraryFilter.reading.label,
-            icon: Icons.menu_book_rounded,
-            selected: filter == LibraryFilter.reading,
-            color: LuminaTheme.readingColor,
-            onTap: () => ref
-                .read(libraryOptionsProvider.notifier)
-                .setFilter(LibraryFilter.reading),
-          ),
-          const SizedBox(width: 8),
-          StatusChip(
-            label: LibraryFilter.finished.label,
-            icon: Icons.check_circle_outline,
-            selected: filter == LibraryFilter.finished,
-            color: LuminaTheme.finishedColor,
-            onTap: () => ref
-                .read(libraryOptionsProvider.notifier)
-                .setFilter(LibraryFilter.finished),
-          ),
-          const SizedBox(width: 8),
-          StatusChip(
-            label: LibraryFilter.unread.label,
-            icon: Icons.circle_notifications,
-            selected: filter == LibraryFilter.unread,
-            color: LuminaTheme.unreadColor,
-            onTap: () => ref
-                .read(libraryOptionsProvider.notifier)
-                .setFilter(LibraryFilter.unread),
+          _FilterButton(
+            activeCount: activeCount,
+            onTap: () => _showFilterSheet(context, ref),
           ),
         ],
       ),
     );
   }
-}
 
-/// Horizontally scrolling media-type filter pills (All / Anime / Manga /
-/// Novel / Book) — sits beneath the status filter row.
-class _MediaTypeFilterRow extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final media = ref.watch(libraryOptionsProvider.select((o) => o.mediaType));
-    return SizedBox(
-      height: 44,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        itemCount: LibraryMediaType.values.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (context, i) {
-          final m = LibraryMediaType.values[i];
-          return StatusChip(
-            label: m.label,
-            icon: m.icon,
-            selected: media == m,
-            color: _colorFor(m),
-            onTap: () =>
-                ref.read(libraryOptionsProvider.notifier).setMediaType(m),
-          );
-        },
-      ),
+  Future<void> _showFilterSheet(BuildContext context, WidgetRef ref) async {
+    final notifier = ref.read(libraryOptionsProvider.notifier);
+    await showHeroSheet(
+      context: context,
+      title: 'Filter & sort',
+      builder: (ctx) => Consumer(builder: (ctx, ref, _) {
+        final options = ref.watch(libraryOptionsProvider);
+        final h = HeroScope.of(ctx);
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Status',
+                    style: HeroTokens.caption.copyWith(color: h.muted)),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final f in LibraryFilter.values)
+                      HeroChip(
+                        label: f.label,
+                        icon: switch (f) {
+                          LibraryFilter.all => null,
+                          LibraryFilter.reading => Icons.menu_book_rounded,
+                          LibraryFilter.finished =>
+                            Icons.check_circle_outline_rounded,
+                          LibraryFilter.unread => Icons.markunread_rounded,
+                        },
+                        selected: options.filter == f,
+                        variant: HeroChipVariant.outlineText,
+                        onTap: () => notifier.setFilter(f),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 22),
+                Text('Sort by',
+                    style: HeroTokens.caption.copyWith(color: h.muted)),
+                const SizedBox(height: 6),
+                for (final sort in LibrarySort.values)
+                  HeroListTile(
+                    title: sort.label,
+                    leadingIcon: switch (sort) {
+                      LibrarySort.title => Icons.sort_by_alpha_rounded,
+                      LibrarySort.author => Icons.person_outline_rounded,
+                      LibrarySort.lastRead => Icons.schedule_rounded,
+                      LibrarySort.dateAdded => Icons.event_outlined,
+                      LibrarySort.unread => Icons.markunread_rounded,
+                      LibrarySort.progress => Icons.percent_rounded,
+                    },
+                    trailing: options.sort == sort
+                        ? Icon(Icons.check_rounded, size: 20, color: h.accent)
+                        : null,
+                    onTap: () => notifier.setSort(sort),
+                  ),
+                HeroListTile(
+                  title: 'Descending',
+                  leadingIcon: Icons.arrow_downward_rounded,
+                  trailing: HeroSwitch(
+                    value: options.sortDescending,
+                    onChanged: (_) => notifier.toggleSortDirection(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }),
     );
   }
+}
 
-  Color _colorFor(LibraryMediaType m) {
-    switch (m) {
-      case LibraryMediaType.all:
-        return LuminaTheme.seed;
-      case LibraryMediaType.manga:
-        return LuminaTheme.readingColor;
-      case LibraryMediaType.anime:
-        return LuminaTheme.finishedColor;
-      case LibraryMediaType.novel:
-        return LuminaTheme.unreadColor;
-      case LibraryMediaType.book:
-        return const Color(0xFF8E24AA);
-    }
+class _FilterButton extends StatelessWidget {
+  const _FilterButton({required this.activeCount, required this.onTap});
+
+  final int activeCount;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
+    final active = activeCount > 0;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration:
+            heroAnimationsEnabled ? HeroTokens.motionColor : Duration.zero,
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: active ? h.accentSoft : h.dflt,
+          borderRadius: BorderRadius.circular(HeroTokens.radiusButton),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.tune_rounded,
+              size: 18,
+              color: active ? h.accentSoftFg : h.muted,
+            ),
+            if (active) ...[
+              const SizedBox(width: 6),
+              Text(
+                '$activeCount',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: h.accentSoftFg,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -577,29 +611,29 @@ class _SelectionBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final selection = ref.watch(librarySelectionProvider);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final h = HeroScope.of(context);
     return Material(
-      color: isDark ? HeroColors.darkContent1 : Colors.white,
+      color: h.surface,
       child: SafeArea(
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
           child: Row(
             children: [
-              HIconButton(
+              HeroIconButton(
                 icon: Icons.close_rounded,
                 onPressed: () =>
                     ref.read(librarySelectionProvider.notifier).clear(),
               ),
               Text(
                 '${selection.length} selected',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white : HeroColors.default900,
+                style: HeroTokens.body.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: h.foreground,
                 ),
               ),
               const Spacer(),
-              HIconButton(
+              HeroIconButton(
                 tooltip: 'Select all',
                 icon: Icons.select_all_outlined,
                 onPressed: () {
@@ -609,21 +643,21 @@ class _SelectionBar extends ConsumerWidget {
                       .addAll(all.map((m) => m.id));
                 },
               ),
-              HIconButton(
+              HeroIconButton(
                 tooltip: 'Mark as read',
                 icon: Icons.done_all_rounded,
-                color: HeroVariant.success,
+                variant: HeroColorRole.success,
                 onPressed: () => _markAllRead(context, ref, selection),
               ),
-              HIconButton(
+              HeroIconButton(
                 tooltip: 'Add to category',
                 icon: Icons.label_outline_rounded,
                 onPressed: () => _showCategorySheet(context, ref, selection),
               ),
-              HIconButton(
+              HeroIconButton(
                 tooltip: 'Remove from library',
                 icon: Icons.delete_outline_rounded,
-                color: HeroVariant.danger,
+                variant: HeroColorRole.danger,
                 onPressed: () => _removeSelected(context, ref, selection),
               ),
             ],
@@ -642,9 +676,10 @@ class _SelectionBar extends ConsumerWidget {
     WidgetRef ref,
     Set<int> selection,
   ) async {
-    final confirmed = await hConfirm(
+    final confirmed = await showHeroConfirm(
       context: context,
-      title: 'Remove ${selection.length} ${selection.length == 1 ? 'entry' : 'entries'}?',
+      title:
+          'Remove ${selection.length} ${selection.length == 1 ? 'entry' : 'entries'}?',
       message:
           'This also deletes their downloaded chapters, imported files, history and notes. This cannot be undone.',
       confirmLabel: 'Remove',
@@ -656,7 +691,8 @@ class _SelectionBar extends ConsumerWidget {
         .read(data.libraryRepositoryProvider)
         .removeFromLibraryMany(ids);
     if (context.mounted) {
-      showSnack(ref, context, 'Removed $removed ${removed == 1 ? 'entry' : 'entries'} from library');
+      showSnack(ref, context,
+          'Removed $removed ${removed == 1 ? 'entry' : 'entries'} from library');
     }
   }
 
@@ -676,9 +712,10 @@ class _SelectionBar extends ConsumerWidget {
     }
   }
 
-  void _showCategorySheet(BuildContext context, WidgetRef ref, Set<int> selection) {
+  void _showCategorySheet(
+      BuildContext context, WidgetRef ref, Set<int> selection) {
     final categories = ref.read(categoriesProvider);
-    hSheet<void>(
+    showHeroSheet<void>(
       context: context,
       title: 'Set category',
       builder: (sheetContext) {
@@ -688,11 +725,12 @@ class _SelectionBar extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const SizedBox(height: 4),
-                ...categories.where((c) => c.id != 0).map((c) => HTile(
-                      icon: Icons.label_rounded,
-                      tone: HeroVariant.secondary,
-                      label: c.name,
-                      subtitle: 'Move ${selection.length} selected ${selection.length == 1 ? 'entry' : 'entries'} here',
+                ...categories.where((c) => c.id != 0).map((c) => HeroListTile(
+                      leadingIcon: Icons.label_rounded,
+                      title: c.name,
+                      subtitle:
+                          'Move ${selection.length} selected ${selection.length == 1 ? 'entry' : 'entries'} here',
+                      showChevron: true,
                       onTap: () async {
                         final repo = ref.read(data.libraryRepositoryProvider);
                         for (final id in selection) {
@@ -780,9 +818,10 @@ class _LibraryGridView extends ConsumerWidget {
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 120,
-        childAspectRatio: 0.66,
-        crossAxisSpacing: 10,
+        maxCrossAxisExtent: 128,
+        // Cover (2:3) + 46px title/metadata block under it.
+        childAspectRatio: 0.52,
+        crossAxisSpacing: 12,
         mainAxisSpacing: 14,
       ),
       itemCount: items.length,
@@ -837,6 +876,7 @@ class _LibraryListView extends ConsumerWidget {
               width: 64,
               height: 92,
               showProgress: false,
+              showTitle: false,
               selected: selected,
               radius: 8,
             ),
@@ -894,8 +934,8 @@ class _LibraryListView extends ConsumerWidget {
                       ),
                       child: Text(
                         '${manga.unreadCount}',
-                        style: const TextStyle(
-                            color: Colors.white, fontSize: 11),
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 11),
                       ),
                     ),
                   ],
@@ -907,9 +947,8 @@ class _LibraryListView extends ConsumerWidget {
                 child: LinearProgressIndicator(
                   value: manga.progress,
                   minHeight: 5,
-                  backgroundColor: Theme.of(context)
-                      .colorScheme
-                      .surfaceContainerHighest,
+                  backgroundColor:
+                      Theme.of(context).colorScheme.surfaceContainerHighest,
                   valueColor: AlwaysStoppedAnimation(
                     manga.progress >= 1
                         ? LuminaTheme.finishedColor

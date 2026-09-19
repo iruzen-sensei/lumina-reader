@@ -20,7 +20,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
-import '../../core/ui/heroui.dart';
+import '../../core/ui/heroui_v3.dart';
 
 /// Persistent PIN storage (hash on disk — never the raw PIN).
 class PinStore {
@@ -181,14 +181,14 @@ class _PinLockScreenState extends State<_PinLockScreen> {
           children: [
             const Spacer(flex: 2),
             const Icon(Icons.lock_rounded,
-                size: 40, color: HeroColors.primary),
+                size: 40, color: HeroTokens.accent),
             const SizedBox(height: 12),
             Text(
               'Enter your PIN',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
-                color: isDark ? Colors.white : HeroColors.default900,
+                color: isDark ? Colors.white : HeroTokens.lightForeground,
               ),
             ),
             const SizedBox(height: 6),
@@ -197,8 +197,8 @@ class _PinLockScreenState extends State<_PinLockScreen> {
               style: TextStyle(
                 fontSize: 13,
                 color: _error != null
-                    ? HeroColors.danger
-                    : (isDark ? HeroColors.default400 : HeroColors.default500),
+                    ? HeroTokens.dangerLight
+                    : (isDark ? HeroTokens.darkMuted : HeroTokens.lightMuted),
               ),
             ),
             const SizedBox(height: 24),
@@ -212,11 +212,11 @@ class _PinLockScreenState extends State<_PinLockScreen> {
                   margin: const EdgeInsets.symmetric(horizontal: 8),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: filled ? HeroColors.primary : Colors.transparent,
+                    color: filled ? HeroTokens.accent : Colors.transparent,
                     border: Border.all(
                       color: filled
-                          ? HeroColors.primary
-                          : HeroColors.default400,
+                          ? HeroTokens.accent
+                          : HeroTokens.darkMuted,
                       width: 2,
                     ),
                   ),
@@ -265,10 +265,10 @@ class _Key extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Material(
-      color: isDark ? HeroColors.darkContent2 : HeroColors.default100,
-      borderRadius: BorderRadius.circular(HeroColors.radiusLarge),
+      color: isDark ? HeroTokens.darkSurface2 : HeroTokens.lightDefault,
+      borderRadius: BorderRadius.circular(HeroTokens.radiusField),
       child: InkWell(
-        borderRadius: BorderRadius.circular(HeroColors.radiusLarge),
+        borderRadius: BorderRadius.circular(HeroTokens.radiusField),
         onTap: onTap,
         child: Center(
           child: label != null
@@ -277,12 +277,12 @@ class _Key extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : HeroColors.default900,
+                    color: isDark ? Colors.white : HeroTokens.lightForeground,
                   ),
                 )
               : Icon(icon,
                   size: 20,
-                  color: isDark ? Colors.white : HeroColors.default900),
+                  color: isDark ? Colors.white : HeroTokens.lightForeground),
         ),
       ),
     );
@@ -291,7 +291,7 @@ class _Key extends StatelessWidget {
 
 /// PIN creation flow. Returns true when a PIN was set.
 Future<bool> showSetPinSheet(BuildContext context) async {
-  final result = await hSheet<bool>(
+  final result = await showHeroSheet<bool>(
     context: context,
     title: 'Set a 4-digit PIN',
     builder: (sheetContext) => const _SetPinBody(),
@@ -356,7 +356,7 @@ class _SetPinBodyState extends State<_SetPinBody> {
             _confirming ? 'Confirm your PIN' : 'You will need this PIN to unlock the app',
             style: TextStyle(
               fontSize: 13.5,
-              color: isDark ? HeroColors.default400 : HeroColors.default500,
+              color: isDark ? HeroTokens.darkMuted : HeroTokens.lightMuted,
             ),
           ),
           const SizedBox(height: 18),
@@ -370,10 +370,10 @@ class _SetPinBodyState extends State<_SetPinBody> {
                 margin: const EdgeInsets.symmetric(horizontal: 8),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: filled ? HeroColors.primary : Colors.transparent,
+                  color: filled ? HeroTokens.accent : Colors.transparent,
                   border: Border.all(
                     color:
-                        filled ? HeroColors.primary : HeroColors.default400,
+                        filled ? HeroTokens.accent : HeroTokens.darkMuted,
                     width: 2,
                   ),
                 ),
