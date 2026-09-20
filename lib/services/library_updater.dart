@@ -124,12 +124,26 @@ class LibraryUpdater {
     // Persist the refreshed chapter list (progress-preserving upsert).
     await _library.setChapters(manga.id, fresh.chapters);
 
+    // Resolve the persisted chapter rows so each Update row carries the
+    // Isar chapter id + download flag. Without chapterId the Updates feed's
+    // download / delete-download quick actions can never fire (they guard
+    // on chapterId == null), which left the buttons decorative.
+    final persistedChapters = await _isar.chapters
+        .filter()
+        .manga((q) => q.idEqualTo(manga.id))
+        .findAll();
+    final persistedByUrl = {
+      for (final pc in persistedChapters) pc.url: pc,
+    };
+
     // Record an Update row per new chapter for the Updates feed.
     final now = DateTime.now().millisecondsSinceEpoch;
     final rows = [
       for (final c in newOnes)
         db.Update(
           mangaId: manga.id,
+          chapterId: persistedByUrl[c.url]?.id,
+          isDownloaded: persistedByUrl[c.url]?.isDownloaded ?? false,
           chapterName: c.name,
           chapterNumber: c.number.toString(),
           chapterNumberValue: c.number,

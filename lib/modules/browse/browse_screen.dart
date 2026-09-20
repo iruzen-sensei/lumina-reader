@@ -780,7 +780,7 @@ class _SourceStrip extends StatelessWidget {
                     radius: 11,
                     backgroundColor: active ? h.accent : h.dflt,
                     child: Text(
-                      s.name.substring(0, 1),
+                      s.name.isEmpty ? '?' : s.name.substring(0, 1),
                       style: TextStyle(
                         fontSize: 11.5,
                         color: active ? h.accentFg : h.muted,
@@ -1126,7 +1126,7 @@ class _SourceSearchRow extends ConsumerWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(color: h.accentSoft, shape: BoxShape.circle),
         child: Text(
-          source.name.substring(0, 1),
+          source.name.isEmpty ? '?' : source.name.substring(0, 1),
           style: TextStyle(
             fontSize: 13,
             height: 1,

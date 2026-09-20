@@ -210,6 +210,12 @@ class MangaDexSource extends BaseExtensionService {
         final attrs = entry['attributes'] as Map<String, dynamic>? ?? const {};
         final number = attrs['chapter'] as String?;
         if (number == null || number.isEmpty) continue; // skip novel-format
+        // Licensed/external chapters are hosted on the publisher's site —
+        // MangaDex's at-home server returns no pages for them (live-verified:
+        // top-popular titles like Solo Leveling), which dead-ends the reader
+        // on the entries users tap first. Filter them out up front.
+        final externalUrl = attrs['externalUrl'] as String?;
+        if (externalUrl != null && externalUrl.isNotEmpty) continue;
         final rels = entry['relationships'] as List? ?? const [];
         String? group;
         for (final r in rels) {

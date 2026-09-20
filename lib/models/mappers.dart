@@ -433,6 +433,8 @@ db.Settings mergeSettings(db.Settings base, db.Settings? o) {
     playerEnablePip: o.playerEnablePip ?? b.playerEnablePip,
     // Library / downloads
     downloadAutoNew: o.downloadAutoNew ?? b.downloadAutoNew,
+    downloadAutoCategories:
+        o.downloadAutoCategories ?? b.downloadAutoCategories,
     downloadOnlyOverWifi: o.downloadOnlyOverWifi ?? b.downloadOnlyOverWifi,
     downloadConcurrent: o.downloadConcurrent ?? b.downloadConcurrent,
     libraryAutoUpdate: o.libraryAutoUpdate ?? b.libraryAutoUpdate,

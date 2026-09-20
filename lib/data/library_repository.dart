@@ -203,6 +203,25 @@ class LibraryRepository {
             .deleteAll(noteRows.map((n) => n.id!).toList()));
       }
 
+      // 5b. Updates-feed rows + reading sessions for this entry.
+      // Without this, deleting a manga leaves dead tiles in the Updates
+      // feed ("Not found" on tap) and stats/heatmap/streak keep counting
+      // the deleted entry's sessions.
+      final updateRows =
+          await _isar.updates.filter().mangaIdEqualTo(id).findAll();
+      if (updateRows.isNotEmpty) {
+        await _isar.writeTxn(() async => _isar.updates
+            .deleteAll(updateRows.map((u) => u.id).toList()));
+      }
+      final sessionRows = await _isar.readingSessions
+          .filter()
+          .manga((q) => q.idEqualTo(id))
+          .findAll();
+      if (sessionRows.isNotEmpty) {
+        await _isar.writeTxn(() async => _isar.readingSessions
+            .deleteAll(sessionRows.map((s) => s.id!).toList()));
+      }
+
       // 6. The manga row + chapters in one transaction.
       await _isar.writeTxn(() async {
         await _isar.chapters.deleteAll(chapterIds);

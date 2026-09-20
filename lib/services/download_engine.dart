@@ -248,7 +248,7 @@ class DownloadEngine {
           state: db.DownloadState.completed,
           savedPath: savedPath,
         );
-        await _markChapterDownloaded(chapterId, chapterDir, 1);
+        await _markChapterDownloaded(downloadId, chapterId, chapterDir, 1);
         _log('completed episode ${row.mangaTitle} / ${row.chapterName}');
         return;
       }
@@ -300,7 +300,8 @@ class DownloadEngine {
         total: urls.length,
         savedPath: cbzPath,
       );
-      await _markChapterDownloaded(chapterId, chapterDir, urls.length);
+      await _markChapterDownloaded(
+          downloadId, chapterId, chapterDir, urls.length);
       _log('completed ${row.mangaTitle} / ${row.chapterName}');
     } catch (e) {
       // If the row was paused/cancelled meanwhile, keep the user's state.
@@ -319,8 +320,17 @@ class DownloadEngine {
   }
 
   Future<void> _markChapterDownloaded(
-      int chapterId, String dir, int pageCount) async {
+      int downloadId, int chapterId, String dir, int pageCount) async {
     try {
+      // Race guard: if the user deleted this download while the transfer
+      // was finishing, the queue row is gone (or no longer completed) — do
+      // NOT re-flag the chapter as downloaded, or it will claim files that
+      // no longer exist on disk.
+      final row = await _isar.downloads.get(downloadId);
+      if (row == null || row.state != db.DownloadState.completed) {
+        _log('skip flagging chapter $chapterId — download row removed');
+        return;
+      }
       await _isar.writeTxn(() async {
         final c = await _isar.chapters.get(chapterId);
         if (c == null) return;
