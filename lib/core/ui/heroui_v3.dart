@@ -1,31 +1,25 @@
 // Copyright 2024 Lumina Reader Contributors
 // Licensed under the Apache License, Version 2.0
 //
-// HEROUI v3 DESIGN SYSTEM — a faithful native-Flutter port of the HeroUI
-// component language (https://heroui.com).
+// RYBIN DESIGN TOKENS - the design language of andreirybin.com
+// (minimal.gallery reference), ported onto the Hero* component shell.
 //
-// Every token below was extracted from HeroUI's official stylesheet
-// (packages/styles/themes, v3 default theme) and converted from oklch to
-// sRGB:
-//   * accent        oklch(0.6204 0.195 253.83)  ->  #0485F7
-//   * success       oklch(0.7329 0.1935 150.81) ->  #17C964
-//   * warning       oklch(0.7819 0.1585 72.33)  ->  #F5A524  (light)
-//   * danger        oklch(0.6532 0.2328 25.74)  ->  #FF383C  (light)
-//   * dark surface  oklch(0.2103 0.0059 285.89) ->  #18181B
-//   * light bg      oklch(0.9702 0 0)           ->  #F5F5F5
+// Every token was measured from the live reference site:
+//   * typeface    Inter 400/500/600, UNIFORM 12px base size
+//                 (hierarchy comes from weight + whitespace, not size)
+//   * line-height 1.3em, letter-spacing -0.2px (text) / 0.1px (badges)
+//   * palette     monochrome + a single link accent:
+//                   bg #FFFFFF, text #000000, secondary #8E8E90,
+//                   labels #858585, link #0099FF (underlined),
+//                   borders rgba(0,0,0,0.08) ~= #EBEBEB on white
+//   * surfaces    FLAT - no elevation shadows, hairline borders only;
+//                 the black footer (#000000, gray text) is a signature
+//   * radii       8px cards/images, 16px pill badges, circles for arrows
+//   * motion      near-static: 120-150ms colour fades only
 //
-// Component anatomy mirrors the HeroUI CSS exactly:
-//   * Button  — pill (rounded-3xl), h-10, px-4, text-sm medium, press
-//               scale(0.97) with 250ms smooth easing, 100ms bg transition
-//   * Chip    — rounded-2xl (16px), px-2, py-0.5, text-xs, soft tints
-//   * Card    — radius min(32px, 3xl) = 24px, p-4, light-mode triple
-//               surface shadow, dark-mode borderless hairline
-//   * Input   — field radius (radius * 1.5 = 12px), filled, focus ring
-//   * Tabs    — container bg-default, radius radius*2.5 = 20px
-//   * Switch  — accent track when checked, default track otherwise
-//   * Skeleton— shimmer sweep
-//
-// Pure Flutter (no dependencies) so any screen can adopt it incrementally.
+// The Hero* widget anatomy (Button/Chip/Card/Input/Tabs/Switch...) is kept
+// - only the token VALUES changed, so every screen adopting Hero* inherits
+// the rybin look for free.
 
 import 'package:flutter/material.dart';
 
@@ -45,93 +39,98 @@ class HeroTokens {
   HeroTokens._();
 
   // -- Accents (identical in light + dark) --------------------------------
-  static const Color accent = Color(0xFF0485F7);
-  static const Color accentHover = Color(0xFF1D91F8);
-  static const Color success = Color(0xFF17C964);
-  static const Color successHover = Color(0xFF2BCD75);
-  static const Color warningLight = Color(0xFFF5A524);
-  static const Color warningDark = Color(0xFFF7B750);
-  static const Color dangerLight = Color(0xFFFF383C);
-  static const Color dangerDark = Color(0xFFDB3B3E);
-  static const Color dangerHoverLight = Color(0xFFFF5155);
-  static const Color dangerHoverDark = Color(0xFFE25255);
+  /// The single rybin link accent (#0099FF). Everything else is
+  /// monochrome; this blue is reserved for links and active indicators.
+  static const Color accent = Color(0xFF0099FF);
+  static const Color accentHover = Color(0xFF1AA3FF);
+
+  // Semantic roles are MONOCHROME in the rybin language (the reference
+  // site has no green/amber/red): success and danger invert to ink,
+  // warning falls back to the secondary gray. Icons + labels carry the
+  // meaning; the palette stays disciplined.
+  static const Color success = Color(0xFF000000); // ink (light)
+  static const Color successHover = Color(0xFF1A1A1A);
+  static const Color successDark = Color(0xFFFFFFFF); // inverted (dark)
+  static const Color warningLight = Color(0xFF8E8E90); // secondary gray
+  static const Color warningDark = Color(0xFF8E8E90);
+  static const Color dangerLight = Color(0xFF000000); // ink (light)
+  static const Color dangerDark = Color(0xFFFFFFFF); // inverted (dark)
+  static const Color dangerHoverLight = Color(0xFF1A1A1A);
+  static const Color dangerHoverDark = Color(0xFFE6E6E6);
 
   // -- Light theme ----------------------------------------------------------
-  static const Color lightBackground = Color(0xFFF5F5F5); // oklch(.9702 0 0)
+  static const Color lightBackground = Color(0xFFFFFFFF); // reference bg
   static const Color lightSurface = Color(0xFFFFFFFF); // white
-  static const Color lightSurface2 = Color(0xFFEFEFF0);
-  static const Color lightSurface3 = Color(0xFFEAEAEB);
-  static const Color lightSurfaceHover = Color(0xFFEDEDED); // white92/ecl8
-  static const Color lightForeground = Color(0xFF18181B); // "eclipse"
-  static const Color lightMuted = Color(0xFF71717A);
-  static const Color lightDefault = Color(0xFFEBEBEC);
-  static const Color lightDefaultHover = Color(0xFFF1F1F2);
-  static const Color lightBorder = Color(0xFFDEDEE0);
-  static const Color lightSeparator = Color(0xFFE4E4E7);
+  static const Color lightSurface2 = Color(0xFFF7F7F8); // whisper gray
+  static const Color lightSurface3 = Color(0xFFF0F0F1);
+  static const Color lightSurfaceHover = Color(0xFFF4F4F5);
+  static const Color lightForeground = Color(0xFF000000); // reference text
+  static const Color lightMuted = Color(0xFF8E8E90); // reference secondary
+  static const Color lightDefault = Color(0xFFF4F4F5);
+  static const Color lightDefaultHover = Color(0xFFECECEE);
+  static const Color lightBorder = Color(0xFFEBEBEB); // rgba(0,0,0,0.08)
+  static const Color lightSeparator = Color(0xFFF0F0F0); // rgba(0,0,0,0.06)
 
-  // -- Dark theme -----------------------------------------------------------
-  static const Color darkBackground = Color(0xFF060607); // oklch(12% .005 …)
-  static const Color darkSurface = Color(0xFF18181B); // "eclipse"
-  static const Color darkSurface2 = Color(0xFF232325);
-  static const Color darkSurface3 = Color(0xFF262728);
-  static const Color darkSurfaceHover = Color(0xFF2A2A2D); // surface92/snow8
-  static const Color darkForeground = Color(0xFFFCFCFC); // "snow"
-  static const Color darkMuted = Color(0xFF9F9FA9);
-  static const Color darkDefault = Color(0xFF27272A);
-  static const Color darkDefaultHover = Color(0xFF303032);
-  static const Color darkBorder = Color(0xFF28282C);
-  static const Color darkSeparator = Color(0xFF212124);
-  static const Color darkSegment = Color(0xFF46464C);
+  // -- Dark theme (reference black footer inverted into a full theme) ------
+  static const Color darkBackground = Color(0xFF000000); // footer black
+  static const Color darkSurface = Color(0xFF0A0A0A);
+  static const Color darkSurface2 = Color(0xFF141414);
+  static const Color darkSurface3 = Color(0xFF1C1C1C);
+  static const Color darkSurfaceHover = Color(0xFF1F1F1F);
+  static const Color darkForeground = Color(0xFFFFFFFF);
+  static const Color darkMuted = Color(0xFF8E8E90); // same secondary gray
+  static const Color darkDefault = Color(0xFF1C1C1E);
+  static const Color darkDefaultHover = Color(0xFF2A2A2C);
+  static const Color darkBorder = Color(0xFF232323); // rgba(255,255,255,0.14)
+  static const Color darkSeparator = Color(0xFF191919);
+  static const Color darkSegment = Color(0xFF3A3A3C);
 
   // -- Radii -----------------------------------------------------------------
-  /// Base radius (HeroUI --radius: 0.5rem).
+  /// Base radius - the reference card/image radius is 8px everywhere.
   static const double radius = 8;
 
-  /// Field radius (calc(radius * 1.5)).
-  static const double radiusField = 12;
+  /// Field radius (inputs, 8px in the reference).
+  static const double radiusField = 8;
 
-  /// Chip radius (rounded-2xl).
+  /// Chip radius (rounded-2xl pill badges - reference badges are pills).
   static const double radiusChip = 16;
 
-  /// Card radius (min(32px, radius-3xl)).
-  static const double radiusCard = 24;
+  /// Card radius (reference cards/images: 8px).
+  static const double radiusCard = 8;
 
-  /// Button pill radius (rounded-3xl — clamps to a full pill at h-10).
-  static const double radiusButton = 24;
+  /// Button radius - the reference has no capsules outside badge pills;
+  /// buttons are quiet rounded-rectangles.
+  static const double radiusButton = 8;
 
-  /// Tabs container radius (calc(radius * 2.5)).
-  static const double radiusTabs = 20;
+  /// Tabs container radius.
+  static const double radiusTabs = 8;
 
   // -- Shadows ---------------------------------------------------------------
-  /// Light-mode surface shadow (card elevation).
-  static const List<BoxShadow> surfaceShadowLight = [
-    BoxShadow(color: Color(0x0A000000), offset: Offset(0, 2), blurRadius: 4),
-    BoxShadow(color: Color(0x0F000000), offset: Offset(0, 1), blurRadius: 2),
-    BoxShadow(color: Color(0x0F000000), offset: Offset(0, 0), blurRadius: 1),
-  ];
+  /// FLAT design: no elevation shadows in either mode. Definition comes
+  /// from the 1px hairline border, exactly like the reference cards.
+  static const List<BoxShadow> surfaceShadowLight = [];
 
-  /// Light-mode overlay shadow (modals, menus).
+  /// Overlays (modals, menus) keep one whisper of a shadow so they detach
+  /// from the page - the reference floats flat white cards with hairlines.
   static const List<BoxShadow> overlayShadowLight = [
-    BoxShadow(color: Color(0x0F000000), offset: Offset(0, 2), blurRadius: 8),
-    BoxShadow(color: Color(0x08000000), offset: Offset(0, -6), blurRadius: 12),
-    BoxShadow(color: Color(0x14000000), offset: Offset(0, 14), blurRadius: 28),
+    BoxShadow(color: Color(0x0F000000), offset: Offset(0, 4), blurRadius: 16),
   ];
 
-  /// Dark-mode: no elevation shadows — definition comes from the hairline.
+  /// Dark-mode: no elevation shadows - definition comes from the hairline.
   static const List<BoxShadow> surfaceShadowDark = [];
 
   // -- Motion ----------------------------------------------------------------
-  /// HeroUI "smooth" easing used for transforms.
+  /// Reference interactions are quick, quiet fades.
   static const Curve easeSmooth = Curves.easeOutCubic;
 
-  /// Transform duration (HeroUI: 250ms ease-smooth).
-  static const Duration motionTransform = Duration(milliseconds: 250);
+  /// Transform duration (kept short - the reference is near-static).
+  static const Duration motionTransform = Duration(milliseconds: 150);
 
-  /// Colour/fade duration (HeroUI: 100-150ms).
+  /// Colour/fade duration.
   static const Duration motionColor = Duration(milliseconds: 120);
 
   /// Entrance duration for modals/sheets.
-  static const Duration motionEntrance = Duration(milliseconds: 220);
+  static const Duration motionEntrance = Duration(milliseconds: 180);
 
   // -- Spacing (Tailwind units, logical px) -----------------------------------
   static const double space1 = 4;
@@ -143,40 +142,43 @@ class HeroTokens {
   static const double space8 = 32;
 
   // -- Typography -------------------------------------------------------------
-  /// HeroUI text styles. Weights stay in the 450-600 band (HeroUI's look is
-  /// medium-weight, never heavy).
+  /// The reference sets EVERYTHING at 12px / line-height 1.3 - hierarchy
+  /// is expressed through weight (400/500/600) and placement, never size.
   static const TextStyle display = TextStyle(
-    fontSize: 30,
-    height: 1.25,
-    fontWeight: FontWeight.w600,
-    letterSpacing: -0.5,
-  );
-  static const TextStyle titleLarge = TextStyle(
-    fontSize: 22,
+    fontSize: 12,
     height: 1.3,
-    fontWeight: FontWeight.w600,
-    letterSpacing: -0.3,
-  );
-  static const TextStyle title = TextStyle(
-    fontSize: 17,
-    height: 1.35,
     fontWeight: FontWeight.w600,
     letterSpacing: -0.2,
   );
-  static const TextStyle body = TextStyle(
-    fontSize: 14,
-    height: 1.5,
+  static const TextStyle titleLarge = TextStyle(
+    fontSize: 12,
+    height: 1.3,
+    fontWeight: FontWeight.w600,
+    letterSpacing: -0.2,
+  );
+  static const TextStyle title = TextStyle(
+    fontSize: 12,
+    height: 1.3,
     fontWeight: FontWeight.w500,
+    letterSpacing: -0.2,
+  );
+  static const TextStyle body = TextStyle(
+    fontSize: 12,
+    height: 1.3,
+    fontWeight: FontWeight.w400,
+    letterSpacing: -0.2,
   );
   static const TextStyle bodySmall = TextStyle(
-    fontSize: 13,
-    height: 1.5,
+    fontSize: 12,
+    height: 1.3,
     fontWeight: FontWeight.w400,
+    letterSpacing: -0.2,
   );
   static const TextStyle caption = TextStyle(
     fontSize: 12,
-    height: 1.45,
+    height: 1.3,
     fontWeight: FontWeight.w400,
+    letterSpacing: -0.2,
   );
 }
 
@@ -245,18 +247,18 @@ class HeroThemeData {
         border: HeroTokens.lightBorder,
         separator: HeroTokens.lightSeparator,
         accent: HeroTokens.accent,
-        accentSoft: Color(0x260485F7), // accent 15%
-        accentSoftFg: Color(0xFF1E7BD8), // accent 70% + fg 30%
-        accentFg: Colors.white,
-        success: HeroTokens.success,
-        successSoft: Color(0x2617C964),
-        successSoftFg: Color(0xFF159B52),
-        warning: HeroTokens.warningLight,
-        warningSoft: Color(0x26F5A524),
-        warningSoftFg: Color(0xFFB47F1E),
-        danger: HeroTokens.dangerLight,
-        dangerSoft: Color(0x26FF383C),
-        dangerSoftFg: Color(0xFFCC3236),
+        accentSoft: Color(0x140099FF), // accent 8% (kept subtle, rybin)
+        accentSoftFg: Color(0xFF008AE0), // readable link blue on tint
+        accentFg: Colors.black, // 7.2:1 on #0099FF (white is only 2.9:1)
+        success: HeroTokens.success, // ink
+        successSoft: Color(0x0F000000), // ink 6%
+        successSoftFg: Color(0xFF000000),
+        warning: HeroTokens.warningLight, // secondary gray
+        warningSoft: Color(0x1F8E8E90), // gray 12%
+        warningSoftFg: Color(0xFF6B6B6D),
+        danger: HeroTokens.dangerLight, // ink (destructive = strongest)
+        dangerSoft: Color(0x0F000000), // ink 6%
+        dangerSoftFg: Color(0xFF000000),
         surfaceShadow: HeroTokens.surfaceShadowLight,
         overlayShadow: HeroTokens.overlayShadowLight,
       );
@@ -275,18 +277,18 @@ class HeroThemeData {
         border: HeroTokens.darkBorder,
         separator: HeroTokens.darkSeparator,
         accent: HeroTokens.accent,
-        accentSoft: Color(0x1F0485F7), // accent 12%
-        accentSoftFg: Color(0xFF53A8F8), // accent 80% + fg 30%
-        accentFg: Colors.white,
-        success: HeroTokens.success,
-        successSoft: Color(0x1F17C964),
-        successSoftFg: Color(0xFF3ED57F),
-        warning: HeroTokens.warningDark,
-        warningSoft: Color(0x1FF7B750),
-        warningSoftFg: Color(0xFFE9BE79),
-        danger: HeroTokens.dangerDark,
-        dangerSoft: Color(0x26DB3B3E),
-        dangerSoftFg: Color(0xFFEC6A6D),
+        accentSoft: Color(0x1F0099FF), // accent 12%
+        accentSoftFg: Color(0xFF66C2FF), // light link blue
+        accentFg: Colors.black, // blue button w/ black label (reference)
+        success: HeroTokens.successDark, // inverted: white
+        successSoft: Color(0x1FFFFFFF), // white 12%
+        successSoftFg: Color(0xFFFFFFFF),
+        warning: HeroTokens.warningDark, // gray
+        warningSoft: Color(0x1F8E8E90),
+        warningSoftFg: Color(0xFFB4B4B6),
+        danger: HeroTokens.dangerDark, // inverted: white (destructive)
+        dangerSoft: Color(0x1FFFFFFF), // white 12%
+        dangerSoftFg: Color(0xFFFFFFFF),
         surfaceShadow: HeroTokens.surfaceShadowDark,
         overlayShadow: [
           // dark overlay hairline equivalent: subtle outer glow
@@ -420,9 +422,10 @@ class _HeroButtonState extends State<HeroButton> {
   bool _hovered = false;
 
   static const _sizes = {
-    HeroButtonSize.sm: (h: 36.0, px: 12.0, font: 13.0, icon: 16.0, scale: 0.98),
-    HeroButtonSize.md: (h: 40.0, px: 16.0, font: 14.0, icon: 18.0, scale: 0.97),
-    HeroButtonSize.lg: (h: 48.0, px: 22.0, font: 15.0, icon: 20.0, scale: 0.97),
+    // rybin: uniform 12px type on quiet rounded-rect buttons (r8).
+    HeroButtonSize.sm: (h: 34.0, px: 12.0, font: 12.0, icon: 15.0, scale: 0.98),
+    HeroButtonSize.md: (h: 38.0, px: 14.0, font: 12.0, icon: 17.0, scale: 0.98),
+    HeroButtonSize.lg: (h: 44.0, px: 18.0, font: 12.0, icon: 19.0, scale: 0.98),
   };
 
   @override
@@ -532,17 +535,8 @@ class _HeroButtonState extends State<HeroButton> {
                   color: enabled ? bg : h.dflt.withValues(alpha: 0.55),
                   borderRadius: BorderRadius.circular(HeroTokens.radiusButton),
                   border: border != null ? Border.all(color: border) : null,
-                  boxShadow: widget.variant == HeroButtonVariant.solid &&
-                          enabled &&
-                          !h.isDark
-                      ? [
-                          BoxShadow(
-                            color: colors.base.withValues(alpha: 0.28),
-                            offset: const Offset(0, 4),
-                            blurRadius: 14,
-                          ),
-                        ]
-                      : null,
+                  // FLAT: the reference has no button glow - colour alone
+                  // defines the affordance.
                 ),
                 child: Center(
                   child: Opacity(
@@ -715,9 +709,10 @@ class HeroChip extends StatelessWidget {
 
     final chip = AnimatedContainer(
       duration: heroAnimationsEnabled ? HeroTokens.motionColor : Duration.zero,
+      // rybin badge pill spec: v6 / h8 padding on a 16px-radius pill.
       padding: EdgeInsets.symmetric(
-        horizontal: small ? 8 : 10,
-        vertical: small ? 3 : 5,
+        horizontal: small ? 6 : 8,
+        vertical: small ? 2.5 : 6,
       ),
       decoration: BoxDecoration(
         color: bg,
@@ -815,10 +810,12 @@ class HeroCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(radius),
         boxShadow:
             variant == HeroCardVariant.defaultVariant ? h.surfaceShadow : null,
-        border:
-            variant != HeroCardVariant.transparent && (h.isDark || showBorder)
-                ? Border.all(color: h.isDark ? h.border : h.separator)
-                : null,
+        border: variant != HeroCardVariant.transparent
+            ? Border.all(
+                color: showBorder
+                    ? h.border
+                    : (h.isDark ? h.border : h.separator))
+            : null,
       ),
       child: child,
     );

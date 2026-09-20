@@ -236,7 +236,7 @@ class _AnimeDetailScreenState extends ConsumerState<AnimeDetailScreen> {
                 ),
                 HeroListTile(
                   leadingIcon: Icons.live_tv_rounded,
-                  leadingColor: HeroTokens.success,
+                  leadingColor: const Color(0xFF17C964),
                   title: 'Kitsu',
                   subtitle: 'Library & activity feed',
                   onTap: () {
@@ -1111,7 +1111,7 @@ class _EpisodeList extends ConsumerWidget {
                 if (!episode.isDownloaded)
                   HeroListTile(
                     leadingIcon: Icons.download_rounded,
-                    leadingColor: HeroTokens.success,
+                    leadingColor: const Color(0xFF17C964),
                     title: 'Download',
                     subtitle: 'Queue via the download engine',
                     onTap: () {

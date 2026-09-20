@@ -295,6 +295,17 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     setState(() {});
   }
 
+  /// Maps the persisted default-quality label (e.g. '720p') to an index
+  /// in the available sources; 0 when nothing matches.
+  int _defaultQualityIndex(List<VideoQuality> sources) {
+    final pref = ref.read(appSettingsProvider).defaultVideoQuality;
+    if (pref == 'Auto') return 0;
+    for (var i = 0; i < sources.length; i++) {
+      if (sources[i].label.toLowerCase() == pref.toLowerCase()) return i;
+    }
+    return 0;
+  }
+
   Future<void> _setQuality(int index) async {
     final sources = ref.read(videoSourcesProvider(widget.episodeId));
     if (index < 0 || index >= sources.length) return;
@@ -329,6 +340,9 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
   }
 
   void _maybeStartAniSkipWatch() {
+    // Honour Settings -> Player -> AniSkip: when disabled, no skip button
+    // is ever surfaced (the toggle previously had no effect at all).
+    if (!ref.read(appSettingsProvider).aniSkipEnabled) return;
     final ranges = ref.read(aniSkipProvider(widget.episodeId));
     if (ranges.isEmpty) return;
     _positionSub?.cancel();
@@ -363,12 +377,6 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     } else {
       await _seekTo(_duration - const Duration(seconds: 90));
     }
-  }
-
-  void _togglePip() {
-    // media_kit exposes PiP through the platform controller; surface a snackbar
-    // where the native binding is unavailable.
-    showSnack(ref, context, 'Picture-in-picture');
   }
 
   Future<void> _nextEpisode() async {
@@ -412,6 +420,11 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
       _episode = target;
       _currentEpisodeId = target.id;
       _isLoading = true;
+      // First open honours the persisted default quality (Settings ->
+      // Player); episode switches keep the user's in-session choice.
+      if (_qualityIndex == 0) {
+        _qualityIndex = _defaultQualityIndex(sources);
+      }
       _qualityIndex = _qualityIndex.clamp(0, sources.length - 1);
     });
     _openedEpisodeId = target.id;
@@ -491,7 +504,6 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
           title: manga?.title ?? '',
           subtitle: _episode?.name ?? '',
           onBack: () => Navigator.maybePop(context),
-          onPip: _togglePip,
         ),
         // Center play/pause button
         Center(
@@ -626,13 +638,11 @@ class _GradientTop extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.onBack,
-    required this.onPip,
   });
 
   final String title;
   final String subtitle;
   final VoidCallback onBack;
-  final VoidCallback onPip;
 
   @override
   Widget build(BuildContext context) {
@@ -675,11 +685,6 @@ class _GradientTop extends StatelessWidget {
                               color: Colors.white70, fontSize: 12)),
                     ],
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.picture_in_picture_alt,
-                      color: Colors.white),
-                  onPressed: onPip,
                 ),
               ],
             ),

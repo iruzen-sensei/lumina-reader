@@ -1548,13 +1548,36 @@ final sourcesProvider =
 /// keyed by sourceId only), so it displayed a duplicate of the popular
 /// grid — `load(latest: true)` existed but was unreachable. The record key
 /// gives each tab its own notifier.
-class BrowseGridNotifier extends StateNotifier<List<Manga>> {
+/// Feed state with EXPLICIT loading + error phases. Previously the feed
+/// was a bare `List<Manga>`: an in-flight fetch and a hard failure were
+/// both `[]`, so the grid rendered "Nothing here yet" while loading and
+/// looked exactly like a broken source.
+class BrowseFeedState {
+  const BrowseFeedState({
+    this.items = const [],
+    this.loading = false,
+    this.error,
+  });
+
+  final List<Manga> items;
+
+  /// True while the initial (page-1) fetch is in flight.
+  final bool loading;
+
+  /// Human-readable failure reason; non-null means the initial fetch
+  /// failed (the grid shows an error card with retry).
+  final String? error;
+
+  bool get hasError => error != null;
+}
+
+class BrowseGridNotifier extends StateNotifier<BrowseFeedState> {
   BrowseGridNotifier(
     this._sourceId,
     this._coordinator, {
     bool latest = false,
   })  : _latest = latest,
-        super(const []) {
+        super(const BrowseFeedState(loading: true)) {
     _load();
   }
 
@@ -1570,6 +1593,7 @@ class BrowseGridNotifier extends StateNotifier<List<Manga>> {
   Future<void> _load() => load();
 
   Future<void> load({bool latest = false, int page = 1}) async {
+    state = BrowseFeedState(items: state.items, loading: true);
     try {
       final useLatest = latest || _latest;
       final items = useLatest
@@ -1577,14 +1601,16 @@ class BrowseGridNotifier extends StateNotifier<List<Manga>> {
           : await _coordinator.popular(_sourceId, page: page);
       _page = page;
       _hasMore = items.length >= 20; // sources page in twenties
-      state = items;
+      state = BrowseFeedState(items: items);
     } catch (e) {
       debugPrint('BrowseGridNotifier($_sourceId) load failed: $e');
-      state = const [];
+      state = BrowseFeedState(error: _friendlyError(e));
     }
   }
 
-  /// Appends the next page (infinite scroll).
+  /// Appends the next page (infinite scroll). A failure here keeps the
+  /// already-loaded items and surfaces the reason as a transient error
+  /// the grid can show without wiping content.
   Future<void> loadMore() async {
     if (_loadingMore || !_hasMore) return;
     _loadingMore = true;
@@ -1594,18 +1620,41 @@ class BrowseGridNotifier extends StateNotifier<List<Manga>> {
           : await _coordinator.popular(_sourceId, page: _page + 1);
       _page = _page + 1;
       _hasMore = next.length >= 20;
-      if (next.isNotEmpty) state = [...state, ...next];
+      if (next.isNotEmpty) {
+        state = BrowseFeedState(items: [...state.items, ...next]);
+      }
     } catch (e) {
       debugPrint('BrowseGridNotifier($_sourceId) loadMore failed: $e');
+      state = BrowseFeedState(
+          items: state.items, error: _friendlyError(e));
     } finally {
       _loadingMore = false;
     }
+  }
+
+  /// Maps raw exceptions to a one-line reason the grid can display.
+  static String _friendlyError(Object e) {
+    final msg = e.toString();
+    if (e is StateError) return e.message;
+    if (msg.contains('SocketException') || msg.contains('Failed host')) {
+      return 'Network unreachable - check your connection.';
+    }
+    if (msg.contains('HandshakeException')) {
+      return 'Secure connection failed.';
+    }
+    if (msg.contains('FormatException')) {
+      return 'The source returned an unexpected response.';
+    }
+    if (msg.contains('TimeoutException') || msg.contains('timeout')) {
+      return 'The source took too long to respond.';
+    }
+    return 'Could not load this source.';
   }
 }
 
 final browseFeedProvider = StateNotifierProvider.family<
     BrowseGridNotifier,
-    List<Manga>,
+    BrowseFeedState,
     (int, bool)>((ref, key) => BrowseGridNotifier(
       key.$1,
       ref.watch(extensionCoordinatorProvider),

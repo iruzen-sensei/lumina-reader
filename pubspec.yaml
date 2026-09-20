@@ -182,3 +182,16 @@ dependency_overrides:
 
 flutter:
   uses-material-design: true
+
+  # Inter — the reference design (andreirybin.com) typeface. Weights
+  # 400/500/600 as static TTFs so the identity survives offline (no
+  # google_fonts runtime fetch).
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Inter-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600

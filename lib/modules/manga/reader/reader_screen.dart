@@ -70,6 +70,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   Chapter? _chapter;
   Manga? _manga;
 
+  /// Per-source HTTP headers for page images (Madara CDNs need Referer).
+  Map<String, String>? _sourceHeaders;
+
   /// True once [_chapter] has been resolved and assigned.
   bool get _chapterReady => _chapter != null;
 
@@ -121,6 +124,19 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       _isLoadingChapter = _totalPages == 0; // until pages stream in
     });
     unawaited(_recordHistoryRead(0));
+
+    // Resolve the source's HTTP headers (Referer / User-Agent) for page
+    // images — scraped CDNs 403 hotlinks without them.
+    if (manga.sourceId != 0) {
+      unawaited(() async {
+        final headers = await ref
+            .read(extensionCoordinatorProvider)
+            .sourceHeaders(manga.sourceId);
+        if (mounted && headers.isNotEmpty) {
+          setState(() => _sourceHeaders = headers);
+        }
+      }());
+    }
   }
 
   void _onListPositionsChanged() {
@@ -377,6 +393,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               itemScrollController: _itemScrollController,
               itemPositionsListener: _itemPositionsListener,
               initialPage: _currentPage,
+              headers: _sourceHeaders,
               onTapLeft: settings.tapToNavigate
                   ? (settings.direction == ReaderDirection.rightToLeft
                       ? _nextPage
@@ -455,6 +472,7 @@ class _ReaderBody extends StatelessWidget {
     required this.onTapLeft,
     required this.onTapRight,
     required this.onTapCenter,
+    this.headers,
     this.onPageChanged,
   });
 
@@ -464,6 +482,9 @@ class _ReaderBody extends StatelessWidget {
   final ItemScrollController itemScrollController;
   final ItemPositionsListener itemPositionsListener;
   final int initialPage;
+
+  /// Per-source HTTP headers forwarded to every page image (Referer etc.).
+  final Map<String, String>? headers;
   final VoidCallback onTapLeft;
   final VoidCallback onTapRight;
   final VoidCallback onTapCenter;
@@ -477,6 +498,7 @@ class _ReaderBody extends StatelessWidget {
         pages: pages,
         controller: pageController,
         initialPage: initialPage,
+        headers: headers,
         onTapLeft: onTapLeft,
         onTapRight: onTapRight,
         onTapCenter: onTapCenter,
@@ -490,6 +512,7 @@ class _ReaderBody extends StatelessWidget {
       itemPositionsListener: itemPositionsListener,
       initialPage: initialPage,
       isWebtoon: settings.mode == ReaderMode.webtoon,
+      headers: headers,
     );
   }
 }
@@ -503,6 +526,7 @@ class _PagedBody extends StatefulWidget {
     required this.onTapLeft,
     required this.onTapRight,
     required this.onTapCenter,
+    this.headers,
     this.onPageChanged,
   });
 
@@ -510,6 +534,7 @@ class _PagedBody extends StatefulWidget {
   final List<String> pages;
   final PageController controller;
   final int initialPage;
+  final Map<String, String>? headers;
   final VoidCallback onTapLeft;
   final VoidCallback onTapRight;
   final VoidCallback onTapCenter;
@@ -545,6 +570,7 @@ class _PagedBodyState extends State<_PagedBody> {
       itemBuilder: (context, index) => _ReaderPage(
         url: widget.pages[index],
         fit: widget.settings.fit,
+        headers: widget.headers,
         onTapLeft: widget.onTapLeft,
         onTapRight: widget.onTapRight,
         onTapCenter: widget.onTapCenter,
@@ -561,6 +587,7 @@ class _ContinuousBody extends StatelessWidget {
     required this.itemPositionsListener,
     required this.initialPage,
     required this.isWebtoon,
+    this.headers,
   });
 
   final ReaderSettings settings;
@@ -569,6 +596,7 @@ class _ContinuousBody extends StatelessWidget {
   final ItemPositionsListener itemPositionsListener;
   final int initialPage;
   final bool isWebtoon;
+  final Map<String, String>? headers;
 
   @override
   Widget build(BuildContext context) {
@@ -583,6 +611,7 @@ class _ContinuousBody extends StatelessWidget {
         child: _ReaderPage(
           url: pages[index],
           fit: isWebtoon ? ReaderFit.contain : settings.fit,
+          headers: headers,
           isWebtoon: isWebtoon,
         ),
       ),
@@ -596,6 +625,7 @@ class _ReaderPage extends StatelessWidget {
   const _ReaderPage({
     required this.url,
     required this.fit,
+    this.headers,
     this.onTapLeft,
     this.onTapRight,
     this.onTapCenter,
@@ -604,6 +634,11 @@ class _ReaderPage extends StatelessWidget {
 
   final String url;
   final ReaderFit fit;
+
+  /// Per-source HTTP headers (Referer / User-Agent). Scraped CDNs such as
+  /// Madara's reject hotlinked page images with 403 unless the site's own
+  /// Referer is attached — without this, whole sources render blank pages.
+  final Map<String, String>? headers;
   final VoidCallback? onTapLeft;
   final VoidCallback? onTapRight;
   final VoidCallback? onTapCenter;
@@ -637,6 +672,7 @@ class _ReaderPage extends StatelessWidget {
                 mode: ExtendedImageMode.gesture,
                 enableSlideOutPage: true,
                 cache: true,
+                headers: headers,
                 loadStateChanged: _pageLoadState,
                 initGestureConfigHandler: _gestureConfig,
               ),

@@ -29,7 +29,7 @@ class BookCover extends StatelessWidget {
     required this.manga,
     this.width = 110,
     this.height = 160,
-    this.radius = 14,
+    this.radius = 8, // reference card/image radius
     this.showProgress = true,
     this.showTitle = true,
     this.selected = false,

@@ -59,32 +59,47 @@ class ExtensionCoordinator {
     return service;
   }
 
+  /// HTTP headers the given source requires on EVERY request, including
+  /// page-image GETs (Madara-family CDNs 403 hotlinks without a Referer).
+  /// The reader passes these to the image widget so scraped sources
+  /// actually render.
+  Future<Map<String, String>> sourceHeaders(int sourceId) async {
+    try {
+      final service = await _serviceForSourceId(sourceId);
+      if (service == null) return const {};
+      return await service.getHeaders();
+    } catch (_) {
+      return const {};
+    }
+  }
+
   // -----------------------------------------------------------------------
   // Catalog operations (Browse)
   // -----------------------------------------------------------------------
 
+  /// Throws on failure — the Browse feed renders an explicit error state
+  /// with a retry action. (Previously every failure was silently converted
+  /// to an empty list, indistinguishable from "no results", which is why
+  /// the extensions screen *looked* like nothing ever loaded.)
   Future<List<dto.Manga>> popular(int sourceId, {int page = 1}) async {
     final service = await _serviceForSourceId(sourceId);
-    if (service == null) return const [];
-    try {
-      final entries = await service.getPopular(page);
-      return entries.map((e) => _mangaToDto(e, sourceId)).toList();
-    } catch (e) {
-      debugPrint('ExtensionCoordinator.popular($sourceId): $e');
-      return const [];
+    if (service == null) {
+      throw StateError(
+          'This source is unavailable or its format is not supported yet.');
     }
+    final entries = await service.getPopular(page);
+    return entries.map((e) => _mangaToDto(e, sourceId)).toList();
   }
 
+  /// See [popular] — throws on failure for the same reason.
   Future<List<dto.Manga>> latest(int sourceId, {int page = 1}) async {
     final service = await _serviceForSourceId(sourceId);
-    if (service == null) return const [];
-    try {
-      final entries = await service.getLatestUpdates(page);
-      return entries.map((e) => _mangaToDto(e, sourceId)).toList();
-    } catch (e) {
-      debugPrint('ExtensionCoordinator.latest($sourceId): $e');
-      return const [];
+    if (service == null) {
+      throw StateError(
+          'This source is unavailable or its format is not supported yet.');
     }
+    final entries = await service.getLatestUpdates(page);
+    return entries.map((e) => _mangaToDto(e, sourceId)).toList();
   }
 
   Future<List<dto.Manga>> search(int sourceId, String query,

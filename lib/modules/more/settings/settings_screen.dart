@@ -300,7 +300,6 @@ class _AppearanceCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final h = HeroScope.of(context);
     final s = ref.watch(appSettingsProvider);
     final notifier = ref.read(appSettingsProvider.notifier);
 
@@ -319,15 +318,10 @@ class _AppearanceCard extends ConsumerWidget {
           selected: s.themeMode,
           onChanged: notifier.setThemeMode,
         ),
-        _SwitchSettingTile(
-          icon: Icons.auto_awesome_outlined,
-          title: 'Dynamic colour (Material You)',
-          subtitle: s.useDynamicColor
-              ? 'Pull palette from wallpaper'
-              : 'Use brand palette',
-          value: s.useDynamicColor,
-          onChanged: (_) => notifier.toggleDynamicColor(),
-        ),
+        // REMOVED: "Dynamic colour (Material You)" + "Brand colour" tiles.
+        // Both persisted a value nothing ever consumed (theming ignores
+        // useDynamicColor/customSeed) - decorative controls, deleted per
+        // the no-dead-controls audit. The app uses the fixed rybin palette.
         _SwitchSettingTile(
           icon: Icons.e_mobiledata_outlined,
           title: 'E-ink mode',
@@ -345,93 +339,13 @@ class _AppearanceCard extends ConsumerWidget {
           value: s.fontSize,
           onChanged: notifier.setFontSize,
         ),
-        HeroListTile(
-          leadingIcon: Icons.format_color_fill_outlined,
-          title: 'Brand colour',
-          subtitle: '#${_hex(s.customSeed)}',
-          trailing: Container(
-            width: 26,
-            height: 26,
-            decoration: BoxDecoration(
-              color: s.customSeed,
-              shape: BoxShape.circle,
-              border: Border.all(color: h.border),
-            ),
-          ),
-          onTap: () => _showColorPicker(context, s.customSeed, (c) {
-            notifier.setCustomSeed(c);
-            showSnack(ref, context, 'Brand colour updated');
-          }),
-        ),
         // NOTE: the "Font family" tile was removed — the picker never
         // persisted anything (`_toDb` writes `customThemeFontFamily: null`).
       ],
     );
   }
-
-  String _hex(Color c) {
-    // Flutter 3.27+: Color.red/green/blue are deprecated in favor of the
-    // 0..1 double components (wide-gamut support).
-    int channel(double v) => (v * 255.0).round().clamp(0, 255).toInt();
-    return '${channel(c.r).toRadixString(16).padLeft(2, '0')}'
-            '${channel(c.g).toRadixString(16).padLeft(2, '0')}'
-            '${channel(c.b).toRadixString(16).padLeft(2, '0')}'
-        .toUpperCase();
-  }
-
-  Future<void> _showColorPicker(
-      BuildContext context, Color current, ValueChanged<Color> onPick) {
-    final palette = [
-      HeroTokens.accent,
-      HeroTokens.success,
-      HeroTokens.warningLight,
-      HeroTokens.dangerLight,
-      const Color(0xFF00897B),
-      const Color(0xFF6D4C41),
-      const Color(0xFF455A64),
-    ];
-    return showHeroSheet<void>(
-      context: context,
-      title: 'Brand colour',
-      builder: (sheetContext) {
-        final h = HeroScope.of(sheetContext);
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-            child: Wrap(
-              spacing: 14,
-              runSpacing: 14,
-              children: [
-                for (final c in palette)
-                  GestureDetector(
-                    onTap: () {
-                      onPick(c);
-                      Navigator.pop(sheetContext);
-                    },
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: c,
-                        shape: BoxShape.circle,
-                        border: c == current
-                            ? Border.all(color: h.foreground, width: 3)
-                            : null,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
 }
 
-// ---------------------------------------------------------------------------
-// Reader — manga reader settings.
-// ---------------------------------------------------------------------------
 class _ReaderCard extends ConsumerWidget {
   const _ReaderCard();
 
@@ -582,14 +496,9 @@ class _PlayerCard extends ConsumerWidget {
           value: s.aniSkipEnabled,
           onChanged: (_) => notifier.toggleAniSkip(),
         ),
-        _SwitchSettingTile(
-          icon: Icons.picture_in_picture_outlined,
-          leadingColor: h.warning,
-          title: 'Picture-in-picture',
-          subtitle: 'Pop out the player when leaving the app',
-          value: s.pipEnabled,
-          onChanged: (_) => notifier.togglePip(),
-        ),
+        // REMOVED: "Picture-in-picture" toggle — persisted a value nothing
+        // consumed (no native PiP binding exists yet); re-add together
+        // with the platform channel implementation.
       ],
     );
   }

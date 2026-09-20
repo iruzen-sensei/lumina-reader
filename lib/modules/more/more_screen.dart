@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/ui/heroui_v3.dart';
+import '../../core/ui/rybin_footer.dart';
 import '../../providers/providers.dart';
 
 /// The "More" screen — a hub of secondary destinations and settings entry
@@ -186,6 +187,9 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                 style: HeroTokens.caption.copyWith(color: h.muted),
               ),
             ),
+            const SizedBox(height: 24),
+            // Signature black footer w/ live clock (andreirybin.com).
+            const RybinFooter(),
           ],
         ),
       ),

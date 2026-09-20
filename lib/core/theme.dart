@@ -16,17 +16,17 @@ import 'package:flutter/material.dart';
 
 import 'ui/heroui_v3.dart';
 
-/// Lumina Reader theme — HeroUI v3 design language.
+/// Lumina Reader theme — rybin design language (andreirybin.com).
 ///
-/// Palette and component anatomy mirror the official HeroUI default theme
-/// (https://heroui.com, packages/styles v3): accent #0485F7, success #17C964,
-/// warning #F5A524/#F7B750, danger #FF383C/#DB3B3E, zinc-neutral surfaces
-/// (light bg #F5F5F5 / surface white; dark bg #060607 / surface #18181B),
-/// pill buttons, 16px chips, 24px cards, 12px fields.
+/// Monochrome palette + one link accent: bg #FFFFFF / text #000000 /
+/// secondary #8E8E90 / link #0099FF, hairline borders rgba(0,0,0,0.08),
+/// FLAT surfaces (no elevation), Inter 12px uniform type, 8px card radii,
+/// 16px pill badges. Dark mode = the reference's black footer inverted
+/// into a full theme (#000000 bg, white ink).
 ///
 /// The Material [ThemeData] below keeps every remaining Material widget
-/// (NavigationBars, AppBars, TabBars, dialogs…) on-system so screens can
-/// adopt the explicit HeroUI widgets incrementally without visual drift.
+/// (NavigationBars, AppBars, TabBars, dialogs...) on-system so screens can
+/// adopt the explicit Hero* widgets incrementally without visual drift.
 class LuminaTheme {
   LuminaTheme._();
 
@@ -35,32 +35,39 @@ class LuminaTheme {
   static const Color seed = HeroTokens.accent;
 
   // -- Semantic status colours (referenced across modules) ------------------
+  // NOTE: these are DATA indicators (status dots, filter chips), not UI
+  // chrome — they intentionally stay OUTSIDE the rybin monochrome language
+  // so meaning survives in both themes (the rybin palette governs the
+  // HeroTokens/HeroThemeData chrome layer). Each value is readable on
+  // black AND white.
 
-  /// Colour used for the "reading" status chips and progress indicators.
-  static const Color readingColor = HeroTokens.accent;
+  /// Colour used for the "reading" status chips and progress indicators
+  /// (the link accent - readable on black and white).
+  static const Color readingColor = Color(0xFF0099FF);
 
   /// Colour used for the "finished" status chips and badges.
-  static const Color finishedColor = HeroTokens.success;
+  static const Color finishedColor = Color(0xFF17C964);
 
   /// Colour used for the "unread" filter chip.
-  static const Color unreadColor = HeroTokens.warningLight;
+  static const Color unreadColor = Color(0xFFF5A524);
 
   /// Colour used to indicate a freshly downloaded/unread item.
-  static const Color newColor = HeroTokens.dangerLight;
+  static const Color newColor = Color(0xFFFF383C);
 
-  /// Five-step gradient used for the activity heat-map (least → most active).
+  /// Five-step gradient for the activity heat-map — ink into link-blue
+  /// (the reference palette: black + #0099FF only).
   static const List<Color> heatLevels = [
-    Color(0xFF232325),
-    Color(0xFF0B4E8F),
-    Color(0xFF0485F7),
-    Color(0xFF53A8F8),
-    Color(0xFFB9DBFE),
+    Color(0xFFEBEBEB),
+    Color(0xFF99D8FF),
+    Color(0xFF4DB8FF),
+    Color(0xFF0099FF),
+    Color(0xFF006FB3),
   ];
 
-  /// Linear gradient painted behind detail screen headers.
+  /// Linear gradient painted behind detail screen headers (reference black).
   static const List<Color> headerGradient = [
-    Color(0xFF0E2C4E),
-    Color(0xFF060607),
+    Color(0xFF1A1A1A),
+    Color(0xFF000000),
   ];
 
   // ---------------------------------------------------------------------------
@@ -136,9 +143,11 @@ class LuminaTheme {
       scaffoldBackgroundColor: h.background,
       canvasColor: h.background,
       textTheme: textTheme,
-      splashFactory: InkSparkle.splashFactory,
+      // rybin: no ripple — interactions are quiet colour fades.
+      splashFactory: NoSplash.splashFactory,
+      highlightColor: Colors.transparent,
       visualDensity: VisualDensity.standard,
-      fontFamily: 'Roboto',
+      fontFamily: 'Inter',
     ).copyWith(
       // -- AppBar: flat surface, no elevation, centered-free left title -----
       appBarTheme: AppBarTheme(
@@ -192,7 +201,7 @@ class LuminaTheme {
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: h.accent,
-          foregroundColor: Colors.white,
+          foregroundColor: Colors.black,
           disabledBackgroundColor: h.dflt,
           disabledForegroundColor: h.muted,
           textStyle: const TextStyle(
@@ -233,7 +242,7 @@ class LuminaTheme {
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: h.accent,
-        foregroundColor: Colors.white,
+        foregroundColor: Colors.black,
         elevation: 2,
         highlightElevation: 4,
         shape: RoundedRectangleBorder(
@@ -422,25 +431,29 @@ class LuminaTheme {
   static TextTheme _textTheme(bool isDark) {
     final fg = isDark ? HeroTokens.darkForeground : HeroTokens.lightForeground;
     final muted = isDark ? HeroTokens.darkMuted : HeroTokens.lightMuted;
+    // The reference sets everything at 12px / 1.3 line-height; hierarchy
+    // comes from weight only. Material's ramp is collapsed onto it so
+    // stock widgets (AppBar titles, dialogs, list tiles) inherit the
+    // same quiet voice as the Hero* components.
+    const s = 12.0;
     return TextTheme(
-      displayLarge: HeroTokens.display.copyWith(color: fg),
-      displayMedium:
-          HeroTokens.display.copyWith(color: fg, fontSize: 26),
-      headlineLarge: HeroTokens.titleLarge.copyWith(color: fg),
-      headlineMedium: HeroTokens.title.copyWith(color: fg, fontSize: 19),
-      headlineSmall: HeroTokens.title.copyWith(color: fg),
-      titleLarge: HeroTokens.title.copyWith(color: fg),
-      titleMedium: HeroTokens.body
-          .copyWith(color: fg, fontWeight: FontWeight.w600, fontSize: 15),
-      titleSmall: HeroTokens.bodySmall
-          .copyWith(color: fg, fontWeight: FontWeight.w600),
-      bodyLarge: HeroTokens.body.copyWith(color: fg, fontSize: 15),
-      bodyMedium: HeroTokens.body.copyWith(color: fg),
-      bodySmall: HeroTokens.bodySmall.copyWith(color: muted),
-      labelLarge: HeroTokens.bodySmall.copyWith(
-          color: fg, fontWeight: FontWeight.w600),
-      labelMedium: HeroTokens.caption.copyWith(color: muted),
-      labelSmall: HeroTokens.caption.copyWith(color: muted, fontSize: 11),
+      displayLarge: HeroTokens.display.copyWith(color: fg, fontSize: s),
+      displayMedium: HeroTokens.display.copyWith(color: fg, fontSize: s),
+      displaySmall: HeroTokens.display.copyWith(color: fg, fontSize: s),
+      headlineLarge: HeroTokens.titleLarge.copyWith(color: fg, fontSize: s),
+      headlineMedium: HeroTokens.titleLarge.copyWith(color: fg, fontSize: s),
+      headlineSmall: HeroTokens.title.copyWith(color: fg, fontSize: s),
+      titleLarge: HeroTokens.title.copyWith(color: fg, fontSize: s),
+      titleMedium:
+          HeroTokens.title.copyWith(color: fg, fontSize: s, fontWeight: FontWeight.w500),
+      titleSmall: HeroTokens.title.copyWith(color: fg, fontSize: s),
+      bodyLarge: HeroTokens.body.copyWith(color: fg, fontSize: s),
+      bodyMedium: HeroTokens.body.copyWith(color: fg, fontSize: s),
+      bodySmall: HeroTokens.body.copyWith(color: muted, fontSize: s),
+      labelLarge: HeroTokens.body.copyWith(
+          color: fg, fontSize: s, fontWeight: FontWeight.w500),
+      labelMedium: HeroTokens.caption.copyWith(color: muted, fontSize: s),
+      labelSmall: HeroTokens.caption.copyWith(color: muted, fontSize: s),
     );
   }
 }

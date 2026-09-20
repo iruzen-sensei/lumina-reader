@@ -904,15 +904,52 @@ class _SourceGrid extends ConsumerWidget {
     // Keyed by (sourceId, latest) — the Latest tab previously watched the
     // SAME provider instance as Popular, so it rendered a duplicate of the
     // popular grid while `load(latest: true)` sat unreachable.
-    final items = ref.watch(browseFeedProvider((sourceId, latest)));
-    if (items.isEmpty) {
+    final feed = ref.watch(browseFeedProvider((sourceId, latest)));
+
+    // LOADING: skeleton grid while the first page is in flight. Previously
+    // the empty-state flashed here, making every slow source look dead.
+    if (feed.loading && feed.items.isEmpty) {
+      return GridView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 120,
+          childAspectRatio: 0.66,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 14,
+        ),
+        itemCount: 15,
+        itemBuilder: (context, i) => const HeroSkeleton(
+          height: double.infinity,
+          radius: 8,
+        ),
+      );
+    }
+
+    // ERROR: an explicit failure card with the reason + retry. Previously
+    // failures were indistinguishable from empty results.
+    if (feed.hasError && feed.items.isEmpty) {
+      return emptyState(
+        context: context,
+        icon: Icons.wifi_off_rounded,
+        title: 'Could not load ${source.name}',
+        subtitle: feed.error,
+        // Invalidating the family member rebuilds its BrowseGridNotifier,
+        // whose constructor kicks off a fresh load for this source.
+        action: HeroButton(
+          label: 'Retry',
+          icon: Icons.refresh_rounded,
+          onPressed: () =>
+              ref.invalidate(browseFeedProvider((sourceId, latest))),
+        ),
+      );
+    }
+
+    if (feed.items.isEmpty) {
       return emptyState(
         context: context,
         icon: Icons.inbox_outlined,
         title: 'Nothing here yet',
         subtitle: '$label returned no items from ${source.name}.',
-        // Invalidating the family member rebuilds its BrowseGridNotifier,
-        // whose constructor kicks off a fresh load for this source.
         action: HeroButton(
           label: 'Retry',
           icon: Icons.refresh_rounded,
@@ -931,6 +968,18 @@ class _SourceGrid extends ConsumerWidget {
       },
       child: CustomScrollView(
         slivers: [
+          if (feed.hasError)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Text(
+                  feed.error!,
+                  style: HeroTokens.caption
+                      .copyWith(color: HeroScope.of(context).muted),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
             sliver: SliverGrid(
@@ -942,7 +991,7 @@ class _SourceGrid extends ConsumerWidget {
               ),
               delegate: SliverChildBuilderDelegate(
                 (context, i) {
-                  final manga = items[i];
+                  final manga = feed.items[i];
                   return BookCover(
                     manga: manga,
                     width: double.infinity,
@@ -950,7 +999,7 @@ class _SourceGrid extends ConsumerWidget {
                     onTap: () => openSourceManga(context, ref, manga),
                   );
                 },
-                childCount: items.length,
+                childCount: feed.items.length,
               ),
             ),
           ),

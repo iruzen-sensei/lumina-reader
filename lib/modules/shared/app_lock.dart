@@ -197,7 +197,7 @@ class _PinLockScreenState extends State<_PinLockScreen> {
               style: TextStyle(
                 fontSize: 13,
                 color: _error != null
-                    ? HeroTokens.dangerLight
+                    ? const Color(0xFFFF383C)
                     : (isDark ? HeroTokens.darkMuted : HeroTokens.lightMuted),
               ),
             ),

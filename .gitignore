@@ -37,3 +37,4 @@ android/key.properties
 # Linux Isar core binary — fetched on demand for repository tests (CI does
 # this automatically; see .github/workflows/build-android.yml).
 /libisar.so
+libisar.so

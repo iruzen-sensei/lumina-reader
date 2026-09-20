@@ -20,6 +20,7 @@ import 'package:isar/isar.dart';
 import '../data/downloads_repository.dart';
 import '../data/library_repository.dart';
 import '../models/category.dart' as db_c;
+import '../models/chapter.dart';
 import '../models/manga.dart' as db_m;
 import '../models/models.dart' as dto;
 import '../models/settings.dart' as db_s;

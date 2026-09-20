@@ -18,6 +18,8 @@ import '../models/manga.dart' as db;
 import '../models/mappers.dart' as map;
 import '../models/models.dart' as dto;
 import '../models/note.dart' as db_n;
+import '../models/reading_session.dart';
+import '../models/update.dart';
 import '../providers/storage_provider.dart';
 
 class LibraryRepository {
