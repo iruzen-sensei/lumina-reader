@@ -15,7 +15,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/ui/heroui_v3.dart';
+import '../../core/ui/lumina_ui.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../shared/widgets.dart';
@@ -137,9 +137,13 @@ class _DownloadsHeader extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
       child: Row(
         children: [
-          Text(
-            'Downloads',
-            style: HeroTokens.titleLarge.copyWith(color: h.foreground),
+          Flexible(
+            child: Text(
+              'Downloads',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: HeroTokens.display.copyWith(color: h.foreground),
+            ),
           ),
           const SizedBox(width: 12),
           if (active.isNotEmpty)

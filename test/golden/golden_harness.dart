@@ -552,25 +552,55 @@ Future<void> loadRealFonts() async {
       .map(Directory.new)
       .cast<Directory?>()
       .firstWhere((d) => d!.existsSync(), orElse: () => null);
-  if (fontDir == null) return;
   final families = <String, FontLoader>{};
-  for (final f in fontDir.listSync().whereType<File>()) {
-    final name = f.path.split(Platform.pathSeparator).last;
-    final family = switch (name) {
-      'Roboto-Regular.ttf' ||
-      'Roboto-Medium.ttf' ||
-      'Roboto-Bold.ttf' ||
-      'Roboto-Black.ttf' ||
-      'Roboto-Light.ttf' =>
-        'Roboto',
-      'MaterialIcons-Regular.otf' => 'MaterialIcons',
-      _ => null,
-    };
-    if (family == null) continue;
-    final loader = families.putIfAbsent(family, () => FontLoader(family));
-    loader.addFont(Future.value(ByteData.view(f.readAsBytesSync().buffer)));
+  if (fontDir == null) {
+    // System font dir unavailable — still load the app's bundled families
+    // below so golden typography stays real.
+  } else {
+    for (final f in fontDir.listSync().whereType<File>()) {
+      final name = f.path.split(Platform.pathSeparator).last;
+      final family = switch (name) {
+        'Roboto-Regular.ttf' ||
+        'Roboto-Medium.ttf' ||
+        'Roboto-Bold.ttf' ||
+        'Roboto-Black.ttf' ||
+        'Roboto-Light.ttf' =>
+          'Roboto',
+        'MaterialIcons-Regular.otf' => 'MaterialIcons',
+        _ => null,
+      };
+      if (family == null) continue;
+      final loader = families.putIfAbsent(family, () => FontLoader(family));
+      loader.addFont(Future.value(ByteData.view(f.readAsBytesSync().buffer)));
+    }
   }
-  await Future.wait(families.values.map((l) => l.load()));
+  // The app's BUNDLED families (Inter body + Spectral Light display) —
+  // without these the golden text falls back to Roboto/tofu and the
+  // captures misrepresent the real typography.
+  final bundledLoaders = <FontLoader>[];
+  const bundled = <String, List<String>>{
+    'Inter': [
+      'assets/fonts/Inter-Regular.ttf',
+      'assets/fonts/Inter-Medium.ttf',
+      'assets/fonts/Inter-SemiBold.ttf',
+    ],
+    'Spectral': ['assets/fonts/Spectral-Light.ttf'],
+  };
+  for (final entry in bundled.entries) {
+    final loader = FontLoader(entry.key);
+    var any = false;
+    for (final path in entry.value) {
+      final f = File(path);
+      if (f.existsSync()) {
+        loader.addFont(
+            Future.value(ByteData.view(f.readAsBytesSync().buffer)));
+        any = true;
+      }
+    }
+    if (any) bundledLoaders.add(loader);
+  }
+  await Future.wait(
+      [...families.values, ...bundledLoaders].map((l) => l.load()));
 }
 
 /// The single Isar instance shared by every test in this binary. A second

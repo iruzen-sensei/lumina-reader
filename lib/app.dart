@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/theme.dart';
-import 'core/ui/heroui_v3.dart';
+import 'core/ui/lumina_ui.dart';
 import 'modules/shared/app_lock.dart';
 import 'providers/providers.dart';
 import 'router/router.dart';

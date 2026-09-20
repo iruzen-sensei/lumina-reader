@@ -20,7 +20,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme.dart';
-import '../../core/ui/heroui_v3.dart';
+import '../../core/ui/lumina_ui.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -500,21 +500,24 @@ class _AnimeGridView extends ConsumerWidget {
         final anime = items[i];
         final selected = ref.watch(
             animeLibrarySelectionProvider.select((s) => s.contains(anime.id)));
-        return BookCover(
-          manga: anime,
-          width: double.infinity,
-          height: double.infinity,
-          selected: selected,
-          onTap: () {
-            final sel = ref.read(animeLibrarySelectionProvider);
-            if (sel.isNotEmpty) {
-              ref.read(animeLibrarySelectionProvider.notifier).toggle(anime.id);
-            } else {
-              context.push('/animeDetail/${anime.id}');
-            }
-          },
-          onLongPress: () =>
-              ref.read(animeLibrarySelectionProvider.notifier).toggle(anime.id),
+        return HeroEntrance(
+          index: i.clamp(0, 12),
+          child: BookCover(
+            manga: anime,
+            width: double.infinity,
+            height: double.infinity,
+            selected: selected,
+            onTap: () {
+              final sel = ref.read(animeLibrarySelectionProvider);
+              if (sel.isNotEmpty) {
+                ref.read(animeLibrarySelectionProvider.notifier).toggle(anime.id);
+              } else {
+                context.push('/animeDetail/${anime.id}');
+              }
+            },
+            onLongPress: () =>
+                ref.read(animeLibrarySelectionProvider.notifier).toggle(anime.id),
+          ),
         );
       },
     );

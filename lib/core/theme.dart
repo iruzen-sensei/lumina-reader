@@ -14,15 +14,16 @@
 
 import 'package:flutter/material.dart';
 
-import 'ui/heroui_v3.dart';
+import 'ui/lumina_ui.dart';
 
-/// Lumina Reader theme — rybin design language (andreirybin.com).
+/// Lumina Reader theme — Apple × ElevenLabs design language.
 ///
-/// Monochrome palette + one link accent: bg #FFFFFF / text #000000 /
-/// secondary #8E8E90 / link #0099FF, hairline borders rgba(0,0,0,0.08),
-/// FLAT surfaces (no elevation), Inter 12px uniform type, 8px card radii,
-/// 16px pill badges. Dark mode = the reference's black footer inverted
-/// into a full theme (#000000 bg, white ink).
+/// Colors from the Apple DESIGN.md: Action Blue #0066CC as the single
+/// interactive accent, near-black ink #1D1D1F, parchment #F5F5F7 canvas,
+/// hairline borders, white cards (no shadows — definition from hairlines).
+/// Dark mode = Apple's dark tiles on the true-black void.
+/// Typography from the ElevenLabs DESIGN.md: Spectral Light 300 display
+/// (never bold), Inter 400/500 body with +0.15px tracking, real size ramp.
 ///
 /// The Material [ThemeData] below keeps every remaining Material widget
 /// (NavigationBars, AppBars, TabBars, dialogs...) on-system so screens can
@@ -30,44 +31,47 @@ import 'ui/heroui_v3.dart';
 class LuminaTheme {
   LuminaTheme._();
 
-  /// Brand seed (HeroUI v3 accent). Used as the FlexColorScheme key colour
-  /// and the default custom-seed in Settings.
+  /// Brand seed (Apple Action Blue). Used as the scheme key colour and the
+  /// default custom-seed in Settings.
   static const Color seed = HeroTokens.accent;
 
   // -- Semantic status colours (referenced across modules) ------------------
   // NOTE: these are DATA indicators (status dots, filter chips), not UI
-  // chrome — they intentionally stay OUTSIDE the rybin monochrome language
-  // so meaning survives in both themes (the rybin palette governs the
-  // HeroTokens/HeroThemeData chrome layer). Each value is readable on
-  // black AND white.
+  // chrome — they intentionally stay OUTSIDE the Apple monochrome+blue
+  // chrome language so meaning survives in both themes. Semantic hues are
+  // the ElevenLabs MD tokens (success #16A34A / error #DC2626) plus an
+  // amber for "unread". Each value is readable on black AND white.
 
   /// Colour used for the "reading" status chips and progress indicators
-  /// (the link accent - readable on black and white).
-  static const Color readingColor = Color(0xFF0099FF);
+  /// (Action Blue — readable on black and white).
+  static const Color readingColor = Color(0xFF0066CC);
 
-  /// Colour used for the "finished" status chips and badges.
-  static const Color finishedColor = Color(0xFF17C964);
+  /// Colour used for the "finished" status chips and badges
+  /// (ElevenLabs semantic success).
+  static const Color finishedColor = Color(0xFF16A34A);
 
-  /// Colour used for the "unread" filter chip.
-  static const Color unreadColor = Color(0xFFF5A524);
+  /// Colour used for the "unread" filter chip (amber data state).
+  static const Color unreadColor = Color(0xFFD97706);
 
-  /// Colour used to indicate a freshly downloaded/unread item.
-  static const Color newColor = Color(0xFFFF383C);
+  /// Colour used to indicate a freshly downloaded/unread item
+  /// (ElevenLabs semantic error red, repurposed as the "new" signal).
+  static const Color newColor = Color(0xFFDC2626);
 
-  /// Five-step gradient for the activity heat-map — ink into link-blue
-  /// (the reference palette: black + #0099FF only).
+  /// Five-step gradient for the activity heat-map — parchment into Action
+  /// Blue (the Apple palette: #F5F5F7 + #0066CC only).
   static const List<Color> heatLevels = [
-    Color(0xFFEBEBEB),
-    Color(0xFF99D8FF),
-    Color(0xFF4DB8FF),
-    Color(0xFF0099FF),
-    Color(0xFF006FB3),
+    Color(0xFFE5E5EA),
+    Color(0xFF9CC8F0),
+    Color(0xFF5FA6E3),
+    Color(0xFF2A85D6),
+    Color(0xFF0066CC),
   ];
 
-  /// Linear gradient painted behind detail screen headers (reference black).
+  /// Linear gradient painted behind detail screen headers (Apple dark-tile
+  /// stack: tile-2 into tile-3).
   static const List<Color> headerGradient = [
-    Color(0xFF1A1A1A),
-    Color(0xFF000000),
+    Color(0xFF2A2A2C),
+    Color(0xFF1C1C1E),
   ];
 
   // ---------------------------------------------------------------------------
@@ -83,7 +87,8 @@ class LuminaTheme {
   static ThemeData dark({bool trueBlack = false}) {
     final base = _build(Brightness.dark, HeroThemeData.dark());
     if (!trueBlack) return base;
-    // AMOLED: near-black background, keep surfaces distinguishable.
+    // AMOLED: the dark canvas already sits on true black; keep surfaces
+    // distinguishable.
     return base.copyWith(
       scaffoldBackgroundColor: Colors.black,
       canvasColor: Colors.black,
@@ -143,34 +148,41 @@ class LuminaTheme {
       scaffoldBackgroundColor: h.background,
       canvasColor: h.background,
       textTheme: textTheme,
-      // rybin: no ripple — interactions are quiet colour fades.
+      // Apple: interactions are scale transforms, not ripples.
       splashFactory: NoSplash.splashFactory,
       highlightColor: Colors.transparent,
       visualDensity: VisualDensity.standard,
       fontFamily: 'Inter',
     ).copyWith(
-      // -- AppBar: flat surface, no elevation, centered-free left title -----
+      // -- AppBar: flat parchment, hairline under scroll --------------------
       appBarTheme: AppBarTheme(
         backgroundColor: h.background,
         foregroundColor: h.foreground,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        scrolledUnderElevation: 0.6,
+        scrolledUnderElevation: 0,
         centerTitle: false,
-        titleTextStyle: HeroTokens.title.copyWith(color: h.foreground),
+        titleTextStyle: TextStyle(
+          fontFamily: 'Inter',
+          fontSize: 17,
+          fontWeight: FontWeight.w600,
+          letterSpacing: -0.3,
+          color: h.foreground,
+        ),
         iconTheme: IconThemeData(color: h.foreground, size: 22),
         actionsIconTheme: IconThemeData(color: h.foreground, size: 22),
       ),
-      // -- Bottom navigation: HeroUI-style pill indicator ------------------
+      // -- Bottom navigation --------------------------------------------------
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: h.isDark ? h.surface : h.surface,
+        backgroundColor: h.surface,
         surfaceTintColor: Colors.transparent,
         indicatorColor: h.accentSoft,
         height: 68,
         elevation: 0,
         labelTextStyle: WidgetStateProperty.resolveWith(
           (states) => TextStyle(
-            fontSize: 11.5,
+            fontFamily: 'Inter',
+            fontSize: 11,
             fontWeight: states.contains(WidgetState.selected)
                 ? FontWeight.w600
                 : FontWeight.w500,
@@ -193,70 +205,81 @@ class LuminaTheme {
         indicatorColor: h.accentSoft,
         selectedIconTheme: IconThemeData(color: h.accent),
         selectedLabelTextStyle: TextStyle(
-            color: h.accentSoftFg, fontWeight: FontWeight.w600, fontSize: 12),
-        unselectedLabelTextStyle: TextStyle(color: h.muted, fontSize: 12),
+            color: h.accentSoftFg, fontWeight: FontWeight.w600, fontSize: 13),
+        unselectedLabelTextStyle: TextStyle(color: h.muted, fontSize: 13),
         unselectedIconTheme: IconThemeData(color: h.muted),
       ),
-      // -- Buttons -----------------------------------------------------------
+      // -- Buttons: Apple pill CTAs ------------------------------------------
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: h.accent,
-          foregroundColor: Colors.black,
+          foregroundColor: Colors.white,
           disabledBackgroundColor: h.dflt,
           disabledForegroundColor: h.muted,
           textStyle: const TextStyle(
-              fontSize: 14, fontWeight: FontWeight.w500, height: 1),
-          padding: const EdgeInsets.symmetric(horizontal: 18),
-          minimumSize: const Size(0, 42),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(HeroTokens.radiusButton),
+            fontFamily: 'Inter',
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+            height: 1,
           ),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          minimumSize: const Size(0, 44),
+          shape: const StadiumBorder(),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: h.accent,
           textStyle: const TextStyle(
-              fontSize: 14, fontWeight: FontWeight.w500, height: 1),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(HeroTokens.radiusButton),
-          ),
+              fontFamily: 'Inter',
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+              height: 1),
+          shape: const StadiumBorder(),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: h.accent,
-          side: BorderSide(color: h.accent.withValues(alpha: 0.5)),
+          side: BorderSide(color: h.accent.withValues(alpha: 0.45)),
           textStyle: const TextStyle(
-              fontSize: 14, fontWeight: FontWeight.w500, height: 1),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(HeroTokens.radiusButton),
-          ),
+              fontFamily: 'Inter',
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+              height: 1),
+          shape: const StadiumBorder(),
         ),
       ),
       iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
           foregroundColor: h.foreground,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
         ),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: h.accent,
-        foregroundColor: Colors.black,
-        elevation: 2,
-        highlightElevation: 4,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        highlightElevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
         ),
       ),
-      // -- Tabs: pill indicator on surface2 ----------------------------------
+      // -- Tabs: pill indicator on gray5 --------------------------------------
       tabBarTheme: TabBarThemeData(
         labelColor: h.foreground,
         unselectedLabelColor: h.muted,
-        labelStyle:
-            const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
-        unselectedLabelStyle:
-            const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500),
+        labelStyle: const TextStyle(
+            fontFamily: 'Inter',
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.1),
+        unselectedLabelStyle: const TextStyle(
+            fontFamily: 'Inter',
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            letterSpacing: -0.1),
         indicatorSize: TabBarIndicatorSize.label,
         dividerColor: Colors.transparent,
         indicator: BoxDecoration(
@@ -264,24 +287,25 @@ class LuminaTheme {
           borderRadius: BorderRadius.circular(999),
         ),
       ),
-      // -- Inputs: filled, radius 12, accent focus ---------------------------
+      // -- Inputs: white pill surface + hairline; 2px accent focus -----------
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: h.surface2,
-        hintStyle: TextStyle(color: h.muted),
+        fillColor: h.surface,
+        hintStyle: TextStyle(
+            fontFamily: 'Inter', fontSize: 16, color: h.muted),
         contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(HeroTokens.radiusField),
-          borderSide: BorderSide.none,
+          borderSide: BorderSide(color: h.border, width: 1.2),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(HeroTokens.radiusField),
-          borderSide: BorderSide.none,
+          borderSide: BorderSide(color: h.border, width: 1.2),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(HeroTokens.radiusField),
-          borderSide: BorderSide(color: h.accent, width: 1.6),
+          borderSide: BorderSide(color: h.accent, width: 2),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(HeroTokens.radiusField),
@@ -289,7 +313,7 @@ class LuminaTheme {
         ),
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(HeroTokens.radiusField),
-          borderSide: BorderSide(color: h.danger, width: 1.6),
+          borderSide: BorderSide(color: h.danger, width: 2),
         ),
       ),
       // -- Switch ------------------------------------------------------------
@@ -312,7 +336,7 @@ class LuminaTheme {
         thumbIcon: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
             return Icon(Icons.check_rounded,
-                size: 15, color: h.accent.withValues(alpha: 0.9));
+                size: 16, color: h.accent.withValues(alpha: 0.9));
           }
           return null;
         }),
@@ -339,8 +363,7 @@ class LuminaTheme {
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(HeroTokens.radiusCard),
-          side: BorderSide(
-              color: h.isDark ? h.border : h.separator, width: 1),
+          side: BorderSide(color: h.border, width: 1),
         ),
       ),
       dialogTheme: DialogThemeData(
@@ -361,24 +384,26 @@ class LuminaTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        backgroundColor: isDark ? h.surface3 : h.foreground,
+        backgroundColor: isDark ? h.surface2 : h.foreground,
         contentTextStyle: TextStyle(
+          fontFamily: 'Inter',
           color: isDark ? h.foreground : Colors.white,
-          fontSize: 13.5,
+          fontSize: 14,
           fontWeight: FontWeight.w500,
         ),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
         ),
       ),
       chipTheme: ChipThemeData(
         backgroundColor: h.dflt,
         selectedColor: h.accentSoft,
-        labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+        labelPadding: const EdgeInsets.symmetric(horizontal: 6),
         labelStyle: TextStyle(
-          color: isDark ? h.foreground : h.foreground,
+          fontFamily: 'Inter',
+          color: h.foreground,
           fontWeight: FontWeight.w500,
-          fontSize: 12.5,
+          fontSize: 13,
         ),
         side: const BorderSide(color: Colors.transparent),
         shape: RoundedRectangleBorder(
@@ -414,6 +439,7 @@ class LuminaTheme {
           borderRadius: BorderRadius.circular(8),
         ),
         textStyle: TextStyle(
+          fontFamily: 'Inter',
           color: isDark ? h.foreground : Colors.white,
           fontSize: 12,
         ),
@@ -428,32 +454,49 @@ class LuminaTheme {
     );
   }
 
+  /// The ElevenLabs type ramp mapped onto Material's slots:
+  ///   * display/headline slots → Spectral Light 300 (editorial serif,
+  ///     never bold — the ElevenLabs display signature)
+  ///   * title/body/label slots → Inter 400/500/600 with the editorial
+  ///     +0.15px body tracking
   static TextTheme _textTheme(bool isDark) {
     final fg = isDark ? HeroTokens.darkForeground : HeroTokens.lightForeground;
     final muted = isDark ? HeroTokens.darkMuted : HeroTokens.lightMuted;
-    // The reference sets everything at 12px / 1.3 line-height; hierarchy
-    // comes from weight only. Material's ramp is collapsed onto it so
-    // stock widgets (AppBar titles, dialogs, list tiles) inherit the
-    // same quiet voice as the Hero* components.
-    const s = 12.0;
+
+    const serif = TextStyle(fontFamily: HeroTokens.fontSerif);
+    const sans = TextStyle(fontFamily: HeroTokens.fontSans);
+
     return TextTheme(
-      displayLarge: HeroTokens.display.copyWith(color: fg, fontSize: s),
-      displayMedium: HeroTokens.display.copyWith(color: fg, fontSize: s),
-      displaySmall: HeroTokens.display.copyWith(color: fg, fontSize: s),
-      headlineLarge: HeroTokens.titleLarge.copyWith(color: fg, fontSize: s),
-      headlineMedium: HeroTokens.titleLarge.copyWith(color: fg, fontSize: s),
-      headlineSmall: HeroTokens.title.copyWith(color: fg, fontSize: s),
-      titleLarge: HeroTokens.title.copyWith(color: fg, fontSize: s),
-      titleMedium:
-          HeroTokens.title.copyWith(color: fg, fontSize: s, fontWeight: FontWeight.w500),
-      titleSmall: HeroTokens.title.copyWith(color: fg, fontSize: s),
-      bodyLarge: HeroTokens.body.copyWith(color: fg, fontSize: s),
-      bodyMedium: HeroTokens.body.copyWith(color: fg, fontSize: s),
-      bodySmall: HeroTokens.body.copyWith(color: muted, fontSize: s),
-      labelLarge: HeroTokens.body.copyWith(
-          color: fg, fontSize: s, fontWeight: FontWeight.w500),
-      labelMedium: HeroTokens.caption.copyWith(color: muted, fontSize: s),
-      labelSmall: HeroTokens.caption.copyWith(color: muted, fontSize: s),
+      displayLarge: serif.copyWith(
+          color: fg, fontSize: 40, height: 1.1, letterSpacing: -0.4),
+      displayMedium: serif.copyWith(
+          color: fg, fontSize: 34, height: 1.13, letterSpacing: -0.34),
+      displaySmall: serif.copyWith(
+          color: fg, fontSize: 28, height: 1.15, letterSpacing: -0.28),
+      headlineLarge: serif.copyWith(
+          color: fg, fontSize: 26, height: 1.15, letterSpacing: -0.26),
+      headlineMedium: sans.copyWith(
+          color: fg, fontSize: 22, height: 1.3, fontWeight: FontWeight.w600),
+      headlineSmall: sans.copyWith(
+          color: fg, fontSize: 20, height: 1.35, fontWeight: FontWeight.w500),
+      titleLarge: sans.copyWith(
+          color: fg, fontSize: 20, height: 1.35, fontWeight: FontWeight.w500),
+      titleMedium: sans.copyWith(
+          color: fg, fontSize: 16, height: 1.45, fontWeight: FontWeight.w500),
+      titleSmall: sans.copyWith(
+          color: fg, fontSize: 14, height: 1.4, fontWeight: FontWeight.w500),
+      bodyLarge: sans.copyWith(
+          color: fg, fontSize: 16, height: 1.5, letterSpacing: 0.16),
+      bodyMedium: sans.copyWith(
+          color: fg, fontSize: 15, height: 1.5, letterSpacing: 0.15),
+      bodySmall: sans.copyWith(
+          color: muted, fontSize: 13, height: 1.45, letterSpacing: 0.1),
+      labelLarge: sans.copyWith(
+          color: fg, fontSize: 15, height: 1.2, fontWeight: FontWeight.w500),
+      labelMedium: sans.copyWith(
+          color: muted, fontSize: 13, height: 1.3, fontWeight: FontWeight.w500),
+      labelSmall: sans.copyWith(
+          color: muted, fontSize: 12, height: 1.3, letterSpacing: 0.1),
     );
   }
 }

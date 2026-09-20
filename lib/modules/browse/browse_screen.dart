@@ -18,7 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/ui/heroui_v3.dart';
+import '../../core/ui/lumina_ui.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -113,7 +113,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
                 automaticallyImplyLeading: false,
                 title: Text(
                   'Browse',
-                  style: HeroTokens.titleLarge.copyWith(color: h.foreground),
+                  style: HeroTokens.display.copyWith(color: h.foreground),
                 ),
                 actions: [
                   HeroIconButton(
@@ -169,8 +169,9 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
                     titlePadding: const EdgeInsets.only(left: 20, bottom: 14),
                     title: Text(
                       'Browse',
-                      style: HeroTokens.titleLarge.copyWith(
+                      style: HeroTokens.display.copyWith(
                         color: h.foreground,
+                        fontSize: 30,
                       ),
                     ),
                   ),
@@ -837,8 +838,19 @@ class _SegmentedHeaderDelegate extends SliverPersistentHeaderDelegate {
   @override
   Widget build(
       BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return ColoredBox(
-      color: Theme.of(context).scaffoldBackgroundColor,
+    final h = HeroScope.of(context);
+    // Apple frosted sub-nav: backdrop blur over the translucent canvas so
+    // covers scrolling beneath the pinned header melt through the glass.
+    return HeroGlass(
+      blurSigma: 24,
+      color: h.glass,
+      border: Border(
+        bottom: BorderSide(
+          color: h.isDark
+              ? Colors.white.withValues(alpha: 0.07)
+              : Colors.black.withValues(alpha: 0.06),
+        ),
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         child: ListenableBuilder(

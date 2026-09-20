@@ -16,20 +16,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme.dart';
-import '../../core/ui/heroui_v3.dart';
+import '../../core/ui/lumina_ui.dart';
 import '../../models/models.dart';
 
-/// A book / anime cover card in the HeroUI + Aniyomi/Mangayomi style:
-/// rounded cover on top (unread badge + thin progress bar on the image),
-/// title + metadata lines below it. Pass [showTitle] = false when the
-/// parent already renders the title (list rows).
+/// A book / anime cover card in the Apple × ElevenLabs style: rounded
+/// cover on top (unread badge + thin progress bar on the image), title +
+/// metadata lines below it. The cover carries the system's ONE product
+/// shadow (imagery resting on a surface — the Apple signature). Pass
+/// [showTitle] = false when the parent already renders the title (list
+/// rows).
 class BookCover extends StatelessWidget {
   const BookCover({
     super.key,
     required this.manga,
     this.width = 110,
     this.height = 160,
-    this.radius = 8, // reference card/image radius
+    this.radius = 12,
     this.showProgress = true,
     this.showTitle = true,
     this.selected = false,
@@ -74,15 +76,9 @@ class BookCover extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(radius),
               border: selected ? Border.all(color: h.accent, width: 2.5) : null,
-              boxShadow: h.isDark
-                  ? null
-                  : [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.10),
-                        blurRadius: 10,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
+              // Apple's ONE product shadow — covers are product imagery
+              // resting on the parchment canvas. Never applied to chrome.
+              boxShadow: h.productShadow,
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(radius),
@@ -116,6 +112,7 @@ class BookCover extends StatelessWidget {
                         child: Text(
                           '${manga.unreadCount}',
                           style: const TextStyle(
+                            fontFamily: HeroTokens.fontSans,
                             color: Colors.white,
                             fontSize: 11,
                             height: 1.2,
@@ -139,6 +136,7 @@ class BookCover extends StatelessWidget {
                         child: const Text(
                           'EP',
                           style: TextStyle(
+                            fontFamily: HeroTokens.fontSans,
                             color: Colors.white,
                             fontSize: 10,
                             height: 1.2,
@@ -217,9 +215,11 @@ class BookCover extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
+                fontFamily: HeroTokens.fontSans,
                 color: h.foreground,
-                fontSize: 12,
-                height: 1.22,
+                fontSize: 13,
+                height: 1.25,
+                letterSpacing: -0.1,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -236,9 +236,11 @@ class BookCover extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
+                fontFamily: HeroTokens.fontSans,
                 color: h.muted,
-                fontSize: 11,
+                fontSize: 12,
                 height: 1.2,
+                letterSpacing: 0.05,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -276,10 +278,10 @@ class _HeroPressableState extends State<_HeroPressable> {
       onTap: widget.onTap,
       onLongPress: widget.onLongPress,
       child: AnimatedScale(
-        scale: _pressed ? 0.97 : 1.0,
+        scale: _pressed ? 0.95 : 1.0,
         duration:
             heroAnimationsEnabled ? HeroTokens.motionTransform : Duration.zero,
-        curve: HeroTokens.easeSmooth,
+        curve: HeroTokens.spring,
         child: widget.child,
       ),
     );
@@ -355,7 +357,8 @@ class StatusChip extends StatelessWidget {
             Text(
               label,
               style: TextStyle(
-                fontSize: 12.5,
+                fontFamily: HeroTokens.fontSans,
+                fontSize: 13,
                 height: 1.2,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                 color: fg,

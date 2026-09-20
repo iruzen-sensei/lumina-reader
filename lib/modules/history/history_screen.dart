@@ -16,7 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/ui/heroui_v3.dart';
+import '../../core/ui/lumina_ui.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../shared/widgets.dart';
@@ -67,7 +67,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
               automaticallyImplyLeading: false,
               title: Text(
                 'History',
-                style: HeroTokens.titleLarge.copyWith(color: h.foreground),
+                style: HeroTokens.display.copyWith(color: h.foreground),
               ),
               actions: [
                 HeroIconButton(

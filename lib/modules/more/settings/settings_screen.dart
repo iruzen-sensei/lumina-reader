@@ -21,7 +21,7 @@ import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../core/ui/heroui_v3.dart';
+import '../../../core/ui/lumina_ui.dart';
 import '../../../data/providers.dart' as data;
 import '../../../services/backup.dart';
 import '../../../models/models.dart';
@@ -321,7 +321,7 @@ class _AppearanceCard extends ConsumerWidget {
         // REMOVED: "Dynamic colour (Material You)" + "Brand colour" tiles.
         // Both persisted a value nothing ever consumed (theming ignores
         // useDynamicColor/customSeed) - decorative controls, deleted per
-        // the no-dead-controls audit. The app uses the fixed rybin palette.
+        // the no-dead-controls audit. The app uses the fixed Apple × ElevenLabs palette.
         _SwitchSettingTile(
           icon: Icons.e_mobiledata_outlined,
           title: 'E-ink mode',

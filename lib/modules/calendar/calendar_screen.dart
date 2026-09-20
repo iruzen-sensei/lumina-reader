@@ -20,7 +20,7 @@ import 'package:go_router/go_router.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/ui/heroui_v3.dart';
+import '../../core/ui/lumina_ui.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -55,9 +55,16 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               padding: const EdgeInsets.fromLTRB(20, 12, 8, 0),
               child: Row(
                 children: [
-                  Text(
-                    'Airing schedule',
-                    style: HeroTokens.titleLarge.copyWith(color: h.foreground),
+                  Flexible(
+                    child: Text(
+                      'Airing schedule',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: HeroTokens.display.copyWith(
+                        color: h.foreground,
+                        fontSize: 28,
+                      ),
+                    ),
                   ),
                   const SizedBox(width: 10),
                   // Which tracker feeds the schedule.
@@ -230,9 +237,13 @@ class _DayHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
       child: Row(
         children: [
-          Text(
-            _fullDate(day),
-            style: HeroTokens.title.copyWith(color: h.foreground),
+          Flexible(
+            child: Text(
+              _fullDate(day),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: HeroTokens.title.copyWith(color: h.foreground),
+            ),
           ),
           const SizedBox(width: 8),
           if (isSameDay(day, DateTime.now()))

@@ -2,15 +2,19 @@
 // Licensed under the Apache License, Version 2.0
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/ui/heroui_v3.dart';
+import '../../core/ui/lumina_ui.dart';
 
-/// App shell with the HeroUI-style navigation.
+/// App shell with the Apple × ElevenLabs navigation.
 ///
-/// Phone: bottom bar — 5 destinations, pill indicator on the accent-soft
-/// tint, 68pt tall, hairline top border in dark mode (HeroUI surfaces get
-/// definition from borders, not elevation shadows).
+/// Phone: a docked frosted-glass tab bar — backdrop blur over a translucent
+/// canvas fill with a top hairline (the Apple sub-nav/sticky-bar recipe).
+/// Selected items carry an accent-soft pill that springs in behind the icon
+/// (iOS bounce), with a selection haptic and the scale press
+/// micro-interaction. `extendBody` lets scrollable content pass beneath the
+/// frost wherever a screen allows it.
 /// Wide (>=800): navigation rail.
 class MainScreen extends StatelessWidget {
   const MainScreen({super.key, required this.child});
@@ -92,8 +96,9 @@ class MainScreen extends StatelessWidget {
     }
 
     return Scaffold(
+      extendBody: true,
       body: child,
-      bottomNavigationBar: _HeroNavBar(
+      bottomNavigationBar: _GlassTabBar(
         destinations: _destinations,
         selectedIndex: selectedIndex,
         onSelect: (i) => _navigate(context, i),
@@ -128,14 +133,11 @@ class _NavDestination {
   final String label;
 }
 
-/// HeroUI-style bottom navigation bar.
-///
-/// * surface background with a hairline top border (dark) / shadow (light)
-/// * selected item: accent-soft pill behind the icon, accent icon + label
-/// * press feedback: icon scale dip, 250ms smooth easing
-/// * 68pt tall + safe-area padding
-class _HeroNavBar extends StatelessWidget {
-  const _HeroNavBar({
+/// Frosted-glass bottom tab bar — Apple's sub-nav material: backdrop blur
+/// over a translucent canvas fill, single top hairline, 62pt tall +
+/// safe-area padding.
+class _GlassTabBar extends StatelessWidget {
+  const _GlassTabBar({
     required this.destinations,
     required this.selectedIndex,
     required this.onSelect,
@@ -149,31 +151,25 @@ class _HeroNavBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: h.surface,
-        border: Border(
-          top: BorderSide(color: h.isDark ? h.border : h.separator),
+    return HeroGlass(
+      blurSigma: 24,
+      color: h.glass,
+      border: Border(
+        top: BorderSide(
+          color: h.isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.black.withValues(alpha: 0.08),
         ),
-        boxShadow: !h.isDark
-            ? [
-                const BoxShadow(
-                  color: Color(0x0D000000),
-                  offset: Offset(0, -2),
-                  blurRadius: 8,
-                ),
-              ]
-            : null,
       ),
       child: SafeArea(
         top: false,
         child: SizedBox(
-          height: 66,
+          height: 62,
           child: Row(
             children: [
               for (var i = 0; i < destinations.length; i++)
                 Expanded(
-                  child: _NavBarItem(
+                  child: _TabItem(
                     destination: destinations[i],
                     selected: i == selectedIndex,
                     onTap: () => onSelect(i),
@@ -187,8 +183,8 @@ class _HeroNavBar extends StatelessWidget {
   }
 }
 
-class _NavBarItem extends StatefulWidget {
-  const _NavBarItem({
+class _TabItem extends StatefulWidget {
+  const _TabItem({
     required this.destination,
     required this.selected,
     required this.onTap,
@@ -199,18 +195,22 @@ class _NavBarItem extends StatefulWidget {
   final VoidCallback onTap;
 
   @override
-  State<_NavBarItem> createState() => _NavBarItemState();
+  State<_TabItem> createState() => _TabItemState();
 }
 
-class _NavBarItemState extends State<_NavBarItem> {
+class _TabItemState extends State<_TabItem> {
   bool _pressed = false;
+
+  void _handleTap() {
+    HapticFeedback.selectionClick();
+    widget.onTap();
+  }
 
   @override
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
     final d = widget.destination;
     final active = widget.selected;
-    final iconColor = active ? h.accent : h.muted;
 
     return Semantics(
       button: true,
@@ -221,41 +221,52 @@ class _NavBarItemState extends State<_NavBarItem> {
         onTapDown: (_) => setState(() => _pressed = true),
         onTapUp: (_) => setState(() => _pressed = false),
         onTapCancel: () => setState(() => _pressed = false),
-        onTap: widget.onTap,
+        onTap: _handleTap,
         child: AnimatedScale(
-          scale: _pressed ? 0.94 : 1.0,
+          scale: _pressed ? 0.9 : 1.0,
           duration: heroAnimationsEnabled
               ? HeroTokens.motionTransform
               : Duration.zero,
-          curve: HeroTokens.easeSmooth,
+          curve: HeroTokens.spring,
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              AnimatedContainer(
-                duration: heroAnimationsEnabled
-                    ? HeroTokens.motionTransform
-                    : Duration.zero,
-                curve: Curves.easeOutCubic,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 15, vertical: 4),
-                decoration: BoxDecoration(
-                  color: active ? h.accentSoft : Colors.transparent,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Icon(
-                  active ? d.selectedIcon : d.icon,
-                  size: 23,
-                  color: iconColor,
-                ),
+              // Accent-soft pill springs in behind the active icon.
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  AnimatedScale(
+                    scale: active ? 1.0 : 0.0,
+                    duration: heroAnimationsEnabled
+                        ? HeroTokens.motionTransform
+                        : Duration.zero,
+                    curve: HeroTokens.spring,
+                    child: Container(
+                      width: 52,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: h.accentSoft,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    active ? d.selectedIcon : d.icon,
+                    size: 24,
+                    color: active ? h.accent : h.muted,
+                  ),
+                ],
               ),
               const SizedBox(height: 3),
               Text(
                 d.label,
                 style: TextStyle(
-                  fontSize: 11.5,
+                  fontFamily: HeroTokens.fontSans,
+                  fontSize: 10.5,
                   height: 1.1,
+                  letterSpacing: 0.06,
                   fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                  color: active ? h.accentSoftFg : h.muted,
+                  color: active ? h.foreground : h.muted,
                 ),
               ),
             ],

@@ -20,7 +20,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
-import '../../core/ui/heroui_v3.dart';
+import '../../core/ui/lumina_ui.dart';
 
 /// Persistent PIN storage (hash on disk — never the raw PIN).
 class PinStore {

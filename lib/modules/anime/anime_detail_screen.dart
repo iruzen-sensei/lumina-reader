@@ -21,7 +21,7 @@ import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/ui/heroui_v3.dart';
+import '../../core/ui/lumina_ui.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -393,7 +393,7 @@ class _HeroHeader extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style:
-                          HeroTokens.titleLarge.copyWith(color: h.foreground),
+                          HeroTokens.display.copyWith(color: h.foreground, fontSize: 28),
                     ),
                     if (manga.author != null && manga.author!.isNotEmpty) ...[
                       const SizedBox(height: 6),

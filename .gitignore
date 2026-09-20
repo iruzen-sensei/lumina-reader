@@ -38,3 +38,4 @@ android/key.properties
 # this automatically; see .github/workflows/build-android.yml).
 /libisar.so
 libisar.so
+test/golden/failures/

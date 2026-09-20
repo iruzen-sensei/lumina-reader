@@ -9,7 +9,7 @@
 //   * back navigation returns to the library
 //   * filter sheet opens and changes the visible set
 
-import 'package:lumina_reader/core/ui/heroui_v3.dart';
+import 'package:lumina_reader/core/ui/lumina_ui.dart';
 import 'package:lumina_reader/providers/providers.dart' show LibraryMediaType;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumina_reader/modules/library/library_screen.dart';

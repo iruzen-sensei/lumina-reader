@@ -16,7 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme.dart';
-import '../../core/ui/heroui_v3.dart';
+import '../../core/ui/lumina_ui.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -51,7 +51,7 @@ class StatsScreen extends ConsumerWidget {
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
                 child: Text(
                   'Statistics',
-                  style: HeroTokens.titleLarge.copyWith(color: h.foreground),
+                  style: HeroTokens.display.copyWith(color: h.foreground),
                 ),
               ),
             ),
@@ -340,7 +340,8 @@ class _StatCardGrid extends StatelessWidget {
         physics: const NeverScrollableScrollPhysics(),
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
-        childAspectRatio: 1.4,
+        // Taller cells for the Spectral 30 stat values + Inter captions.
+        childAspectRatio: 1.1,
         children: cards.map((c) => _StatCard(data: c)).toList(),
       ),
     );
@@ -384,13 +385,23 @@ class _StatCard extends StatelessWidget {
             child: Icon(data.icon, color: data.color, size: 18),
           ),
           const Spacer(),
-          Text(
-            '${_format(data.value)}${data.suffix}',
-            style: HeroTokens.titleLarge.copyWith(color: h.accent),
+          // FittedBox: the Spectral value can never wrap or overflow the
+          // grid cell — it scales down a touch instead.
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '${_format(data.value)}${data.suffix}',
+              maxLines: 1,
+              style:
+                  HeroTokens.titleLarge.copyWith(color: h.accent, fontSize: 30),
+            ),
           ),
           const SizedBox(height: 2),
           Text(
             data.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: HeroTokens.caption.copyWith(color: h.muted),
           ),
         ],
@@ -435,8 +446,12 @@ class _HeatmapSection extends ConsumerWidget {
                       size: 18, color: h.accent),
                 ),
                 const SizedBox(width: 12),
-                Text('Activity (last 20 weeks)',
-                    style: HeroTokens.title.copyWith(color: h.foreground)),
+                Flexible(
+                  child: Text('Activity (last 20 weeks)',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: HeroTokens.title.copyWith(color: h.foreground)),
+                ),
               ],
             ),
             const SizedBox(height: 4),

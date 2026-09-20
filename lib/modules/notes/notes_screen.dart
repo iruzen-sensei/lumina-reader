@@ -16,7 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/ui/heroui_v3.dart';
+import '../../core/ui/lumina_ui.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../shared/widgets.dart';
@@ -62,7 +62,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                     Text(
                       'Notes',
                       style:
-                          HeroTokens.titleLarge.copyWith(color: h.foreground),
+                          HeroTokens.display.copyWith(color: h.foreground),
                     ),
                     const SizedBox(width: 8),
                     HeroChip(

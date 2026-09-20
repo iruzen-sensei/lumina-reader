@@ -183,9 +183,11 @@ dependency_overrides:
 flutter:
   uses-material-design: true
 
-  # Inter — the reference design (andreirybin.com) typeface. Weights
-  # 400/500/600 as static TTFs so the identity survives offline (no
-  # google_fonts runtime fetch).
+  # Type system (Apple × ElevenLabs DESIGN.md fusion):
+  #   Inter 400/500/600 — body/UI family (ElevenLabs body dialect).
+  #   Spectral Light 300 — editorial display serif (ElevenLabs display
+  #   dialect; licensed Waldenburg's open substitute with a true 300 cut).
+  #   Static TTFs so the identity survives offline (no google_fonts fetch).
   fonts:
     - family: Inter
       fonts:
@@ -195,3 +197,7 @@ flutter:
           weight: 500
         - asset: assets/fonts/Inter-SemiBold.ttf
           weight: 600
+    - family: Spectral
+      fonts:
+        - asset: assets/fonts/Spectral-Light.ttf
+          weight: 300

@@ -22,7 +22,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme.dart';
-import '../../core/ui/heroui_v3.dart';
+import '../../core/ui/lumina_ui.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -275,37 +275,52 @@ class _LibraryHeader extends StatelessWidget implements PreferredSizeWidget {
             )
           : Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 10, 2),
-              child: Row(
+              child: Stack(
                 children: [
-                  Expanded(
-                    child: Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: [
-                        Text(
-                          'Library',
-                          style: HeroTokens.titleLarge.copyWith(
-                            color: h.foreground,
-                          ),
-                        ),
-                        if (incognito)
-                          _QuickBadge(
-                            icon: Icons.visibility_off_rounded,
-                            label: 'Incognito',
-                            color: LuminaTheme.unreadColor,
-                            onTap: onToggleIncognito,
-                          ),
-                        if (downloadedOnly)
-                          _QuickBadge(
-                            icon: Icons.cloud_off_outlined,
-                            label: 'Downloaded',
-                            color: LuminaTheme.readingColor,
-                            onTap: onToggleDownloadedOnly,
-                          ),
+                  // ElevenLabs atmospheric orbs blooming behind the title.
+                  const Positioned.fill(
+                    child: HeroOrbs(
+                      colors: [
+                        HeroTokens.orbSky,
+                        HeroTokens.orbPeach,
+                        HeroTokens.orbRose,
                       ],
+                      opacity: 0.34,
+                      seed: 3,
                     ),
                   ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: [
+                            // Editorial display title — Spectral Light 300.
+                            Text(
+                              'Library',
+                              style: HeroTokens.display.copyWith(
+                                color: h.foreground,
+                              ),
+                            ),
+                            if (incognito)
+                              _QuickBadge(
+                                icon: Icons.visibility_off_rounded,
+                                label: 'Incognito',
+                                color: LuminaTheme.unreadColor,
+                                onTap: onToggleIncognito,
+                              ),
+                            if (downloadedOnly)
+                              _QuickBadge(
+                                icon: Icons.cloud_off_outlined,
+                                label: 'Downloaded',
+                                color: LuminaTheme.readingColor,
+                                onTap: onToggleDownloadedOnly,
+                              ),
+                          ],
+                        ),
+                      ),
                   HeroIconButton(
                     tooltip: 'Import files',
                     icon: Icons.file_upload_outlined,
@@ -338,24 +353,26 @@ class _LibraryHeader extends StatelessWidget implements PreferredSizeWidget {
                     icon: Icons.search_rounded,
                     onPressed: onSearchToggle,
                   ),
-                  Consumer(builder: (context, ref, _) {
-                    final view =
-                        ref.watch(libraryOptionsProvider.select((o) => o.view));
-                    return HeroIconButton(
-                      tooltip:
-                          view == LibraryView.grid ? 'List view' : 'Grid view',
-                      icon: view == LibraryView.grid
-                          ? Icons.view_list_rounded
-                          : Icons.grid_view_rounded,
-                      onPressed: () {
-                        ref.read(libraryOptionsProvider.notifier).setView(
-                              view == LibraryView.grid
-                                  ? LibraryView.list
-                                  : LibraryView.grid,
-                            );
-                      },
-                    );
-                  }),
+                      Consumer(builder: (context, ref, _) {
+                        final view =
+                            ref.watch(libraryOptionsProvider.select((o) => o.view));
+                        return HeroIconButton(
+                          tooltip:
+                              view == LibraryView.grid ? 'List view' : 'Grid view',
+                          icon: view == LibraryView.grid
+                              ? Icons.view_list_rounded
+                              : Icons.grid_view_rounded,
+                          onPressed: () {
+                            ref.read(libraryOptionsProvider.notifier).setView(
+                                  view == LibraryView.grid
+                                      ? LibraryView.list
+                                      : LibraryView.grid,
+                                );
+                          },
+                        );
+                      }),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -390,13 +407,14 @@ class _QuickBadge extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 13, color: color),
-            const SizedBox(width: 4),
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 5),
             Text(
               label,
               style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
+                fontFamily: HeroTokens.fontSans,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
                 color: color,
               ),
             ),
@@ -829,22 +847,25 @@ class _LibraryGridView extends ConsumerWidget {
         final manga = items[i];
         final selected = ref.watch(
             librarySelectionProvider.select((s) => s.contains(manga.id)));
-        return BookCover(
-          manga: manga,
-          width: double.infinity,
-          height: double.infinity,
-          selected: selected,
-          onTap: () {
-            final sel = ref.read(librarySelectionProvider);
-            if (sel.isNotEmpty) {
+        return HeroEntrance(
+          index: i.clamp(0, 12),
+          child: BookCover(
+            manga: manga,
+            width: double.infinity,
+            height: double.infinity,
+            selected: selected,
+            onTap: () {
+              final sel = ref.read(librarySelectionProvider);
+              if (sel.isNotEmpty) {
+                ref.read(librarySelectionProvider.notifier).toggle(manga.id);
+              } else {
+                context.push(_routeFor(manga));
+              }
+            },
+            onLongPress: () {
               ref.read(librarySelectionProvider.notifier).toggle(manga.id);
-            } else {
-              context.push(_routeFor(manga));
-            }
-          },
-          onLongPress: () {
-            ref.read(librarySelectionProvider.notifier).toggle(manga.id);
-          },
+            },
+          ),
         );
       },
     );
