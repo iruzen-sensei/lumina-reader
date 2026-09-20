@@ -22,10 +22,10 @@ import '../../providers/providers.dart';
 /// The "More" screen — a hub of secondary destinations and settings entry
 /// points. Each tile navigates via [GoRouter] to its module route.
 ///
-/// Apple inset-grouped list anatomy: white 18px-radius cards with hairlines
-/// on the parchment canvas, grouped under ElevenLabs caption-uppercase
-/// section labels. The header is the editorial Spectral Light large title
-/// with pastel gradient-orb atmosphere.
+/// Noir inset-grouped anatomy: #141414 12px-radius cards with hairlines on
+/// the #0A0A0A canvas, grouped under JetBrains-mono uppercase section
+/// eyebrows. The header is the weight-400 grotesk large title with a
+/// whisper monochrome bloom.
 class MoreScreen extends ConsumerStatefulWidget {
   const MoreScreen({super.key});
 
@@ -48,23 +48,15 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
           children: [
             const Stack(
               children: [
-                // ElevenLabs atmospheric orbs behind the editorial title.
+                // Monochrome bloom behind the title (whisper-quiet).
                 Positioned.fill(
-                  child: HeroOrbs(
-                    colors: [
-                      HeroTokens.orbLavender,
-                      HeroTokens.orbSky,
-                      HeroTokens.orbRose,
-                    ],
-                    opacity: 0.38,
-                    seed: 11,
-                  ),
+                  child: HeroOrbs(opacity: 0.4, seed: 11),
                 ),
                 HeroLargeTitle(
                   title: 'More',
                   overline: 'Lumina Reader',
-                  subtitle: 'Everything else, beautifully organised.',
-                  padding: EdgeInsets.fromLTRB(20, 18, 20, 12),
+                  subtitle: 'Everything else, organised.',
+                  padding: EdgeInsets.fromLTRB(16, 16, 16, 12),
                 ),
               ],
             ),
@@ -82,7 +74,6 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                 children: [
                   HeroListTile(
                     leadingIcon: Icons.history_rounded,
-                    leadingColor: h.accent,
                     title: 'History',
                     subtitle: 'Continue reading or watching',
                     showChevron: true,
@@ -90,7 +81,6 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                   ),
                   HeroListTile(
                     leadingIcon: Icons.insights_outlined,
-                    leadingColor: h.success,
                     title: 'Statistics',
                     subtitle: 'Track your reading habits',
                     showChevron: true,
@@ -98,7 +88,6 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                   ),
                   HeroListTile(
                     leadingIcon: Icons.new_releases_outlined,
-                    leadingColor: h.warning,
                     title: 'Updates',
                     subtitle: 'New chapters & episodes',
                     showChevron: true,
@@ -106,7 +95,6 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                   ),
                   HeroListTile(
                     leadingIcon: Icons.calendar_month_outlined,
-                    leadingColor: h.danger,
                     title: 'Calendar',
                     subtitle: 'Airing schedule',
                     showChevron: true,
@@ -122,7 +110,6 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                 children: [
                   HeroListTile(
                     leadingIcon: Icons.visibility_off_outlined,
-                    leadingColor: h.accent,
                     title: 'Incognito mode',
                     subtitle: incognito
                         ? "Reading & watching won't be recorded."
@@ -138,7 +125,6 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                   ),
                   HeroListTile(
                     leadingIcon: Icons.cloud_off_outlined,
-                    leadingColor: h.success,
                     title: 'Downloaded only',
                     subtitle: downloadedOnly
                         ? 'Only downloaded content is shown.'
@@ -163,7 +149,6 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                 children: [
                   HeroListTile(
                     leadingIcon: Icons.download_outlined,
-                    leadingColor: h.accent,
                     title: 'Downloads',
                     subtitle: 'Queue & offline content',
                     showChevron: true,
@@ -171,7 +156,6 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                   ),
                   HeroListTile(
                     leadingIcon: Icons.sticky_note_2_outlined,
-                    leadingColor: h.warning,
                     title: 'Notes',
                     subtitle: 'Highlights & thoughts',
                     showChevron: true,
@@ -179,7 +163,6 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                   ),
                   HeroListTile(
                     leadingIcon: Icons.settings_outlined,
-                    leadingColor: h.accent,
                     title: 'Settings',
                     subtitle: 'Appearance, reader, player, security…',
                     showChevron: true,
@@ -187,7 +170,6 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                   ),
                   HeroListTile(
                     leadingIcon: Icons.info_outline,
-                    leadingColor: h.muted,
                     title: 'About Lumina Reader',
                     subtitle: 'Version 1.0.0 • Apache 2.0',
                     showChevron: true,
@@ -195,7 +177,6 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                   ),
                   HeroListTile(
                     leadingIcon: Icons.source_outlined,
-                    leadingColor: h.muted,
                     title: 'Open source licenses',
                     subtitle: 'View third-party libraries',
                     showChevron: true,
@@ -209,7 +190,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             Center(
               child: Text(
                 'Lumina Reader • Made with ♥',
@@ -245,7 +226,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                     ),
                     child: Icon(Icons.auto_stories, size: 26, color: h.accent),
                   ),
-                  const SizedBox(width: 14),
+                  const SizedBox(width: 16),
                   Expanded(
                     child: Text(
                       'Lumina Reader',
@@ -333,7 +314,7 @@ class _ProfileCard extends ConsumerWidget {
       child: Row(
         children: [
           const HeroAvatar(initials: 'LR', size: 52),
-          const SizedBox(width: 14),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -346,7 +327,7 @@ class _ProfileCard extends ConsumerWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 4),
                 Text(
                   '$libraryCount in library • '
                   '${summary['chaptersRead'] ?? 0} chapters read',

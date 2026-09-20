@@ -126,7 +126,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
                     icon: Icons.add_link,
                     onPressed: () => _showAddRepoSheet(context),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 8),
                 ],
               ),
               SliverFillRemaining(
@@ -139,6 +139,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
                   action: HeroButton(
                     label: 'Browse extensions',
                     icon: Icons.extension_rounded,
+                    variant: HeroButtonVariant.bordered,
                     onPressed: () => _showExtensionsSheet(context),
                   ),
                 ),
@@ -166,7 +167,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
                   expandedHeight: 84,
                   automaticallyImplyLeading: false,
                   flexibleSpace: FlexibleSpaceBar(
-                    titlePadding: const EdgeInsets.only(left: 20, bottom: 14),
+                    titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
                     title: Text(
                       'Browse',
                       style: HeroTokens.display.copyWith(
@@ -191,7 +192,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
                       icon: Icons.travel_explore_outlined,
                       onPressed: () => _showGlobalSearch(context),
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 8),
                   ],
                 ),
                 SliverToBoxAdapter(
@@ -292,7 +293,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
                     _openGlobalSearchResults(v);
                   },
                 ),
-                const SizedBox(height: 22),
+                const SizedBox(height: 24),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
@@ -302,7 +303,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
                       color: HeroColorRole.neutral,
                       onPressed: () => Navigator.pop(dialogContext),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 12),
                     HeroButton(
                       label: 'Search',
                       icon: Icons.search_rounded,
@@ -366,7 +367,7 @@ void showAddRepoSheet(BuildContext context, WidgetRef ref) {
               'extension repository to make its extensions available.',
               style: HeroTokens.bodySmall.copyWith(color: h.muted),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
             HeroInput(
               controller: controller,
               autofocus: true,
@@ -385,7 +386,7 @@ void showAddRepoSheet(BuildContext context, WidgetRef ref) {
                   color: HeroColorRole.neutral,
                   onPressed: () => Navigator.pop(sheetContext),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 12),
                 HeroButton(
                   label: 'Add',
                   icon: Icons.add_rounded,
@@ -437,7 +438,7 @@ class _ExistingReposList extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(top: 4, bottom: 6),
+          padding: const EdgeInsets.only(top: 4, bottom: 8),
           child: Text(
             'Added repositories',
             style: TextStyle(
@@ -577,7 +578,7 @@ class _ExtensionCatalogSheetState
                       iconSize: 19,
                       onPressed: _syncAll,
                     ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 8),
               HeroButton(
                 label: 'Add repo',
                 icon: Icons.add_link,
@@ -594,7 +595,7 @@ class _ExtensionCatalogSheetState
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           child: HeroInput(
             controller: _searchController,
             hint: 'Search extensions…',
@@ -754,7 +755,7 @@ class _SourceStrip extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         itemCount: sources.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
         itemBuilder: (context, i) {
           final s = sources[i];
           final active = s.id == selectedId;
@@ -762,7 +763,7 @@ class _SourceStrip extends StatelessWidget {
             onTap: () => onSelect(s.id),
             child: AnimatedContainer(
               duration: HeroTokens.motionColor,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
                 // Active pill: accent-soft fill + 1.5px accent border +
                 // accent avatar — a high-contrast selection state.
@@ -826,8 +827,11 @@ class _SegmentedHeaderDelegate extends SliverPersistentHeaderDelegate {
 
   final TabController controller;
 
-  /// HeroSegmented (3 + ~30 + 3) plus a 4px vertical inset on each side.
-  static const double headerHeight = 44;
+  /// Pinned-bar height. The child is forced to this exact height via
+  /// SizedBox (a slimmer segmented control must never make the pinned
+  /// header's paintExtent fall below its declared layoutExtent — that
+  /// trips SliverGeometry's assertion).
+  static const double headerHeight = 46;
 
   @override
   double get minExtent => headerHeight;
@@ -839,10 +843,11 @@ class _SegmentedHeaderDelegate extends SliverPersistentHeaderDelegate {
   Widget build(
       BuildContext context, double shrinkOffset, bool overlapsContent) {
     final h = HeroScope.of(context);
-    // Apple frosted sub-nav: backdrop blur over the translucent canvas so
-    // covers scrolling beneath the pinned header melt through the glass.
+    // Noir frosted sub-nav: the near-black canvas at ~78% over a clipped
+    // blur so covers scrolling beneath the pinned header melt through as
+    // a dimmed smear (ChatGPT/Codex nav behaviour).
     return HeroGlass(
-      blurSigma: 24,
+      blurSigma: 18,
       color: h.glass,
       border: Border(
         bottom: BorderSide(
@@ -851,19 +856,22 @@ class _SegmentedHeaderDelegate extends SliverPersistentHeaderDelegate {
               : Colors.black.withValues(alpha: 0.06),
         ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        child: ListenableBuilder(
-          listenable: controller,
-          builder: (context, _) => HeroSegmented<int>(
-            expand: true,
-            selected: controller.index,
-            segments: const [
-              (0, 'Popular', Icons.local_fire_department_rounded),
-              (1, 'Latest', Icons.new_releases_rounded),
-              (2, 'Search', Icons.search_rounded),
-            ],
-            onChanged: controller.animateTo,
+      child: SizedBox(
+        height: headerHeight,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: ListenableBuilder(
+            listenable: controller,
+            builder: (context, _) => HeroSegmented<int>(
+              expand: true,
+              selected: controller.index,
+              segments: const [
+                (0, 'Popular', Icons.local_fire_department_rounded),
+                (1, 'Latest', Icons.new_releases_rounded),
+                (2, 'Search', Icons.search_rounded),
+              ],
+              onChanged: controller.animateTo,
+            ),
           ),
         ),
       ),
@@ -950,6 +958,7 @@ class _SourceGrid extends ConsumerWidget {
         action: HeroButton(
           label: 'Retry',
           icon: Icons.refresh_rounded,
+          variant: HeroButtonVariant.bordered,
           onPressed: () =>
               ref.invalidate(browseFeedProvider((sourceId, latest))),
         ),
@@ -965,6 +974,7 @@ class _SourceGrid extends ConsumerWidget {
         action: HeroButton(
           label: 'Retry',
           icon: Icons.refresh_rounded,
+          variant: HeroButtonVariant.bordered,
           onPressed: () =>
               ref.invalidate(browseFeedProvider((sourceId, latest))),
         ),
@@ -1134,7 +1144,7 @@ class _GlobalSearchResults extends ConsumerWidget {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 12, 8),
+          padding: const EdgeInsets.fromLTRB(16, 0, 12, 8),
           child: Row(
             children: [
               Expanded(
@@ -1238,7 +1248,7 @@ class _SourceSearchRow extends ConsumerWidget {
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                 itemCount: items.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
                 itemBuilder: (context, i) => BookCover(
                   manga: items[i],
                   onTap: () {
@@ -1256,7 +1266,7 @@ class _SourceSearchRow extends ConsumerWidget {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               itemCount: 3,
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
               itemBuilder: (_, __) => const HeroSkeleton(
                 width: 110,
                 height: 160,

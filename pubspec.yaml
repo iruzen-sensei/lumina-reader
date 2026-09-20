@@ -183,10 +183,12 @@ dependency_overrides:
 flutter:
   uses-material-design: true
 
-  # Type system (Apple × ElevenLabs DESIGN.md fusion):
-  #   Inter 400/500/600 — body/UI family (ElevenLabs body dialect).
-  #   Spectral Light 300 — editorial display serif (ElevenLabs display
-  #   dialect; licensed Waldenburg's open substitute with a true 300 cut).
+  # Type system (Lumina Noir — x.ai/ElevenLabs/OpenAI black-theme dialect):
+  #   Inter 400/500/600 — the single body/UI/display family (Sohne /
+  #   Waldenburg / Universal Sans class; grotesk, weight-400 display with
+  #   negative tracking — never bold display).
+  #   JetBrains Mono 400/500 — uppercase tracked eyebrow labels, stat
+  #   values and technical captions (the x.ai/Warp engineered dialect).
   #   Static TTFs so the identity survives offline (no google_fonts fetch).
   fonts:
     - family: Inter
@@ -197,7 +199,9 @@ flutter:
           weight: 500
         - asset: assets/fonts/Inter-SemiBold.ttf
           weight: 600
-    - family: Spectral
+    - family: JetBrainsMono
       fonts:
-        - asset: assets/fonts/Spectral-Light.ttf
-          weight: 300
+        - asset: assets/fonts/JetBrainsMono-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/JetBrainsMono-Medium.ttf
+          weight: 500

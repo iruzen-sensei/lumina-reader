@@ -134,7 +134,7 @@ class _DownloadsHeader extends ConsumerWidget {
         : active.map((t) => t.progress).reduce((a, b) => a + b) / active.length;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
+      padding: const EdgeInsets.fromLTRB(16, 16, 12, 8),
       child: Row(
         children: [
           Flexible(
@@ -236,7 +236,7 @@ class _WifiOnlyIndicator extends ConsumerWidget {
     return Material(
       color: wifiOnly ? h.accentSoft : h.successSoft,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Row(
           children: [
             Icon(
@@ -283,7 +283,7 @@ class _DownloadsTabs extends ConsumerWidget {
       height: 48,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
           for (final t in DownloadsTab.values)
             Padding(
@@ -361,7 +361,7 @@ class _DownloadsList extends StatelessWidget {
             ),
             for (final task in items)
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                padding: const EdgeInsets.fromLTRB(16, 0, 20, 12),
                 child: _DownloadCard(task: task),
               ),
           ],
@@ -380,7 +380,7 @@ class _DownloadCard extends ConsumerWidget {
     final (tileBg, tileFg, barColor) = _stateColors(h, task.state);
 
     return HeroCard(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -434,7 +434,7 @@ class _DownloadCard extends ConsumerWidget {
               color: barColor,
             ),
           ],
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
@@ -450,7 +450,7 @@ class _DownloadCard extends ConsumerWidget {
           ),
           if (task.state == DownloadState.failed &&
               task.errorMessage != null) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Text(
               task.errorMessage!,
               maxLines: 2,
@@ -625,7 +625,7 @@ class _BatchBar extends ConsumerWidget {
           color: h.surface,
           border: Border(top: BorderSide(color: h.border)),
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
             Expanded(
@@ -641,7 +641,7 @@ class _BatchBar extends ConsumerWidget {
                 },
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 12),
             Expanded(
               child: HeroButton(
                 label: 'Resume all',

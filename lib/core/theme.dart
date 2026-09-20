@@ -16,14 +16,17 @@ import 'package:flutter/material.dart';
 
 import 'ui/lumina_ui.dart';
 
-/// Lumina Reader theme — Apple × ElevenLabs design language.
+/// Lumina Reader theme — "Lumina Noir".
 ///
-/// Colors from the Apple DESIGN.md: Action Blue #0066CC as the single
-/// interactive accent, near-black ink #1D1D1F, parchment #F5F5F7 canvas,
-/// hairline borders, white cards (no shadows — definition from hairlines).
-/// Dark mode = Apple's dark tiles on the true-black void.
-/// Typography from the ElevenLabs DESIGN.md: Spectral Light 300 display
-/// (never bold), Inter 400/500 body with +0.15px tracking, real size ramp.
+/// A monochrome black premium language (x.ai / OpenAI / ElevenLabs dark
+/// dialect): layered blacks (#0A0A0A canvas, #141414 cards, #1C1C1E fills)
+/// separated by 1px hairlines, pure white as THE interactive colour
+/// (white pill CTAs with near-black text), Inter 400/500 typography with
+/// the ElevenLabs +0.15px body tracking, JetBrains Mono uppercase
+/// eyebrows. No chromatic accent anywhere in the chrome; semantic hues
+/// appear only as data indicators (status dots, finished/error states).
+/// Light mode is the same system polarity-flipped (off-white canvas,
+/// near-black ink CTAs).
 ///
 /// The Material [ThemeData] below keeps every remaining Material widget
 /// (NavigationBars, AppBars, TabBars, dialogs...) on-system so screens can
@@ -31,20 +34,20 @@ import 'ui/lumina_ui.dart';
 class LuminaTheme {
   LuminaTheme._();
 
-  /// Brand seed (Apple Action Blue). Used as the scheme key colour and the
-  /// default custom-seed in Settings.
+  /// Brand seed — white on the noir canvas (the interactive colour).
+  /// Used as the scheme key colour.
   static const Color seed = HeroTokens.accent;
 
   // -- Semantic status colours (referenced across modules) ------------------
   // NOTE: these are DATA indicators (status dots, filter chips), not UI
-  // chrome — they intentionally stay OUTSIDE the Apple monochrome+blue
-  // chrome language so meaning survives in both themes. Semantic hues are
-  // the ElevenLabs MD tokens (success #16A34A / error #DC2626) plus an
-  // amber for "unread". Each value is readable on black AND white.
+  // chrome — they intentionally stay OUTSIDE the monochrome chrome language
+  // so meaning survives in both themes. Hues follow the ElevenLabs MD
+  // (success #16A34A / error #DC2626) with iOS-dark vivid variants for the
+  // noir canvas. Each value is readable on black AND white.
 
-  /// Colour used for the "reading" status chips and progress indicators
-  /// (Action Blue — readable on black and white).
-  static const Color readingColor = Color(0xFF0066CC);
+  /// Colour used for the "reading" status chips and progress indicators —
+  /// WHITE on the noir canvas (the monochrome working state).
+  static const Color readingColor = Color(0xFFFFFFFF);
 
   /// Colour used for the "finished" status chips and badges
   /// (ElevenLabs semantic success).
@@ -57,38 +60,38 @@ class LuminaTheme {
   /// (ElevenLabs semantic error red, repurposed as the "new" signal).
   static const Color newColor = Color(0xFFDC2626);
 
-  /// Five-step gradient for the activity heat-map — parchment into Action
-  /// Blue (the Apple palette: #F5F5F7 + #0066CC only).
+  /// Five-step gradient for the activity heat-map — the monochrome white
+  /// ramp (black ladder into pure white, the x.ai data-viz dialect).
   static const List<Color> heatLevels = [
-    Color(0xFFE5E5EA),
-    Color(0xFF9CC8F0),
-    Color(0xFF5FA6E3),
-    Color(0xFF2A85D6),
-    Color(0xFF0066CC),
+    Color(0xFF1C1C1E),
+    Color(0xFF3A3A3E),
+    Color(0xFF5E5E64),
+    Color(0xFF9A9AA2),
+    Color(0xFFFFFFFF),
   ];
 
-  /// Linear gradient painted behind detail screen headers (Apple dark-tile
-  /// stack: tile-2 into tile-3).
+  /// Linear gradient painted behind detail screen headers (the noir
+  /// ladder: card surface fading into canvas).
   static const List<Color> headerGradient = [
-    Color(0xFF2A2A2C),
-    Color(0xFF1C1C1E),
+    Color(0xFF141414),
+    Color(0xFF0A0A0A),
   ];
 
   // ---------------------------------------------------------------------------
-  // Light
+  // Light (secondary — monochrome inverted)
   // ---------------------------------------------------------------------------
 
   static ThemeData light() => _build(Brightness.light, HeroThemeData.light());
 
   // ---------------------------------------------------------------------------
-  // Dark
+  // Dark (PRIMARY — the noir canvas)
   // ---------------------------------------------------------------------------
 
   static ThemeData dark({bool trueBlack = false}) {
     final base = _build(Brightness.dark, HeroThemeData.dark());
     if (!trueBlack) return base;
-    // AMOLED: the dark canvas already sits on true black; keep surfaces
-    // distinguishable.
+    // AMOLED: the noir canvas is already near-black; collapse it to true
+    // black while keeping the surface ladder distinguishable.
     return base.copyWith(
       scaffoldBackgroundColor: Colors.black,
       canvasColor: Colors.black,
@@ -105,7 +108,7 @@ class LuminaTheme {
     final scheme = ColorScheme(
       brightness: brightness,
       primary: h.accent,
-      onPrimary: Colors.white,
+      onPrimary: h.accentFg,
       primaryContainer: h.accentSoft,
       onPrimaryContainer: h.accentSoftFg,
       secondary: h.success,
@@ -154,7 +157,7 @@ class LuminaTheme {
       visualDensity: VisualDensity.standard,
       fontFamily: 'Inter',
     ).copyWith(
-      // -- AppBar: flat parchment, hairline under scroll --------------------
+      // -- AppBar: flat canvas, hairline under scroll --------------------
       appBarTheme: AppBarTheme(
         backgroundColor: h.background,
         foregroundColor: h.foreground,
@@ -164,39 +167,39 @@ class LuminaTheme {
         centerTitle: false,
         titleTextStyle: TextStyle(
           fontFamily: 'Inter',
-          fontSize: 17,
-          fontWeight: FontWeight.w600,
-          letterSpacing: -0.3,
+          fontSize: 16,
+          fontWeight: FontWeight.w500,
+          letterSpacing: -0.2,
           color: h.foreground,
         ),
-        iconTheme: IconThemeData(color: h.foreground, size: 22),
-        actionsIconTheme: IconThemeData(color: h.foreground, size: 22),
+        iconTheme: IconThemeData(color: h.foreground, size: 21),
+        actionsIconTheme: IconThemeData(color: h.foreground, size: 21),
       ),
       // -- Bottom navigation --------------------------------------------------
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: h.surface,
+        backgroundColor: h.background,
         surfaceTintColor: Colors.transparent,
         indicatorColor: h.accentSoft,
-        height: 68,
+        height: 64,
         elevation: 0,
         labelTextStyle: WidgetStateProperty.resolveWith(
           (states) => TextStyle(
             fontFamily: 'Inter',
-            fontSize: 11,
+            fontSize: 10.5,
             fontWeight: states.contains(WidgetState.selected)
                 ? FontWeight.w600
                 : FontWeight.w500,
+            letterSpacing: 0.06,
             color: states.contains(WidgetState.selected)
-                ? h.accentSoftFg
+                ? h.foreground
                 : h.muted,
           ),
         ),
         iconTheme: WidgetStateProperty.resolveWith(
           (states) => IconThemeData(
             size: 23,
-            color: states.contains(WidgetState.selected)
-                ? h.accent
-                : h.muted,
+            color:
+                states.contains(WidgetState.selected) ? h.accent : h.muted,
           ),
         ),
       ),
@@ -205,34 +208,34 @@ class LuminaTheme {
         indicatorColor: h.accentSoft,
         selectedIconTheme: IconThemeData(color: h.accent),
         selectedLabelTextStyle: TextStyle(
-            color: h.accentSoftFg, fontWeight: FontWeight.w600, fontSize: 13),
+            color: h.foreground, fontWeight: FontWeight.w600, fontSize: 13),
         unselectedLabelTextStyle: TextStyle(color: h.muted, fontSize: 13),
         unselectedIconTheme: IconThemeData(color: h.muted),
       ),
-      // -- Buttons: Apple pill CTAs ------------------------------------------
+      // -- Buttons: pill CTAs, compact production heights --------------------
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: h.accent,
-          foregroundColor: Colors.white,
+          foregroundColor: h.accentFg,
           disabledBackgroundColor: h.dflt,
           disabledForegroundColor: h.muted,
           textStyle: const TextStyle(
             fontFamily: 'Inter',
-            fontSize: 15,
+            fontSize: 14,
             fontWeight: FontWeight.w500,
             height: 1,
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          minimumSize: const Size(0, 44),
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          minimumSize: const Size(0, 40),
           shape: const StadiumBorder(),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: h.accent,
+          foregroundColor: h.foreground,
           textStyle: const TextStyle(
               fontFamily: 'Inter',
-              fontSize: 15,
+              fontSize: 14,
               fontWeight: FontWeight.w500,
               height: 1),
           shape: const StadiumBorder(),
@@ -240,11 +243,11 @@ class LuminaTheme {
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: h.accent,
-          side: BorderSide(color: h.accent.withValues(alpha: 0.45)),
+          foregroundColor: h.foreground,
+          side: BorderSide(color: h.border),
           textStyle: const TextStyle(
               fontFamily: 'Inter',
-              fontSize: 15,
+              fontSize: 14,
               fontWeight: FontWeight.w500,
               height: 1),
           shape: const StadiumBorder(),
@@ -259,25 +262,25 @@ class LuminaTheme {
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: h.accent,
-        foregroundColor: Colors.white,
+        foregroundColor: h.accentFg,
         elevation: 0,
         highlightElevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(14),
         ),
       ),
-      // -- Tabs: pill indicator on gray5 --------------------------------------
+      // -- Tabs: pill indicator on the control fill --------------------------
       tabBarTheme: TabBarThemeData(
         labelColor: h.foreground,
         unselectedLabelColor: h.muted,
         labelStyle: const TextStyle(
             fontFamily: 'Inter',
-            fontSize: 14,
+            fontSize: 13.5,
             fontWeight: FontWeight.w600,
             letterSpacing: -0.1),
         unselectedLabelStyle: const TextStyle(
             fontFamily: 'Inter',
-            fontSize: 14,
+            fontSize: 13.5,
             fontWeight: FontWeight.w500,
             letterSpacing: -0.1),
         indicatorSize: TabBarIndicatorSize.label,
@@ -287,14 +290,14 @@ class LuminaTheme {
           borderRadius: BorderRadius.circular(999),
         ),
       ),
-      // -- Inputs: white pill surface + hairline; 2px accent focus -----------
+      // -- Inputs: rounded-rect fields, hairline; 2px accent focus ----------
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: h.surface,
+        fillColor: isDark ? h.surface2 : h.surface,
         hintStyle: TextStyle(
-            fontFamily: 'Inter', fontSize: 16, color: h.muted),
+            fontFamily: 'Inter', fontSize: 15, color: h.muted),
         contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(HeroTokens.radiusField),
           borderSide: BorderSide(color: h.border, width: 1.2),
@@ -316,13 +319,17 @@ class LuminaTheme {
           borderSide: BorderSide(color: h.danger, width: 2),
         ),
       ),
-      // -- Switch ------------------------------------------------------------
+      // -- Switch (polarity flip: accent track + inverted thumb) ------------
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.disabled)) {
             return h.muted.withValues(alpha: 0.4);
           }
-          return Colors.white;
+          if (states.contains(WidgetState.selected)) {
+            // Inverted thumb on the accent track (noir: black-on-white).
+            return isDark ? HeroTokens.darkBackground : Colors.white;
+          }
+          return isDark ? Colors.white : h.foreground;
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.disabled)) {
@@ -333,13 +340,6 @@ class LuminaTheme {
         }),
         trackOutlineColor:
             const WidgetStatePropertyAll(Colors.transparent),
-        thumbIcon: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) {
-            return Icon(Icons.check_rounded,
-                size: 16, color: h.accent.withValues(alpha: 0.9));
-          }
-          return null;
-        }),
       ),
       // -- Checkbox / radio ----------------------------------------------------
       checkboxTheme: CheckboxThemeData(
@@ -347,9 +347,11 @@ class LuminaTheme {
           if (states.contains(WidgetState.selected)) return h.accent;
           return Colors.transparent;
         }),
+        checkColor:
+            const WidgetStatePropertyAll(HeroTokens.darkBackground),
         side: BorderSide(color: h.border, width: 1.6),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(5),
         ),
       ),
       radioTheme: RadioThemeData(
@@ -370,7 +372,7 @@ class LuminaTheme {
         backgroundColor: h.surface,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(14),
         ),
       ),
       bottomSheetTheme: BottomSheetThemeData(
@@ -379,7 +381,7 @@ class LuminaTheme {
         modalBackgroundColor: h.surface,
         showDragHandle: true,
         shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
         ),
       ),
       snackBarTheme: SnackBarThemeData(
@@ -392,7 +394,7 @@ class LuminaTheme {
           fontWeight: FontWeight.w500,
         ),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
         ),
       ),
       chipTheme: ChipThemeData(
@@ -418,7 +420,7 @@ class LuminaTheme {
       listTileTheme: ListTileThemeData(
         iconColor: h.foreground,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
         ),
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(
@@ -427,10 +429,11 @@ class LuminaTheme {
         circularTrackColor: h.dflt,
       ),
       popupMenuTheme: PopupMenuThemeData(
-        color: h.surface,
+        color: h.surface2,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: h.border),
         ),
       ),
       tooltipTheme: TooltipThemeData(
@@ -448,55 +451,54 @@ class LuminaTheme {
       sliderTheme: SliderThemeData(
         activeTrackColor: h.accent,
         inactiveTrackColor: h.dflt,
-        thumbColor: Colors.white,
+        thumbColor: h.foreground,
         overlayColor: h.accent.withValues(alpha: 0.12),
       ),
     );
   }
 
-  /// The ElevenLabs type ramp mapped onto Material's slots:
-  ///   * display/headline slots → Spectral Light 300 (editorial serif,
-  ///     never bold — the ElevenLabs display signature)
+  /// The noir type ramp mapped onto Material's slots:
+  ///   * display/headline slots → Inter 400 with negative tracking
+  ///     (the weight-400 grotesk display; never bold)
   ///   * title/body/label slots → Inter 400/500/600 with the editorial
   ///     +0.15px body tracking
   static TextTheme _textTheme(bool isDark) {
     final fg = isDark ? HeroTokens.darkForeground : HeroTokens.lightForeground;
     final muted = isDark ? HeroTokens.darkMuted : HeroTokens.lightMuted;
 
-    const serif = TextStyle(fontFamily: HeroTokens.fontSerif);
     const sans = TextStyle(fontFamily: HeroTokens.fontSans);
 
     return TextTheme(
-      displayLarge: serif.copyWith(
-          color: fg, fontSize: 40, height: 1.1, letterSpacing: -0.4),
-      displayMedium: serif.copyWith(
-          color: fg, fontSize: 34, height: 1.13, letterSpacing: -0.34),
-      displaySmall: serif.copyWith(
-          color: fg, fontSize: 28, height: 1.15, letterSpacing: -0.28),
-      headlineLarge: serif.copyWith(
-          color: fg, fontSize: 26, height: 1.15, letterSpacing: -0.26),
+      displayLarge: sans.copyWith(
+          color: fg, fontSize: 34, height: 1.15, fontWeight: FontWeight.w400, letterSpacing: -0.6),
+      displayMedium: sans.copyWith(
+          color: fg, fontSize: 30, height: 1.2, fontWeight: FontWeight.w400, letterSpacing: -0.5),
+      displaySmall: sans.copyWith(
+          color: fg, fontSize: 26, height: 1.2, fontWeight: FontWeight.w400, letterSpacing: -0.4),
+      headlineLarge: sans.copyWith(
+          color: fg, fontSize: 24, height: 1.25, fontWeight: FontWeight.w400, letterSpacing: -0.35),
       headlineMedium: sans.copyWith(
-          color: fg, fontSize: 22, height: 1.3, fontWeight: FontWeight.w600),
+          color: fg, fontSize: 20, height: 1.3, fontWeight: FontWeight.w500, letterSpacing: -0.2),
       headlineSmall: sans.copyWith(
-          color: fg, fontSize: 20, height: 1.35, fontWeight: FontWeight.w500),
+          color: fg, fontSize: 18, height: 1.3, fontWeight: FontWeight.w500, letterSpacing: -0.15),
       titleLarge: sans.copyWith(
-          color: fg, fontSize: 20, height: 1.35, fontWeight: FontWeight.w500),
+          color: fg, fontSize: 17, height: 1.35, fontWeight: FontWeight.w500, letterSpacing: -0.1),
       titleMedium: sans.copyWith(
-          color: fg, fontSize: 16, height: 1.45, fontWeight: FontWeight.w500),
+          color: fg, fontSize: 15, height: 1.4, fontWeight: FontWeight.w500, letterSpacing: -0.05),
       titleSmall: sans.copyWith(
-          color: fg, fontSize: 14, height: 1.4, fontWeight: FontWeight.w500),
+          color: fg, fontSize: 13.5, height: 1.4, fontWeight: FontWeight.w500),
       bodyLarge: sans.copyWith(
-          color: fg, fontSize: 16, height: 1.5, letterSpacing: 0.16),
+          color: fg, fontSize: 15.5, height: 1.5, letterSpacing: 0.15),
       bodyMedium: sans.copyWith(
           color: fg, fontSize: 15, height: 1.5, letterSpacing: 0.15),
       bodySmall: sans.copyWith(
           color: muted, fontSize: 13, height: 1.45, letterSpacing: 0.1),
       labelLarge: sans.copyWith(
-          color: fg, fontSize: 15, height: 1.2, fontWeight: FontWeight.w500),
+          color: fg, fontSize: 14, height: 1.2, fontWeight: FontWeight.w500),
       labelMedium: sans.copyWith(
-          color: muted, fontSize: 13, height: 1.3, fontWeight: FontWeight.w500),
+          color: muted, fontSize: 12.5, height: 1.3, fontWeight: FontWeight.w500),
       labelSmall: sans.copyWith(
-          color: muted, fontSize: 12, height: 1.3, letterSpacing: 0.1),
+          color: muted, fontSize: 11.5, height: 1.3, letterSpacing: 0.1),
     );
   }
 }

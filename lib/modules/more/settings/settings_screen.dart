@@ -75,17 +75,17 @@ class SettingsScreen extends ConsumerWidget {
                   const _PlayerCard(),
                   const HeroSectionHeader('Data'),
                   const _LibraryCard(),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   const _DownloadsCard(),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   const _BrowseCard(),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   const _BackupCard(),
                   const HeroSectionHeader('Security'),
                   const _SecurityCard(),
                   const HeroSectionHeader('About'),
                   const _TrackersCard(),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   const _AboutCard(),
                   const SizedBox(height: 32),
                 ],
@@ -197,7 +197,7 @@ class _SegmentedSettingTile<T> extends StatelessWidget {
           trailing: trailing,
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: HeroSegmented<T>(
             segments: segments,
             selected: selected,
@@ -244,7 +244,7 @@ class _SliderSettingTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             child: Row(
               children: [
                 Container(
@@ -256,7 +256,7 @@ class _SliderSettingTile extends StatelessWidget {
                   ),
                   child: Icon(icon, size: 19, color: tint),
                 ),
-                const SizedBox(width: 14),
+                const SizedBox(width: 16),
                 Expanded(
                   child: Text(
                     title,
@@ -276,7 +276,7 @@ class _SliderSettingTile extends StatelessWidget {
           SizedBox(
             height: 36,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Slider(
                 min: min,
                 max: max,
@@ -775,7 +775,7 @@ class _DownloadsCardState extends ConsumerState<_DownloadsCard> {
               : null,
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 6, 16, 14),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           child: Row(
             children: [
               Expanded(
@@ -789,7 +789,7 @@ class _DownloadsCardState extends ConsumerState<_DownloadsCard> {
                   onPressed: _clearCache,
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(
                 child: HeroButton(
                   label: 'Delete all',
@@ -1251,7 +1251,7 @@ Future<void> _showIntervalDialog(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.only(bottom: 8),
               child: Text(
                 'Backup interval',
                 style: HeroTokens.title.copyWith(color: h.foreground),

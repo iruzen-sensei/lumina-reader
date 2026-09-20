@@ -882,7 +882,7 @@ class _EpubContent extends StatelessWidget {
       controller: scrollController,
       slivers: [
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 24, 20, 80),
+          padding: const EdgeInsets.fromLTRB(16, 24, 20, 80),
           sliver: SliverList(
             delegate: SliverChildListDelegate.fixed([
               Text(
@@ -961,7 +961,7 @@ class EpubReaderSettingsSheet extends ConsumerWidget {
     final notifier = ref.read(epubReaderSettingsProvider.notifier);
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        padding: const EdgeInsets.fromLTRB(16, 0, 20, 20),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1035,7 +1035,7 @@ class _SectionLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.only(bottom: 8),
       child: Text(
         text,
         style: TextStyle(

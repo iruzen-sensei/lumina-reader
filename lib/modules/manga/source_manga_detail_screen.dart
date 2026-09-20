@@ -304,7 +304,7 @@ class _PreviewHeader extends ConsumerWidget {
     final loading = detail.isLoading;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 20, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -341,11 +341,11 @@ class _PreviewHeader extends ConsumerWidget {
                       style: theme.textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.bold, height: 1.2),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     if (manga.author != null && manga.author!.isNotEmpty)
                       _metaLine(
                           context, Icons.person_outline, 'by ${manga.author}'),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     Row(
                       children: [
                         Icon(Icons.star_rounded,
@@ -405,7 +405,7 @@ class _PreviewHeader extends ConsumerWidget {
             Row(
               children: [
                 inlineLoader(context, size: 16),
-                const SizedBox(width: 10),
+                const SizedBox(width: 12),
                 Text('Loading details and chapters…',
                     style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant)),
@@ -433,7 +433,7 @@ class _PreviewHeader extends ConsumerWidget {
         children: [
           Icon(icon,
               size: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
-          const SizedBox(width: 6),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               text,
@@ -472,7 +472,7 @@ class _Description extends StatelessWidget {
               .titleSmall
               ?.copyWith(fontWeight: FontWeight.bold),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Text(
           text.trim(),
           maxLines: expanded ? null : 4,
@@ -524,7 +524,7 @@ class _ChaptersSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+            padding: const EdgeInsets.fromLTRB(16, 20, 20, 8),
             child: Text(
               '${manga.chapters.length} chapters',
               style: theme.textTheme
@@ -535,7 +535,7 @@ class _ChaptersSection extends StatelessWidget {
           for (final chapter in manga.chapters)
             ListTile(
               dense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
               title: Text(
                 chapter.name,
                 maxLines: 1,

@@ -56,7 +56,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
           slivers: [
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                padding: const EdgeInsets.fromLTRB(16, 16, 20, 8),
                 child: Row(
                   children: [
                     Text(
@@ -110,7 +110,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                     )
                   : SliverList.separated(
                       itemCount: notes.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
                       itemBuilder: (context, i) => _NoteCard(note: notes[i]),
                     ),
             ),
@@ -232,7 +232,7 @@ class _NoteCard extends ConsumerWidget {
                     Container(width: 3, color: note.color.color),
                     Expanded(
                       child: Padding(
-                        padding: const EdgeInsets.all(14),
+                        padding: const EdgeInsets.all(16),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -240,7 +240,7 @@ class _NoteCard extends ConsumerWidget {
                               children: [
                                 Container(
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 3),
+                                      horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
                                     color: note.color.color
                                         .withValues(alpha: 0.14),
@@ -270,7 +270,7 @@ class _NoteCard extends ConsumerWidget {
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 10),
+                            const SizedBox(height: 12),
                             Text(
                               note.content,
                               maxLines: 3,
@@ -289,7 +289,7 @@ class _NoteCard extends ConsumerWidget {
                                   HeroTokens.caption.copyWith(color: h.muted),
                             ),
                             if (note.tags.isNotEmpty) ...[
-                              const SizedBox(height: 10),
+                              const SizedBox(height: 12),
                               Wrap(
                                 spacing: 6,
                                 runSpacing: 6,
@@ -303,7 +303,7 @@ class _NoteCard extends ConsumerWidget {
                                 ],
                               ),
                             ],
-                            const SizedBox(height: 10),
+                            const SizedBox(height: 12),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.end,
                               children: [
@@ -319,14 +319,14 @@ class _NoteCard extends ConsumerWidget {
                                     }
                                   },
                                 ),
-                                const SizedBox(width: 6),
+                                const SizedBox(width: 8),
                                 _ActionChip(
                                   icon: Icons.edit_outlined,
                                   label: 'Edit',
                                   color: h.accent,
                                   onTap: () => _showEditSheet(context, ref),
                                 ),
-                                const SizedBox(width: 6),
+                                const SizedBox(width: 8),
                                 _ActionChip(
                                   icon: Icons.delete_outline,
                                   label: 'Delete',
@@ -419,7 +419,7 @@ class _ActionChip extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: c.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(20),
@@ -487,7 +487,7 @@ class _CreateNoteSheetState extends ConsumerState<_CreateNoteSheet> {
           ),
           const SizedBox(height: 12),
           Text('Color', style: HeroTokens.caption.copyWith(color: h.muted)),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           _ColorPicker(
             color: _color,
             onPick: (c) => setState(() => _color = c),
@@ -502,7 +502,7 @@ class _CreateNoteSheetState extends ConsumerState<_CreateNoteSheet> {
                 color: HeroColorRole.neutral,
                 onPressed: () => Navigator.pop(context),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               HeroButton(
                 label: 'Save',
                 onPressed: () async {
@@ -575,7 +575,7 @@ class _EditNoteSheetState extends ConsumerState<_EditNoteSheet> {
           ),
           const SizedBox(height: 12),
           Text('Color', style: HeroTokens.caption.copyWith(color: h.muted)),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           _ColorPicker(
             color: _color,
             onPick: (c) => setState(() => _color = c),
@@ -590,7 +590,7 @@ class _EditNoteSheetState extends ConsumerState<_EditNoteSheet> {
                 color: HeroColorRole.neutral,
                 onPressed: () => Navigator.pop(context),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               HeroButton(
                 label: 'Save',
                 onPressed: () async {

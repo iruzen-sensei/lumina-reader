@@ -986,7 +986,7 @@ class _PillButton extends StatelessWidget {
         foregroundColor: Colors.white,
         side: const BorderSide(color: Colors.white38),
         shape: const StadiumBorder(side: BorderSide(color: Colors.white38)),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       ),
       onPressed: onPressed,
       icon: Icon(icon, size: 16),
@@ -1012,14 +1012,14 @@ class _SkipButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(24),
           onTap: onSkip,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(range.label,
                     style: const TextStyle(
                         color: Colors.white, fontWeight: FontWeight.w600)),
-                const SizedBox(width: 6),
+                const SizedBox(width: 8),
                 const Icon(Icons.fast_forward, color: Colors.white, size: 18),
               ],
             ),

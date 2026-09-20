@@ -206,7 +206,7 @@ class _AnimeAppBar extends StatelessWidget implements PreferredSizeWidget {
               ),
             )
           : Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 12, 4),
+              padding: const EdgeInsets.fromLTRB(16, 8, 12, 4),
               child: Row(
                 children: [
                   Text(
@@ -378,7 +378,7 @@ class _AnimeSelectionBar extends ConsumerWidget {
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
           child: Row(
             children: [
               HeroIconButton(
@@ -578,7 +578,7 @@ class _AnimeListView extends ConsumerWidget {
                     const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 1),
+                          horizontal: 8, vertical: 1),
                       decoration: BoxDecoration(
                         color: LuminaTheme.newColor,
                         borderRadius: BorderRadius.circular(8),
@@ -592,7 +592,7 @@ class _AnimeListView extends ConsumerWidget {
                   ],
                 ],
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(

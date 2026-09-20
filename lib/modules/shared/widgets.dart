@@ -19,19 +19,18 @@ import '../../core/theme.dart';
 import '../../core/ui/lumina_ui.dart';
 import '../../models/models.dart';
 
-/// A book / anime cover card in the Apple × ElevenLabs style: rounded
-/// cover on top (unread badge + thin progress bar on the image), title +
-/// metadata lines below it. The cover carries the system's ONE product
-/// shadow (imagery resting on a surface — the Apple signature). Pass
-/// [showTitle] = false when the parent already renders the title (list
-/// rows).
+/// A book / anime cover card in the Lumina Noir style: rounded cover on
+/// top (unread badge + thin progress bar on the image), title + metadata
+/// lines below it. The cover carries the system's ONE product shadow
+/// (imagery resting on a surface — the Apple signature). Pass [showTitle]
+/// = false when the parent already renders the title (list rows).
 class BookCover extends StatelessWidget {
   const BookCover({
     super.key,
     required this.manga,
     this.width = 110,
     this.height = 160,
-    this.radius = 12,
+    this.radius = 10,
     this.showProgress = true,
     this.showTitle = true,
     this.selected = false,
@@ -75,9 +74,11 @@ class BookCover extends StatelessWidget {
             height: coverHeight,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(radius),
-              border: selected ? Border.all(color: h.accent, width: 2.5) : null,
+              border: selected
+                  ? Border.all(color: h.accent, width: 2)
+                  : null,
               // Apple's ONE product shadow — covers are product imagery
-              // resting on the parchment canvas. Never applied to chrome.
+              // resting on the noir canvas. Never applied to chrome.
               boxShadow: h.productShadow,
             ),
             child: ClipRRect(
@@ -97,26 +98,27 @@ class BookCover extends StatelessWidget {
                     )
                   else
                     const _CoverPlaceholder(),
-                  // Unread count badge (HeroUI soft-accent pill).
+                  // Unread count badge — white pill, near-black label
+                  // (the monochrome accent, x.ai polarity flip).
                   if (manga.unreadCount > 0)
                     Positioned(
                       top: 6,
                       right: 6,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 7, vertical: 2.5),
+                            horizontal: 8, vertical: 2.5),
                         decoration: BoxDecoration(
                           color: h.accent,
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
                           '${manga.unreadCount}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontFamily: HeroTokens.fontSans,
-                            color: Colors.white,
+                            color: h.accentFg,
                             fontSize: 11,
                             height: 1.2,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
@@ -128,10 +130,10 @@ class BookCover extends StatelessWidget {
                       left: 6,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2.5),
+                            horizontal: 8, vertical: 2.5),
                         decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.55),
-                          borderRadius: BorderRadius.circular(7),
+                          color: Colors.black.withValues(alpha: 0.60),
+                          borderRadius: BorderRadius.circular(6),
                         ),
                         child: const Text(
                           'EP',
@@ -140,7 +142,7 @@ class BookCover extends StatelessWidget {
                             color: Colors.white,
                             fontSize: 10,
                             height: 1.2,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
@@ -157,8 +159,8 @@ class BookCover extends StatelessWidget {
                         ),
                         child: LinearProgressIndicator(
                           value: manga.progress,
-                          minHeight: 3.5,
-                          backgroundColor: Colors.black.withValues(alpha: 0.35),
+                          minHeight: 3,
+                          backgroundColor: Colors.black.withValues(alpha: 0.40),
                           valueColor: AlwaysStoppedAnimation(
                             manga.progress >= 1
                                 ? LuminaTheme.finishedColor
@@ -180,11 +182,11 @@ class BookCover extends StatelessWidget {
                   color: h.accent,
                   shape: BoxShape.circle,
                 ),
-                padding: const EdgeInsets.all(3.5),
-                child: const Icon(
+                padding: const EdgeInsets.all(4),
+                child: Icon(
                   Icons.check_rounded,
-                  size: 15,
-                  color: Colors.white,
+                  size: 14,
+                  color: h.accentFg,
                 ),
               ),
             ),
@@ -207,7 +209,7 @@ class BookCover extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(child: cover),
-          const SizedBox(height: 7),
+          const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 1),
             child: Text(
@@ -220,7 +222,7 @@ class BookCover extends StatelessWidget {
                 fontSize: 13,
                 height: 1.25,
                 letterSpacing: -0.1,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ),
@@ -241,7 +243,7 @@ class BookCover extends StatelessWidget {
                 fontSize: 12,
                 height: 1.2,
                 letterSpacing: 0.05,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w400,
               ),
             ),
           ),
@@ -305,9 +307,9 @@ class _CoverPlaceholder extends StatelessWidget {
   }
 }
 
-/// Pill shaped chip used throughout the library / detail screens.
-/// Selected: accent-soft bg + accent fg (HeroUI soft chip). Unselected:
-/// default bg + muted fg.
+/// Pill shaped chip used throughout the library / detail screens — the
+/// monochrome filter dialect. Selected: soft accent fill (white 10% on
+/// noir) + foreground text. Unselected: control fill + muted text.
 class StatusChip extends StatelessWidget {
   const StatusChip({
     super.key,
@@ -327,14 +329,17 @@ class StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
-    final base = color ?? h.accent;
 
+    // Monochrome selection; a custom colour (status filters) keeps its
+    // semantic hue only in the text/dot, never as a loud fill.
+    final fg = selected
+        ? (color != null ? color! : h.foreground)
+        : h.muted;
     final bg = selected
-        ? (h.isDark
-            ? base.withValues(alpha: 0.20)
-            : base.withValues(alpha: 0.12))
+        ? (color != null
+            ? color!.withValues(alpha: 0.14)
+            : h.accentSoft)
         : h.dflt;
-    final fg = selected ? (h.isDark ? _lighten(base) : _darken(base)) : h.muted;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -342,7 +347,7 @@ class StatusChip extends StatelessWidget {
       child: AnimatedContainer(
         duration:
             heroAnimationsEnabled ? HeroTokens.motionColor : Duration.zero,
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7.5),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(HeroTokens.radiusChip),
@@ -351,14 +356,14 @@ class StatusChip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (icon != null) ...[
-              Icon(icon, size: 15, color: fg),
-              const SizedBox(width: 5),
+              Icon(icon, size: 14, color: fg),
+              const SizedBox(width: 4),
             ],
             Text(
               label,
               style: TextStyle(
                 fontFamily: HeroTokens.fontSans,
-                fontSize: 13,
+                fontSize: 12.5,
                 height: 1.2,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                 color: fg,
@@ -368,16 +373,6 @@ class StatusChip extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  static Color _lighten(Color c) {
-    final hsl = HSLColor.fromColor(c);
-    return hsl.withLightness((hsl.lightness + 0.14).clamp(0.0, 1.0)).toColor();
-  }
-
-  static Color _darken(Color c) {
-    final hsl = HSLColor.fromColor(c);
-    return hsl.withLightness((hsl.lightness - 0.06).clamp(0.0, 1.0)).toColor();
   }
 }
 

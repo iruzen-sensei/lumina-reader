@@ -274,20 +274,12 @@ class _LibraryHeader extends StatelessWidget implements PreferredSizeWidget {
               ),
             )
           : Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 10, 2),
+              padding: const EdgeInsets.fromLTRB(16, 8, 12, 2),
               child: Stack(
                 children: [
-                  // ElevenLabs atmospheric orbs blooming behind the title.
+                  // Monochrome light bloom behind the title (whisper-quiet).
                   const Positioned.fill(
-                    child: HeroOrbs(
-                      colors: [
-                        HeroTokens.orbSky,
-                        HeroTokens.orbPeach,
-                        HeroTokens.orbRose,
-                      ],
-                      opacity: 0.34,
-                      seed: 3,
-                    ),
+                    child: HeroOrbs(opacity: 0.4, seed: 3),
                   ),
                   Row(
                     children: [
@@ -297,7 +289,7 @@ class _LibraryHeader extends StatelessWidget implements PreferredSizeWidget {
                           spacing: 8,
                           runSpacing: 4,
                           children: [
-                            // Editorial display title — Spectral Light 300.
+                            // Weight-400 grotesk display title (Söhne-class).
                             Text(
                               'Library',
                               style: HeroTokens.display.copyWith(
@@ -398,7 +390,7 @@ class _QuickBadge extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(20),
@@ -408,7 +400,7 @@ class _QuickBadge extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, size: 14, color: color),
-            const SizedBox(width: 5),
+            const SizedBox(width: 4),
             Text(
               label,
               style: TextStyle(
@@ -480,7 +472,7 @@ class _LibraryFilterBar extends ConsumerWidget {
     ];
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Row(
         children: [
           Expanded(
@@ -513,14 +505,14 @@ class _LibraryFilterBar extends ConsumerWidget {
         final h = HeroScope.of(ctx);
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+            padding: const EdgeInsets.fromLTRB(16, 4, 20, 20),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Status',
                     style: HeroTokens.caption.copyWith(color: h.muted)),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
@@ -541,10 +533,10 @@ class _LibraryFilterBar extends ConsumerWidget {
                       ),
                   ],
                 ),
-                const SizedBox(height: 22),
+                const SizedBox(height: 24),
                 Text('Sort by',
                     style: HeroTokens.caption.copyWith(color: h.muted)),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
                 for (final sort in LibrarySort.values)
                   HeroListTile(
                     title: sort.label,
@@ -594,7 +586,7 @@ class _FilterButton extends StatelessWidget {
         duration:
             heroAnimationsEnabled ? HeroTokens.motionColor : Duration.zero,
         height: 40,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         decoration: BoxDecoration(
           color: active ? h.accentSoft : h.dflt,
           borderRadius: BorderRadius.circular(HeroTokens.radiusButton),
@@ -608,7 +600,7 @@ class _FilterButton extends StatelessWidget {
               color: active ? h.accentSoftFg : h.muted,
             ),
             if (active) ...[
-              const SizedBox(width: 6),
+              const SizedBox(width: 8),
               Text(
                 '$activeCount',
                 style: TextStyle(
@@ -635,7 +627,7 @@ class _SelectionBar extends ConsumerWidget {
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
           child: Row(
             children: [
               HeroIconButton(
@@ -948,7 +940,7 @@ class _LibraryListView extends ConsumerWidget {
                     const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 1),
+                          horizontal: 8, vertical: 1),
                       decoration: BoxDecoration(
                         color: LuminaTheme.newColor,
                         borderRadius: BorderRadius.circular(8),
@@ -962,7 +954,7 @@ class _LibraryListView extends ConsumerWidget {
                   ],
                 ],
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(

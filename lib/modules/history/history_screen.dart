@@ -278,7 +278,7 @@ class _HistoryTile extends ConsumerWidget {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 4),
                     Text(
                       '${entry.chapterName} · ${timeAgo(entry.readAt)}',
                       maxLines: 1,
@@ -286,7 +286,7 @@ class _HistoryTile extends ConsumerWidget {
                       style: HeroTokens.caption.copyWith(color: h.muted),
                     ),
                     if (entry.progress > 0) ...[
-                      const SizedBox(height: 7),
+                      const SizedBox(height: 8),
                       HeroProgress(
                         value: entry.progress,
                         height: 4,

@@ -798,7 +798,7 @@ class PdfReaderSettingsSheet extends ConsumerWidget {
     final notifier = ref.read(pdfReaderSettingsProvider.notifier);
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        padding: const EdgeInsets.fromLTRB(16, 0, 20, 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,

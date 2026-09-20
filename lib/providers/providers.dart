@@ -1738,7 +1738,10 @@ extension ReaderBgColorX on ReaderBgColor {
 
 class SettingsState {
   SettingsState({
-    this.themeMode = AppThemeMode.system,
+    // Noir-first: the app is designed primarily for the black theme
+    // (OpenAI/ElevenLabs/Grok dialect) — dark is the default for new
+    // installs; users can still switch to system/light/amoled.
+    this.themeMode = AppThemeMode.dark,
     this.einkMode = false,
     this.fontSize = 14.0,
     this.customSeed = const Color(0xFF6750A4),
@@ -1862,7 +1865,7 @@ class AppSettingsNotifier extends StateNotifier<SettingsState> {
     }
 
     return SettingsState(
-      themeMode: theme(AppThemeMode.system),
+      themeMode: theme(AppThemeMode.dark),
       einkMode: s.einkMode ?? false,
       fontSize: (s.uiFontSize ?? 14).toDouble(),
       customSeed: Color(s.accentColor ?? 0xFF6750A4),

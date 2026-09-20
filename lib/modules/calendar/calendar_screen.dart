@@ -52,7 +52,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 8, 0),
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
               child: Row(
                 children: [
                   Flexible(
@@ -66,7 +66,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 12),
                   // Which tracker feeds the schedule.
                   const HeroChip(
                     label: 'AniList',
@@ -121,7 +121,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                       // Bottom nav bar clearance.
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
                       itemCount: episodes.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
                       itemBuilder: (context, i) =>
                           _AiringCard(episode: episodes[i]),
                     ),
@@ -234,7 +234,7 @@ class _DayHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+      padding: const EdgeInsets.fromLTRB(16, 12, 20, 8),
       child: Row(
         children: [
           Flexible(
@@ -379,12 +379,12 @@ class _AiringCardState extends ConsumerState<_AiringCard> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: 4),
                 Row(
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 7, vertical: 2),
+                          horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
                         color: h.accentSoft,
                         borderRadius: BorderRadius.circular(7),
@@ -410,7 +410,7 @@ class _AiringCardState extends ConsumerState<_AiringCard> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
                 Row(
                   children: [
                     Icon(

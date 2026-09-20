@@ -1,41 +1,40 @@
 // Copyright 2024 Lumina Reader Contributors
 // Licensed under the Apache License, Version 2.0
 //
-// LUMINA DESIGN SYSTEM — Apple × ElevenLabs
+// LUMINA DESIGN SYSTEM — "Lumina Noir"
 //
-// Built strictly from two DESIGN.md analyses (VoltAgent/awesome-design-md):
+// A monochrome black premium language built from three DESIGN.md analyses
+// (VoltAgent/awesome-design-md) plus the OpenAI/ChatGPT product dialect:
 //
-//  APPLE (colors, components, glassmorphism, motion):
-//   * Single interactive accent — Action Blue #0066CC (Focus Blue #0071E3 on
-//     press, Sky Link Blue #2997FF for tinted text on dark surfaces).
-//   * Canvas rhythm — pure white ↔ parchment #F5F5F7; the color change IS
-//     the divider. Cards float via 1px hairlines (#E0E0E0), NEVER shadows.
-//   * Exactly ONE shadow in the whole system: the product shadow
-//     rgba(0,0,0,0.22) 0/5/30 — reserved for imagery resting on a surface.
-//   * Radii grammar: pill (999) for every action/CTA/chip/input-search,
-//     18px for utility cards, 12px for compact controls.
-//   * Glassmorphism: frosted surfaces — backdrop blur + saturate(180%) +
-//     translucent canvas fill + hairline (global nav, sub-nav, sticky bars,
-//     circular chips over photography at #D2D2D7 @64%).
-//   * Micro-interaction: scale(0.95) press on every button — system-wide.
-//   * 44px minimum touch targets.
+//  X.AI / GROK (the black chassis — canvas, hairlines, white CTAs):
+//   * Canvas #0A0A0A near-black edge-to-edge; the only page surface.
+//   * Layered black ladder for elevation: #141414 cards, #1C1C1E elevated
+//     fills, #262628 strong wells — surface contrast IS the elevation.
+//   * 1px hairlines (#26262B) carry all definition. NO shadows on chrome.
+//   * Interactive colour = WHITE. Solid primary = white pill w/ near-black
+//     text; every other control = hairline outline / soft-white fills.
+//   * Display type: weight 400, never bold, negative tracking. Mono
+//     UPPERCASE eyebrows for labels (the engineered voice).
+//   * Text ramp: ink #FFFFFF, body #A1A1A8 secondary, hairline dividers.
 //
-//  ELEVENLABS (typography, atmosphere, badges):
-//   * Display = editorial serif at weight 300 — NEVER bold. Licensed
-//     Waldenburg → open substitute "Spectral Light" (true 300 cut), with
-//     negative tracking (-0.32…-0.36px at 32-34px display sizes).
-//   * Body/UI = Inter 400/500 with subtle positive tracking (+0.15…+0.18px)
-//     — the editorial dialect. Ramp: 16 / 15 / 14 / 13 body-captions,
-//     20 / 18 titles, 12/600/+0.96px UPPERCASE section labels & badges.
-//   * Atmospheric gradient orbs (mint/peach/lavender/sky/rose) — pure
-//     atmosphere, never on controls.
-//   * Semantic: success #16A34A, error #DC2626.
+//  ELEVENLABS (typography + component dialect):
+//   * Body/UI = Inter 400/500 with the editorial +0.15px tracking.
+//   * Button labels 14-15px/500 on 40px-max pills; badge pills 12/600
+//     UPPERCASE +0.96px; focus thickens input borders to 2px.
+//   * Voice-rows: transparent rows on hairline dividers, 32px circular
+//     icon plates. Semantic: success #16A34A / error #DC2626 (light).
 //
-//  MOTION (iOS-grade, on top of both MDs):
-//   * Spring physics everywhere: Cubic(0.34,1.56,0.64,1) for bouncy
-//     releases, Cubic(0.22,1,0.36,1) for smooth settles.
-//   * Staggered spring entrances for grids and lists.
-//   * 380-480ms transforms/entrances, 180ms color fades.
+//  APPLE (structure, motion, restraint):
+//   * Frosted glass ONLY on nav surfaces: canvas fill ~78% over a clipped
+//     backdrop blur + top hairline — never decorative.
+//   * THE product shadow rgba(0,0,0,.22) 0/5/30 reserved for imagery
+//     (book covers) resting on a surface. Never on chrome.
+//   * scale(0.95) press micro-interaction system-wide; iOS spring physics
+//     Cubic(0.34,1.56,0.64,1) releases, staggered entrances; 44px targets.
+//
+//  OPENAI / CHATGPT (the product-DNA reference): monochrome restraint,
+//   compact composer-class components, 16px screen margins, hairline
+//   rgba(255,255,255,.1) borders, one accent doing all the work.
 //
 // The Hero* widget anatomy (Button/Chip/Card/Input/Tabs/Switch...) keeps the
 // exact public API of the previous design system — only the VALUES changed,
@@ -62,76 +61,81 @@ class HeroTokens {
   HeroTokens._();
 
   // -- Type families ---------------------------------------------------------
-  /// Body / UI family (ElevenLabs body dialect).
+  /// Body / UI / display family — the single grotesk (Söhne / Waldenburg /
+  /// Universal Sans class). Display slots run weight 400, never bold.
   static const String fontSans = 'Inter';
 
-  /// Display family — editorial serif, Light 300 only (ElevenLabs display
-  /// dialect; Waldenburg's open substitute with a true 300 cut).
-  static const String fontSerif = 'Spectral';
+  /// Mono face for UPPERCASE eyebrow labels, stat values and technical
+  /// captions (the x.ai Geist-Mono / Warp DM-Mono engineered dialect).
+  static const String fontMono = 'JetBrainsMono';
 
-  // -- Accents (Apple: the single interactive color) -------------------------
-  /// Action Blue — every interactive element, light surfaces.
-  static const Color accent = Color(0xFF0066CC);
+  /// Legacy alias — the editorial serif display was retired with the
+  /// light-canvas language; all display slots are now [fontSans] 400.
+  static const String fontSerif = fontSans;
 
-  /// Focus Blue — pressed / focused variant (Apple primary-focus).
-  static const Color accentHover = Color(0xFF0071E3);
+  // -- Accents (monochrome: WHITE is the interactive color) ------------------
+  /// The interactive colour on the noir canvas — pure white. Primary CTAs
+  /// are white pills with near-black text (the x.ai polarity flip).
+  static const Color accent = Color(0xFFFFFFFF);
 
-  /// Sky Link Blue — tinted accent text on dark surfaces (Apple
-  /// primary-on-dark); Action Blue disappears against near-black tiles.
-  static const Color accentOnDark = Color(0xFF2997FF);
+  /// Pressed / focused variant of the white accent.
+  static const Color accentHover = Color(0xFFE4E4E8);
 
-  // -- Semantic (ElevenLabs semantic tokens + amber for data states) --------
+  /// Compat alias — on the noir canvas the on-dark accent IS white.
+  static const Color accentOnDark = Color(0xFFFFFFFF);
+
+  // -- Semantic (status ONLY — never decor) -----------------------------------
   static const Color success = Color(0xFF16A34A); // ElevenLabs success
   static const Color successHover = Color(0xFF15803D);
-  static const Color successDark = Color(0xFF34C759); // iOS green, on black
+  static const Color successDark = Color(0xFF30D158); // vivid on black
   static const Color warningLight = Color(0xFFD97706); // amber data state
   static const Color warningDark = Color(0xFFF5A524);
   static const Color dangerLight = Color(0xFFDC2626); // ElevenLabs error
-  static const Color dangerDark = Color(0xFFFF453A); // iOS red, on black
+  static const Color dangerDark = Color(0xFFFF453A);
   static const Color dangerHoverLight = Color(0xFFB91C1C);
   static const Color dangerHoverDark = Color(0xFFFF6961);
 
-  // -- Light theme (Apple light surfaces) -------------------------------------
-  static const Color lightBackground = Color(0xFFF5F5F7); // parchment canvas
+  // -- Light theme (secondary — monochrome inverted) ---------------------------
+  static const Color lightBackground = Color(0xFFF5F5F5); // off-white canvas
   static const Color lightSurface = Color(0xFFFFFFFF); // white cards
-  static const Color lightSurface2 = Color(0xFFFAFAFC); // pearl
-  static const Color lightSurface3 = Color(0xFFF0F0F0); // divider-soft fill
-  static const Color lightSurfaceHover = Color(0xFFF0EFED); // warm hover
-  static const Color lightForeground = Color(0xFF1D1D1F); // near-black ink
-  static const Color lightMuted = Color(0xFF7A7A7A); // ink-muted-48
-  static const Color lightDefault = Color(0xFFE5E5EA); // iOS gray5 fills
-  static const Color lightDefaultHover = Color(0xFFD8D8DC);
-  static const Color lightBorder = Color(0xFFE0E0E0); // hairline
-  static const Color lightSeparator = Color(0xFFF0F0F0); // divider-soft
+  static const Color lightSurface2 = Color(0xFFFAFAFA);
+  static const Color lightSurface3 = Color(0xFFEFEFF1); // soft fills
+  static const Color lightSurfaceHover = Color(0xFFF0F0F2);
+  static const Color lightForeground = Color(0xFF0A0A0A); // near-black ink
+  static const Color lightMuted = Color(0xFF6E6E76);
+  static const Color lightDefault = Color(0xFFE8E8EB);
+  static const Color lightDefaultHover = Color(0xFFDCDCDF);
+  static const Color lightBorder = Color(0xFFE4E4E8); // hairline
+  static const Color lightSeparator = Color(0xFFEFEFF1);
 
-  // -- Dark theme (Apple dark tiles + iOS system darks) -----------------------
-  static const Color darkBackground = Color(0xFF000000); // true void
-  static const Color darkSurface = Color(0xFF1C1C1E); // cards on void
-  static const Color darkSurface2 = Color(0xFF2A2A2C); // Apple tile-2
-  static const Color darkSurface3 = Color(0xFF252527); // Apple tile-3 wells
-  static const Color darkSurfaceHover = Color(0xFF232326);
+  // -- Dark theme (PRIMARY — the layered-black noir ladder) --------------------
+  static const Color darkBackground = Color(0xFF0A0A0A); // x.ai canvas
+  static const Color darkSurface = Color(0xFF141414); // cards
+  static const Color darkSurface2 = Color(0xFF1C1C1E); // elevated fills
+  static const Color darkSurface3 = Color(0xFF262628); // strong wells
+  static const Color darkSurfaceHover = Color(0xFF1F1F21);
   static const Color darkForeground = Color(0xFFFFFFFF);
-  static const Color darkMuted = Color(0xFFCCCCCC); // Apple body-muted
-  static const Color darkDefault = Color(0xFF2C2C2E); // iOS gray5 dark
-  static const Color darkDefaultHover = Color(0xFF3A3A3C);
-  static const Color darkBorder = Color(0xFF38383A);
-  static const Color darkSeparator = Color(0xFF26262A);
-  static const Color darkSegment = Color(0xFF48484A);
+  static const Color darkMuted = Color(0xFFA1A1A8); // secondary copy
+  static const Color darkDefault = Color(0xFF1E1E21); // control fills
+  static const Color darkDefaultHover = Color(0xFF2A2A2E);
+  static const Color darkBorder = Color(0xFF26262B); // hairline
+  static const Color darkSeparator = Color(0xFF17171A);
+  static const Color darkSegment = Color(0xFF2E2E33); // segment thumb
 
-  // -- Radii (Apple radius grammar) -------------------------------------------
-  /// Base radius (Apple rounded.lg — store utility cards).
-  static const double radius = 18;
+  // -- Radii (engineered, tight — never bubbly) -------------------------------
+  /// Base radius (cards + inputs — the x.ai 8-12px card dialect).
+  static const double radius = 12;
 
-  /// Field radius — pill (Apple search-input is a full pill).
-  static const double radiusField = 999;
+  /// Field radius — rounded rect (x.ai/ElevenLabs text-input dialect).
+  static const double radiusField = 12;
 
-  /// Chip radius — pill (Apple configurator chips / ElevenLabs badge-pill).
+  /// Chip radius — pill (ElevenLabs badge-pill).
   static const double radiusChip = 999;
 
-  /// Card radius (Apple rounded.lg utility card).
-  static const double radiusCard = 18;
+  /// Card radius (tight rectangle, hairline defined).
+  static const double radiusCard = 12;
 
-  /// Button radius — pill (the signature Apple CTA grammar).
+  /// Button radius — pill (the x.ai/ElevenLabs CTA grammar).
   static const double radiusButton = 999;
 
   /// Tabs container radius — pill (iOS segmented control).
@@ -201,48 +205,49 @@ class HeroTokens {
   static const double space6 = 24;
   static const double space8 = 32;
 
-  // -- Typography (ElevenLabs ramp: Spectral 300 display / Inter body) ---------
-  /// Display headline — Spectral Light 300, tight tracking, never bold.
+  // -- Typography (grotesk 400 display / Inter body / mono eyebrows) ----------
+  /// Display headline — Inter 400, tight tracking, never bold (the
+  /// x.ai/Warp weight-400 display dialect; Söhne-class).
   static const TextStyle display = TextStyle(
-    fontFamily: fontSerif,
-    fontSize: 34,
-    height: 1.13,
-    fontWeight: FontWeight.w300,
-    letterSpacing: -0.34,
-  );
-
-  /// Large screen titles — Spectral Light 300.
-  static const TextStyle titleLarge = TextStyle(
-    fontFamily: fontSerif,
-    fontSize: 26,
-    height: 1.15,
-    fontWeight: FontWeight.w300,
-    letterSpacing: -0.26,
-  );
-
-  /// Component titles — Inter 500 (ElevenLabs title dialect).
-  static const TextStyle title = TextStyle(
     fontFamily: fontSans,
-    fontSize: 17,
-    height: 1.35,
+    fontSize: 30,
+    height: 1.2,
+    fontWeight: FontWeight.w400,
+    letterSpacing: -0.5,
+  );
+
+  /// Large screen titles / section heads — Inter 500 (ElevenLabs title-md).
+  static const TextStyle titleLarge = TextStyle(
+    fontFamily: fontSans,
+    fontSize: 20,
+    height: 1.3,
     fontWeight: FontWeight.w500,
     letterSpacing: -0.2,
   );
 
-  /// Body copy — Inter 400 with the editorial +0.16px tracking.
+  /// Component titles — Inter 500 (ElevenLabs title-sm, mobile-scaled).
+  static const TextStyle title = TextStyle(
+    fontFamily: fontSans,
+    fontSize: 16,
+    height: 1.4,
+    fontWeight: FontWeight.w500,
+    letterSpacing: -0.1,
+  );
+
+  /// Body copy — Inter 400 with the editorial +0.15px tracking.
   static const TextStyle body = TextStyle(
     fontFamily: fontSans,
-    fontSize: 15.5,
+    fontSize: 15,
     height: 1.5,
     fontWeight: FontWeight.w400,
-    letterSpacing: 0.16,
+    letterSpacing: 0.15,
   );
 
   /// Secondary body — Inter 400 (ElevenLabs body-sm).
   static const TextStyle bodySmall = TextStyle(
     fontFamily: fontSans,
     fontSize: 14,
-    height: 1.47,
+    height: 1.45,
     fontWeight: FontWeight.w400,
     letterSpacing: 0.14,
   );
@@ -251,7 +256,7 @@ class HeroTokens {
   static const TextStyle caption = TextStyle(
     fontFamily: fontSans,
     fontSize: 13,
-    height: 1.45,
+    height: 1.4,
     fontWeight: FontWeight.w400,
     letterSpacing: 0.1,
   );
@@ -266,7 +271,19 @@ class HeroTokens {
     letterSpacing: 0.96,
   );
 
-  // -- Atmosphere (ElevenLabs gradient orbs — pure decoration) -----------------
+  /// Eyebrow labels — the engineered voice: JetBrains Mono 400, 11px,
+  /// +1.2px tracking, always UPPERCASE (x.ai caption-mono dialect).
+  static const TextStyle eyebrow = TextStyle(
+    fontFamily: fontMono,
+    fontSize: 11,
+    height: 1.4,
+    fontWeight: FontWeight.w400,
+    letterSpacing: 1.2,
+  );
+
+  // -- Atmosphere (retired pastels — kept as compat constants) -----------------
+  // The noir language renders atmosphere as monochrome light blooms; these
+  // hue constants remain so existing call-sites compile (values muted).
   static const Color orbMint = Color(0xFFA7E5D3);
   static const Color orbPeach = Color(0xFFF4C5A8);
   static const Color orbLavender = Color(0xFFC8B8E0);
@@ -321,23 +338,25 @@ class HeroThemeData {
 
   bool get isDark => brightness == Brightness.dark;
 
-  /// Frosted-glass fill — the Apple sub-nav recipe: canvas at ~78% over a
-  /// backdrop blur (pair with [HeroGlass]).
+  /// Frosted-glass fill — the nav-surface recipe: canvas at ~78% over a
+  /// clipped backdrop blur (pair with [HeroGlass]). Dark = the noir canvas
+  /// itself going translucent, so scrolling content reads through as a
+  /// dimmed smear (ChatGPT/Codex nav behaviour), never a bright frost.
   Color get glass =>
-      isDark ? const Color(0xD11C1C1E) : const Color(0xC7F5F5F7);
+      isDark ? const Color(0xC70A0A0A) : const Color(0xD1F5F5F5);
 
-  /// Circular control chips floating over imagery (Apple translucent chip,
-  /// #D2D2D7 at 64%).
+  /// Circular control chips floating over imagery — near-black at ~72% with
+  /// a white hairline (the reader/player overlay material).
   Color get chipTranslucent =>
-      isDark ? const Color(0xA63A3A3C) : const Color(0xA3D2D2D7);
+      isDark ? const Color(0xB81C1C1E) : const Color(0xB3FFFFFF);
 
   /// The single imagery shadow, theme-aware.
   List<BoxShadow> get productShadow =>
       isDark ? HeroTokens.productShadowDark : HeroTokens.productShadow;
 
-  /// Backdrop for modals (Apple scrim).
+  /// Backdrop for modals (deep scrim).
   Color get backdrop =>
-      isDark ? const Color(0x99000000) : const Color(0x59000000);
+      isDark ? const Color(0xA0000000) : const Color(0x59000000);
 
   static HeroThemeData light() => const HeroThemeData(
         brightness: Brightness.light,
@@ -352,10 +371,10 @@ class HeroThemeData {
         defaultHover: HeroTokens.lightDefaultHover,
         border: HeroTokens.lightBorder,
         separator: HeroTokens.lightSeparator,
-        accent: HeroTokens.accent,
-        accentSoft: Color(0x1A0066CC), // Action Blue 10%
-        accentSoftFg: Color(0xFF0066CC),
-        accentFg: Colors.white, // white on Action Blue (4.6:1)
+        accent: Color(0xFF0A0A0A), // ink — the interactive colour when light
+        accentSoft: Color(0x0F0A0A0A), // ink 6%
+        accentSoftFg: Color(0xFF0A0A0A),
+        accentFg: Colors.white, // white on ink (4.6:1+)
         success: HeroTokens.success,
         successSoft: Color(0x1A16A34A),
         successSoftFg: Color(0xFF15803D),
@@ -382,19 +401,19 @@ class HeroThemeData {
         defaultHover: HeroTokens.darkDefaultHover,
         border: HeroTokens.darkBorder,
         separator: HeroTokens.darkSeparator,
-        accent: HeroTokens.accent, // Action Blue still works on dark
-        accentSoft: Color(0x292997FF), // Sky Link Blue 16% on dark
-        accentSoftFg: Color(0xFF66B2FF), // readable Sky Link on tint
-        accentFg: Colors.white,
+        accent: Color(0xFFFFFFFF), // WHITE — the interactive colour
+        accentSoft: Color(0x1AFFFFFF), // white 10% (selected fills)
+        accentSoftFg: Color(0xFFFFFFFF),
+        accentFg: Color(0xFF0A0A0A), // near-black text on white pills
         success: HeroTokens.successDark,
-        successSoft: Color(0x2434C759),
-        successSoftFg: Color(0xFF5AD177),
+        successSoft: Color(0x2930D158),
+        successSoftFg: Color(0xFF7CE8A2),
         warning: HeroTokens.warningDark,
-        warningSoft: Color(0x24F5A524),
+        warningSoft: Color(0x29F5A524),
         warningSoftFg: Color(0xFFFBBF24),
         danger: HeroTokens.dangerDark,
-        dangerSoft: Color(0x24FF453A),
-        dangerSoftFg: Color(0xFFFF6961),
+        dangerSoft: Color(0x29FF453A),
+        dangerSoftFg: Color(0xFFFF7A70),
         surfaceShadow: HeroTokens.surfaceShadowDark,
         overlayShadow: [
           BoxShadow(
@@ -498,8 +517,10 @@ Color _mix(Color a, Color b, double t) {
 }
 
 // ---------------------------------------------------------------------------
-// HeroGlass — Apple frosted surface (backdrop blur + translucent canvas
-// fill + hairline). The sub-nav / sticky-bar / over-imagery material.
+// HeroGlass — frosted nav surface. A restrained, functional frost: clipped
+// backdrop blur + translucent CANVAS fill (near-black on noir) + hairline.
+// Reserved for navigation chrome (tab bar, sticky headers, reader overlays)
+// — never decorative, never on content cards.
 // ---------------------------------------------------------------------------
 
 class HeroGlass extends StatelessWidget {
@@ -508,7 +529,7 @@ class HeroGlass extends StatelessWidget {
     required this.child,
     this.borderRadius,
     this.color,
-    this.blurSigma = 22,
+    this.blurSigma = 18,
     this.border,
     this.padding,
   });
@@ -561,8 +582,8 @@ class HeroGlassIconButton extends StatefulWidget {
     super.key,
     required this.icon,
     this.onPressed,
-    this.size = 44,
-    this.iconSize = 22,
+    this.size = 40,
+    this.iconSize = 19,
     this.color,
   });
 
@@ -600,8 +621,8 @@ class _HeroGlassIconButtonState extends State<HeroGlassIconButton> {
           color: h.chipTranslucent,
           border: Border.all(
             color: h.isDark
-                ? Colors.white.withValues(alpha: 0.14)
-                : Colors.white.withValues(alpha: 0.45),
+                ? Colors.white.withValues(alpha: 0.16)
+                : Colors.white.withValues(alpha: 0.55),
             width: 1,
           ),
           child: SizedBox(
@@ -750,24 +771,23 @@ class _HeroEntranceState extends State<HeroEntrance>
 }
 
 // ---------------------------------------------------------------------------
-// HeroOrbs — ElevenLabs atmospheric gradient orbs. Pure decoration:
-// soft radial blooms drifting behind hero copy / empty states. Never on
+// HeroOrbs — monochrome light blooms. The retired pastel atmosphere now
+// renders as soft WHITE radial glows at whisper opacity (moonlight on
+// black); on light canvases, faint ink blooms. Pure decoration, never on
 // controls, never containing content.
 // ---------------------------------------------------------------------------
 
 class HeroOrbs extends StatelessWidget {
   const HeroOrbs({
     super.key,
-    this.colors = const [
-      HeroTokens.orbSky,
-      HeroTokens.orbPeach,
-      HeroTokens.orbLavender,
-    ],
+    this.colors = const [],
     this.opacity = 0.5,
     this.seed = 0,
   });
 
   final List<Color> colors;
+
+  /// Base strength before the monochrome dampening (kept for API compat).
   final double opacity;
   final int seed;
 
@@ -780,9 +800,17 @@ class HeroOrbs extends StatelessWidget {
         if (!w.isFinite || !hgt.isFinite || w <= 0 || hgt <= 0) {
           return const SizedBox.shrink();
         }
+        final isDark = HeroScope.of(context).isDark;
+
+        // Monochrome: white blooms on noir, ink blooms on light. The old
+        // per-hue colours are intentionally ignored — the noir language
+        // has no chromatic atmosphere.
+        final bloom = isDark ? Colors.white : const Color(0xFF0A0A0A);
+        // Two blooms max — restraint (legacy colour lists ignored).
+        const count = 2;
         final big = w * 1.35;
 
-        // Deterministic placement per (index, seed) — stable across rebuilds.
+        // Deterministic placement per seed — stable across rebuilds.
         Offset pos(int i) {
           final x = ((seed * 37 + i * 613) % 100) / 100 * w;
           final y = ((seed * 89 + i * 277) % 100) / 100 * hgt;
@@ -792,7 +820,7 @@ class HeroOrbs extends StatelessWidget {
         return Stack(
           clipBehavior: Clip.none,
           children: [
-            for (var i = 0; i < colors.length; i++)
+            for (var i = 0; i < count; i++)
               Positioned(
                 left: pos(i).dx - big / 4,
                 top: pos(i).dy - big / 4,
@@ -804,8 +832,11 @@ class HeroOrbs extends StatelessWidget {
                       shape: BoxShape.circle,
                       gradient: RadialGradient(
                         colors: [
-                          colors[i].withValues(alpha: opacity),
-                          colors[i].withValues(alpha: 0),
+                          // Whisper-quiet glows (≈4-5% effective alpha).
+                          bloom.withValues(
+                              alpha: (opacity * (isDark ? 0.10 : 0.06))
+                                  .clamp(0.0, 0.08)),
+                          bloom.withValues(alpha: 0),
                         ],
                         stops: const [0.0, 1.0],
                       ),
@@ -821,8 +852,8 @@ class HeroOrbs extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// HeroLargeTitle — the editorial screen header: ElevenLabs caption-uppercase
-// overline + Spectral Light display title (+ optional Inter subtitle).
+// HeroLargeTitle — the screen header: mono UPPERCASE eyebrow overline +
+// weight-400 tight-tracked Inter display (+ optional Inter subtitle).
 // ---------------------------------------------------------------------------
 
 class HeroLargeTitle extends StatelessWidget {
@@ -832,7 +863,7 @@ class HeroLargeTitle extends StatelessWidget {
     this.overline,
     this.subtitle,
     this.trailing,
-    this.padding = const EdgeInsets.fromLTRB(20, 16, 20, 8),
+    this.padding = const EdgeInsets.fromLTRB(HeroTokens.space4, HeroTokens.space3, HeroTokens.space4, HeroTokens.space2),
   });
 
   final String title;
@@ -856,16 +887,16 @@ class HeroLargeTitle extends StatelessWidget {
                 if (overline != null) ...[
                   Text(
                     overline!.toUpperCase(),
-                    style: HeroTokens.captionUpper.copyWith(color: h.muted),
+                    style: HeroTokens.eyebrow.copyWith(color: h.muted),
                   ),
-                  const SizedBox(height: 5),
+                  const SizedBox(height: 8),
                 ],
                 Text(
                   title,
                   style: HeroTokens.display.copyWith(color: h.foreground),
                 ),
                 if (subtitle != null) ...[
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 8),
                   Text(
                     subtitle!,
                     style: HeroTokens.bodySmall.copyWith(color: h.muted),
@@ -925,11 +956,11 @@ class _HeroButtonState extends State<HeroButton> {
   bool _hovered = false;
 
   static const _sizes = {
-    // Apple: 44px touch targets for the primary size; pill grammar;
-    // Inter 500 labels (ElevenLabs button dialect).
-    HeroButtonSize.sm: (h: 32.0, px: 14.0, font: 14.0, icon: 16.0),
-    HeroButtonSize.md: (h: 40.0, px: 18.0, font: 15.0, icon: 18.0),
-    HeroButtonSize.lg: (h: 48.0, px: 24.0, font: 17.0, icon: 20.0),
+    // Compact production sizing (ElevenLabs pill CTAs top out at 40px;
+    // x.ai/Warp buttons run 32-40). Inter 500 labels, zero tracking.
+    HeroButtonSize.sm: (h: 28.0, px: 12.0, font: 13.0, icon: 15.0),
+    HeroButtonSize.md: (h: 34.0, px: 16.0, font: 14.0, icon: 17.0),
+    HeroButtonSize.lg: (h: 40.0, px: 20.0, font: 15.0, icon: 19.0),
   };
 
   @override
@@ -954,10 +985,11 @@ class _HeroButtonState extends State<HeroButton> {
           bg = _mix(colors.soft, colors.base, 0.10);
         }
       case HeroButtonVariant.bordered:
-        // Apple ghost pill: transparent, role-colored text + role border.
+        // Outline pill — the x.ai universal control: transparent, role-
+        // colored text + translucent border.
         bg = Colors.transparent;
         fg = colors.base;
-        border = colors.base.withValues(alpha: 0.45);
+        border = colors.base.withValues(alpha: 0.35);
         if (_hovered && enabled) bg = colors.soft;
       case HeroButtonVariant.light:
         // Apple pearl capsule: near-white fill, softened ink label.
@@ -995,7 +1027,7 @@ class _HeroButtonState extends State<HeroButton> {
             )
           else if (widget.icon != null) ...[
             Icon(widget.icon, size: s.icon, color: fg),
-            const SizedBox(width: 7),
+            const SizedBox(width: 8),
           ],
           Text(
             widget.label,
@@ -1011,7 +1043,7 @@ class _HeroButtonState extends State<HeroButton> {
             ),
           ),
           if (widget.trailingIcon != null) ...[
-            const SizedBox(width: 7),
+            const SizedBox(width: 8),
             Icon(widget.trailingIcon, size: s.icon, color: fg),
           ],
         ],
@@ -1082,8 +1114,8 @@ class HeroIconButton extends StatefulWidget {
     required this.icon,
     this.onPressed,
     this.tooltip,
-    this.size = 38,
-    this.iconSize = 21,
+    this.size = 34,
+    this.iconSize = 18,
     this.color,
     this.variant = HeroColorRole.neutral,
     this.backgroundColor,
@@ -1221,10 +1253,10 @@ class HeroChip extends StatelessWidget {
 
     final chip = AnimatedContainer(
       duration: heroAnimationsEnabled ? HeroTokens.motionColor : Duration.zero,
-      // Pill geometry — Apple configurator chip / ElevenLabs badge-pill.
+      // Pill geometry — ElevenLabs badge-pill, compact padding on the scale.
       padding: EdgeInsets.symmetric(
-        horizontal: small ? 10 : 12,
-        vertical: small ? 3.5 : 5.5,
+        horizontal: small ? HeroTokens.space2 : HeroTokens.space3,
+        vertical: small ? 3 : HeroTokens.space1,
       ),
       decoration: BoxDecoration(
         color: bg,
@@ -1243,11 +1275,11 @@ class HeroChip extends StatelessWidget {
               decoration:
                   BoxDecoration(color: dotColor, shape: BoxShape.circle),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
           ],
           if (icon != null) ...[
             Icon(icon, size: 14, color: fg),
-            const SizedBox(width: 5),
+            const SizedBox(width: 4),
           ],
           Text(
             label,
@@ -1261,7 +1293,7 @@ class HeroChip extends StatelessWidget {
             ),
           ),
           if (onDeleted != null) ...[
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
             GestureDetector(
               onTap: onDeleted,
               child: Icon(Icons.close_rounded, size: 14, color: fg),
@@ -1281,8 +1313,8 @@ class HeroChip extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// HeroCard — Apple store utility card: white on parchment, 18px radius,
-// 1px hairline, NO shadow (elevation = surface colour change).
+// HeroCard — the noir utility card: #141414 on #0A0A0A, 12px radius, 1px
+// hairline, NO shadow (elevation = surface-contrast change).
 // ---------------------------------------------------------------------------
 
 enum HeroCardVariant { defaultVariant, secondary, tertiary, transparent }
@@ -1291,7 +1323,7 @@ class HeroCard extends StatelessWidget {
   const HeroCard({
     super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(16),
+    this.padding = const EdgeInsets.all(HeroTokens.space4),
     this.variant = HeroCardVariant.defaultVariant,
     this.onTap,
     this.borderRadius,
@@ -1347,8 +1379,9 @@ class HeroCard extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// HeroSwitch — iOS switch anatomy: 51x31 pill track, 27px thumb, Action
-// Blue when on, springy travel.
+// HeroSwitch — compact pill switch: 46x28 track, 24px thumb. ON inverts
+// the polarity (white track + near-black thumb on noir; ink track +
+// white thumb on light) — the monochrome flip.
 // ---------------------------------------------------------------------------
 
 class HeroSwitch extends StatelessWidget {
@@ -1368,6 +1401,11 @@ class HeroSwitch extends StatelessWidget {
     final h = HeroScope.of(context);
     final track = value ? (activeColor ?? h.accent) : h.dflt;
     final enabled = onChanged != null;
+    // Polarity flip: ON = accent track with an inverted thumb (noir) /
+    // white thumb (light, or any custom active color).
+    final thumb = value && activeColor == null && h.isDark
+        ? HeroTokens.darkBackground
+        : Colors.white;
 
     return Semantics(
       toggled: value,
@@ -1388,8 +1426,8 @@ class HeroSwitch extends StatelessWidget {
               ? HeroTokens.motionTransform
               : Duration.zero,
           curve: HeroTokens.springSoft,
-          width: 51,
-          height: 31,
+          width: 46,
+          height: 28,
           padding: const EdgeInsets.all(2),
           decoration: BoxDecoration(
             color: enabled ? track : h.dflt.withValues(alpha: 0.55),
@@ -1402,12 +1440,12 @@ class HeroSwitch extends StatelessWidget {
             curve: HeroTokens.spring,
             alignment: value ? Alignment.centerRight : Alignment.centerLeft,
             child: Container(
-              width: 27,
-              height: 27,
-              decoration: const BoxDecoration(
-                color: Colors.white,
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: thumb,
                 shape: BoxShape.circle,
-                boxShadow: [
+                boxShadow: const [
                   BoxShadow(
                       color: Color(0x24000000),
                       offset: Offset(0, 2),
@@ -1423,9 +1461,9 @@ class HeroSwitch extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// HeroInput — Apple search-input grammar: full pill, 44px, white surface +
-// hairline; focus thickens the border to 2px Action Blue (ElevenLabs
-// focus behaviour on Apple geometry).
+// HeroInput — the noir field: 42px rounded-rect (12px radius), inset-well
+// fill on dark (canvas-soft dialect), hairline border; focus thickens the
+// border to 2px accent (ElevenLabs focus behaviour).
 // ---------------------------------------------------------------------------
 
 class HeroInput extends StatefulWidget {
@@ -1485,10 +1523,12 @@ class _HeroInputState extends State<HeroInput> {
 
     return AnimatedContainer(
       duration: heroAnimationsEnabled ? HeroTokens.motionColor : Duration.zero,
-      height: widget.maxLines == 1 ? 44 : null,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      height: widget.maxLines == 1 ? 42 : null,
+      padding: const EdgeInsets.symmetric(horizontal: HeroTokens.space4),
       decoration: BoxDecoration(
-        color: h.surface,
+        // Inset well on noir (lighter-than-canvas fill, x.ai text-input);
+        // clean white + hairline on light.
+        color: h.isDark ? h.surface2 : h.surface,
         borderRadius: BorderRadius.circular(HeroTokens.radiusField),
         border: Border.all(
           color: _focused ? h.accent : h.border,
@@ -1500,10 +1540,10 @@ class _HeroInputState extends State<HeroInput> {
           if (widget.prefixIcon != null) ...[
             Icon(
               widget.prefixIcon,
-              size: 19,
+              size: 18,
               color: _focused ? h.accent : h.muted,
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 12),
           ],
           Expanded(
             child: TextField(
@@ -1576,7 +1616,7 @@ class HeroSegmented<T> extends StatelessWidget {
               : Duration.zero,
           curve: HeroTokens.springSoft,
           padding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              const EdgeInsets.symmetric(horizontal: HeroTokens.space3, vertical: HeroTokens.space2),
           decoration: BoxDecoration(
             color: active
                 ? (h.isDark ? HeroTokens.darkSegment : h.surface)
@@ -1603,7 +1643,7 @@ class HeroSegmented<T> extends StatelessWidget {
                   size: 16,
                   color: active ? h.foreground : h.muted,
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 8),
               ],
               // In bounded (expand) mode the label ellipsizes instead of
               // overflowing the segment cell.
@@ -1661,7 +1701,7 @@ class HeroSegmented<T> extends StatelessWidget {
         expand ? segmentsRow : FittedBox(fit: BoxFit.scaleDown, child: segmentsRow);
 
     return Container(
-      padding: const EdgeInsets.all(3),
+      padding: const EdgeInsets.all(HeroTokens.space1),
       decoration: BoxDecoration(
         color: h.dflt,
         borderRadius: BorderRadius.circular(HeroTokens.radiusTabs),
@@ -1672,7 +1712,7 @@ class HeroSegmented<T> extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// HeroSkeleton — shimmer sweep on parchment tones
+// HeroSkeleton — shimmer sweep on the noir ladder
 // (disable via heroAnimationsEnabled)
 // ---------------------------------------------------------------------------
 
@@ -1766,7 +1806,7 @@ class HeroProgress extends StatelessWidget {
   const HeroProgress({
     super.key,
     required this.value,
-    this.height = 8,
+    this.height = 6,
     this.color,
     this.trackColor,
   });
@@ -1799,8 +1839,9 @@ class HeroProgress extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// HeroListTile — Apple settings row: rounded-square tinted icon plate,
-// Inter 16 title, caption subtitle, chevron, press wash.
+// HeroListTile — the settings row: rounded-square monochrome icon plate,
+// Inter 15 title, caption subtitle, chevron, press wash. Compact 48px
+// minimum — production density, not oversized.
 // ---------------------------------------------------------------------------
 
 class HeroListTile extends StatefulWidget {
@@ -1841,18 +1882,18 @@ class _HeroListTileState extends State<HeroListTile> {
     final lead = widget.leading ??
         (widget.leadingIcon != null
             ? Container(
-                width: 38,
-                height: 38,
+                width: 34,
+                height: 34,
                 decoration: BoxDecoration(
                   color: (widget.danger
                           ? h.danger
                           : widget.leadingColor ?? h.accent)
                       .withValues(alpha: 0.13),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(9),
                 ),
                 child: Icon(
                   widget.leadingIcon,
-                  size: 20,
+                  size: 18,
                   color: widget.danger
                       ? h.danger
                       : widget.leadingColor ?? h.accent,
@@ -1864,7 +1905,7 @@ class _HeroListTileState extends State<HeroListTile> {
       widget.title,
       style: HeroTokens.title.copyWith(
         color: widget.danger ? h.danger : h.foreground,
-        fontSize: 16,
+        fontSize: 15,
       ),
     );
 
@@ -1879,19 +1920,19 @@ class _HeroListTileState extends State<HeroListTile> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 90),
         color: _pressed ? h.dflt.withValues(alpha: 0.6) : Colors.transparent,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+        padding: const EdgeInsets.symmetric(horizontal: HeroTokens.space4, vertical: HeroTokens.space3),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 52),
+          constraints: const BoxConstraints(minHeight: 48),
           child: Row(
             children: [
-              if (lead != null) ...[lead, const SizedBox(width: 14)],
+              if (lead != null) ...[lead, const SizedBox(width: 12)],
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     title,
                     if (widget.subtitle != null) ...[
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 4),
                       Text(
                         widget.subtitle!,
                         style: HeroTokens.caption.copyWith(color: h.muted),
@@ -1906,7 +1947,7 @@ class _HeroListTileState extends State<HeroListTile> {
               ],
               if (widget.showChevron && widget.trailing == null)
                 Padding(
-                  padding: const EdgeInsets.only(left: 6),
+                  padding: const EdgeInsets.only(left: HeroTokens.space2),
                   child: Icon(
                     Icons.chevron_right_rounded,
                     size: 20,
@@ -1922,8 +1963,8 @@ class _HeroListTileState extends State<HeroListTile> {
 }
 
 // ---------------------------------------------------------------------------
-// HeroEmptyState — atmospheric orb bloom behind a soft icon disc; the
-// editorial Spectral Light title gives empty screens a magazine-cover feel.
+// HeroEmptyState — monochrome: a soft white bloom behind a quiet disc; the
+// weight-400 display title keeps empty screens calm and engineered.
 // ---------------------------------------------------------------------------
 
 class HeroEmptyState extends StatelessWidget {
@@ -1945,47 +1986,40 @@ class HeroEmptyState extends StatelessWidget {
     final h = HeroScope.of(context);
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.all(HeroTokens.space8),
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // ElevenLabs atmosphere: pastel orbs blooming behind the disc.
+            // Monochrome bloom — moonlight, never chromatic.
             const SizedBox(
               width: 320,
               height: 320,
-              child: HeroOrbs(
-                colors: [
-                  HeroTokens.orbSky,
-                  HeroTokens.orbPeach,
-                  HeroTokens.orbLavender,
-                ],
-                opacity: 0.45,
-                seed: 7,
-              ),
+              child: HeroOrbs(opacity: 0.5, seed: 7),
             ),
             Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 88,
-                  height: 88,
+                  width: 72,
+                  height: 72,
                   decoration: BoxDecoration(
                     color: h.dflt,
                     shape: BoxShape.circle,
+                    border: Border.all(color: h.border),
                   ),
-                  child: Icon(icon, size: 36, color: h.muted),
+                  child: Icon(icon, size: 28, color: h.muted),
                 ),
-                const SizedBox(height: 22),
+                const SizedBox(height: 16),
                 Text(
                   title,
                   textAlign: TextAlign.center,
                   style: HeroTokens.titleLarge.copyWith(
                     color: h.foreground,
-                    fontSize: 24,
+                    fontSize: 19,
                   ),
                 ),
                 if (subtitle != null) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 320),
                     child: Text(
@@ -1998,7 +2032,7 @@ class HeroEmptyState extends StatelessWidget {
                     ),
                   ),
                 ],
-                if (action != null) ...[const SizedBox(height: 26), action!],
+                if (action != null) ...[const SizedBox(height: 24), action!],
               ],
             ),
           ],
@@ -2045,7 +2079,7 @@ Future<T?> showHeroSheet<T>({
     backgroundColor: h.surface,
     barrierColor: h.backdrop,
     shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
     showDragHandle: true,
     builder: (ctx) => Column(
@@ -2054,12 +2088,12 @@ Future<T?> showHeroSheet<T>({
       children: [
         if (title != null)
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+            padding: const EdgeInsets.fromLTRB(HeroTokens.space4, 0, HeroTokens.space4, HeroTokens.space4),
             child: Text(
               title,
               style: HeroTokens.title.copyWith(
                 color: h.foreground,
-                fontSize: 18,
+                fontSize: 17,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -2088,7 +2122,8 @@ Future<T?> showHeroDialog<T>({
   );
 }
 
-/// Standard dialog frame — Apple alert geometry: 20px radius, hairline.
+/// Standard dialog frame — noir alert geometry: 14px radius, surface fill,
+/// hairline.
 class HeroDialogFrame extends StatelessWidget {
   const HeroDialogFrame({
     super.key,
@@ -2106,12 +2141,12 @@ class HeroDialogFrame extends StatelessWidget {
       backgroundColor: Colors.transparent,
       child: Container(
         width: width,
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(HeroTokens.space5),
         decoration: BoxDecoration(
           color: h.surface,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(14),
           boxShadow: h.overlayShadow,
-          border: h.isDark ? Border.all(color: h.border) : null,
+          border: Border.all(color: h.border),
         ),
         child: child,
       ),
@@ -2120,8 +2155,8 @@ class HeroDialogFrame extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// HeroSectionHeader — ElevenLabs caption-uppercase section label:
-// Inter 600, 12px, +0.96px tracking, between card groups.
+// HeroSectionHeader — the engineered section eyebrow: JetBrains Mono 400,
+// 11px, +1.2px tracking, UPPERCASE, between card groups.
 // ---------------------------------------------------------------------------
 
 class HeroSectionHeader extends StatelessWidget {
@@ -2133,13 +2168,13 @@ class HeroSectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 10),
+      padding: const EdgeInsets.fromLTRB(HeroTokens.space4, 28, HeroTokens.space4, HeroTokens.space2),
       child: Row(
         children: [
           Expanded(
             child: Text(
               text.toUpperCase(),
-              style: HeroTokens.captionUpper.copyWith(color: h.muted),
+              style: HeroTokens.eyebrow.copyWith(color: h.muted),
             ),
           ),
           if (trailing != null) trailing!,
@@ -2233,7 +2268,7 @@ Future<bool> showHeroConfirm({
             title,
             style: HeroTokens.title.copyWith(
               color: h.foreground,
-              fontSize: 18,
+              fontSize: 17,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -2255,7 +2290,7 @@ Future<bool> showHeroConfirm({
                 color: HeroColorRole.neutral,
                 onPressed: () => Navigator.of(ctx).pop(false),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               HeroButton(
                 label: confirmLabel,
                 color: danger ? HeroColorRole.danger : HeroColorRole.accent,

@@ -7,14 +7,14 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/ui/lumina_ui.dart';
 
-/// App shell with the Apple × ElevenLabs navigation.
+/// App shell with the Lumina Noir navigation.
 ///
-/// Phone: a docked frosted-glass tab bar — backdrop blur over a translucent
-/// canvas fill with a top hairline (the Apple sub-nav/sticky-bar recipe).
-/// Selected items carry an accent-soft pill that springs in behind the icon
-/// (iOS bounce), with a selection haptic and the scale press
-/// micro-interaction. `extendBody` lets scrollable content pass beneath the
-/// frost wherever a screen allows it.
+/// Phone: a docked frosted tab bar — the noir canvas at ~78% over a
+/// clipped backdrop blur with a whisper top hairline (functional frost,
+/// never decorative). The active item is WHITE with a soft-white glow
+/// pill that springs in behind the icon (iOS bounce), a selection haptic
+/// and the scale press micro-interaction. `extendBody` lets scrollable
+/// content pass beneath the frost wherever a screen allows it.
 /// Wide (>=800): navigation rail.
 class MainScreen extends StatelessWidget {
   const MainScreen({super.key, required this.child});
@@ -133,9 +133,9 @@ class _NavDestination {
   final String label;
 }
 
-/// Frosted-glass bottom tab bar — Apple's sub-nav material: backdrop blur
-/// over a translucent canvas fill, single top hairline, 62pt tall +
-/// safe-area padding.
+/// Frosted bottom tab bar — the noir nav surface: backdrop blur over a
+/// near-black translucent canvas fill, single top hairline, 58pt tall +
+/// safe-area padding. Compact production height (ChatGPT/Codex-class).
 class _GlassTabBar extends StatelessWidget {
   const _GlassTabBar({
     required this.destinations,
@@ -152,19 +152,19 @@ class _GlassTabBar extends StatelessWidget {
     final h = HeroScope.of(context);
 
     return HeroGlass(
-      blurSigma: 24,
+      blurSigma: 20,
       color: h.glass,
       border: Border(
         top: BorderSide(
           color: h.isDark
-              ? Colors.white.withValues(alpha: 0.08)
-              : Colors.black.withValues(alpha: 0.08),
+              ? Colors.white.withValues(alpha: 0.07)
+              : Colors.black.withValues(alpha: 0.07),
         ),
       ),
       child: SafeArea(
         top: false,
         child: SizedBox(
-          height: 62,
+          height: 58,
           child: Row(
             children: [
               for (var i = 0; i < destinations.length; i++)
@@ -231,7 +231,8 @@ class _TabItemState extends State<_TabItem> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Accent-soft pill springs in behind the active icon.
+              // Soft-white glow pill springs in behind the active icon
+              // (x.ai app-shell: active indicator = the white primary).
               Stack(
                 alignment: Alignment.center,
                 children: [
@@ -242,8 +243,8 @@ class _TabItemState extends State<_TabItem> {
                         : Duration.zero,
                     curve: HeroTokens.spring,
                     child: Container(
-                      width: 52,
-                      height: 32,
+                      width: 48,
+                      height: 30,
                       decoration: BoxDecoration(
                         color: h.accentSoft,
                         borderRadius: BorderRadius.circular(999),
@@ -252,17 +253,17 @@ class _TabItemState extends State<_TabItem> {
                   ),
                   Icon(
                     active ? d.selectedIcon : d.icon,
-                    size: 24,
+                    size: 23,
                     color: active ? h.accent : h.muted,
                   ),
                 ],
               ),
-              const SizedBox(height: 3),
+              const SizedBox(height: 4),
               Text(
                 d.label,
                 style: TextStyle(
                   fontFamily: HeroTokens.fontSans,
-                  fontSize: 10.5,
+                  fontSize: 10,
                   height: 1.1,
                   letterSpacing: 0.06,
                   fontWeight: active ? FontWeight.w600 : FontWeight.w500,

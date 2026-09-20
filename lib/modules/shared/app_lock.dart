@@ -191,7 +191,7 @@ class _PinLockScreenState extends State<_PinLockScreen> {
                 color: isDark ? Colors.white : HeroTokens.lightForeground,
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Text(
               _error ?? 'Lumina Reader is locked',
               style: TextStyle(
@@ -348,7 +348,7 @@ class _SetPinBodyState extends State<_SetPinBody> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pin = _confirming ? _second : _first;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+      padding: const EdgeInsets.fromLTRB(16, 0, 20, 24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -359,7 +359,7 @@ class _SetPinBodyState extends State<_SetPinBody> {
               color: isDark ? HeroTokens.darkMuted : HeroTokens.lightMuted,
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(4, (i) {
@@ -380,7 +380,7 @@ class _SetPinBodyState extends State<_SetPinBody> {
               );
             }),
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 24),
           SizedBox(
             width: 264,
             child: GridView.count(

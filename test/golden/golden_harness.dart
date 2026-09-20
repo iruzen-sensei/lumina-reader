@@ -574,7 +574,7 @@ Future<void> loadRealFonts() async {
       loader.addFont(Future.value(ByteData.view(f.readAsBytesSync().buffer)));
     }
   }
-  // The app's BUNDLED families (Inter body + Spectral Light display) —
+  // The app's BUNDLED families (Inter body/UI + JetBrains Mono eyebrows) —
   // without these the golden text falls back to Roboto/tofu and the
   // captures misrepresent the real typography.
   final bundledLoaders = <FontLoader>[];
@@ -584,7 +584,10 @@ Future<void> loadRealFonts() async {
       'assets/fonts/Inter-Medium.ttf',
       'assets/fonts/Inter-SemiBold.ttf',
     ],
-    'Spectral': ['assets/fonts/Spectral-Light.ttf'],
+    'JetBrainsMono': [
+      'assets/fonts/JetBrainsMono-Regular.ttf',
+      'assets/fonts/JetBrainsMono-Medium.ttf',
+    ],
   };
   for (final entry in bundled.entries) {
     final loader = FontLoader(entry.key);

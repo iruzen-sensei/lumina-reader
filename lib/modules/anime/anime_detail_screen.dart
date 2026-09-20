@@ -382,12 +382,12 @@ class _HeroHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _CoverThumb(url: manga.thumbnailUrl),
-              const SizedBox(width: 14),
+              const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 16),
                     Text(
                       manga.title,
                       maxLines: 2,
@@ -396,7 +396,7 @@ class _HeroHeader extends StatelessWidget {
                           HeroTokens.display.copyWith(color: h.foreground, fontSize: 28),
                     ),
                     if (manga.author != null && manga.author!.isNotEmpty) ...[
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 8),
                       Text(
                         'Studio ${manga.author}',
                         maxLines: 1,
@@ -415,7 +415,7 @@ class _HeroHeader extends StatelessWidget {
                         style: HeroTokens.bodySmall.copyWith(color: h.muted),
                       ),
                     ],
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     _StatusRatingRow(
                       status: manga.status,
                       rating: manga.rating,
@@ -565,7 +565,7 @@ class _StatusRatingRow extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.star_rounded, size: 15, color: h.accent),
-              const SizedBox(width: 3),
+              const SizedBox(width: 4),
               Text(
                 rating.toStringAsFixed(1),
                 style: HeroTokens.bodySmall
@@ -600,7 +600,7 @@ class _ActionBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 20, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -675,7 +675,7 @@ class _SynopsisCard extends StatelessWidget {
 
     final isLong = clean.length > _longTextThreshold;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 20, 0),
       child: HeroCard(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -688,7 +688,7 @@ class _SynopsisCard extends StatelessWidget {
               style: HeroTokens.body.copyWith(color: h.muted, height: 1.55),
             ),
             if (isLong) ...[
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: onToggle,
@@ -723,7 +723,7 @@ class _GenreChips extends StatelessWidget {
         genres.where((g) => g.trim().isNotEmpty).toList(growable: false);
     if (visible.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 20, 0),
       child: Wrap(
         spacing: 8,
         runSpacing: 8,
@@ -753,7 +753,7 @@ class _MetaChips extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 20, 0),
       child: Wrap(
         spacing: 8,
         runSpacing: 8,
@@ -824,9 +824,9 @@ class _NextAiringCardState extends State<_NextAiringCard> {
     final hasAired = remaining.isNegative;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 20, 0),
       child: HeroCard(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         variant: HeroCardVariant.secondary,
         child: Row(
           children: [
@@ -895,7 +895,7 @@ class _AniSkipBanner extends ConsumerWidget {
     final ranges = ref.watch(aniSkipProvider(animeId));
     if (ranges.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      padding: const EdgeInsets.fromLTRB(16, 12, 20, 0),
       child: Wrap(
         spacing: 8,
         runSpacing: 8,
@@ -946,7 +946,7 @@ class _ListSectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 26, 10, 4),
+      padding: const EdgeInsets.fromLTRB(16, 24, 12, 4),
       child: Row(
         children: [
           Text('Episodes',
@@ -1178,7 +1178,7 @@ class _EpisodeTile extends StatelessWidget {
       onTap: onTap,
       onLongPress: onLongPress,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Row(
           children: [
             Container(
@@ -1224,7 +1224,7 @@ class _EpisodeTile extends StatelessWidget {
                     style: HeroTokens.caption.copyWith(color: h.muted),
                   ),
                   if (inProgress) ...[
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     Row(
                       children: [
                         Expanded(
@@ -1245,10 +1245,10 @@ class _EpisodeTile extends StatelessWidget {
               ),
             ),
             if (ep.isBookmarked) ...[
-              const SizedBox(width: 6),
+              const SizedBox(width: 8),
               Icon(Icons.bookmark_rounded, size: 15, color: h.warning),
             ],
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
             _buildDownloadTrailing(h),
           ],
         ),

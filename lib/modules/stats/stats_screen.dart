@@ -48,7 +48,7 @@ class StatsScreen extends ConsumerWidget {
           slivers: [
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                padding: const EdgeInsets.fromLTRB(16, 16, 20, 8),
                 child: Text(
                   'Statistics',
                   style: HeroTokens.display.copyWith(color: h.foreground),
@@ -116,7 +116,7 @@ class _StreakCard extends ConsumerWidget {
                     style: HeroTokens.title.copyWith(color: h.foreground)),
               ],
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
             Row(
               children: [
                 Expanded(
@@ -147,7 +147,7 @@ class _StreakCard extends ConsumerWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
             HeroButton(
               // REAL goal editor (previously a snackbar-only stub).
               label: 'Set goal',
@@ -216,7 +216,7 @@ class _GoalEditorTileState extends ConsumerState<_GoalEditorTile> {
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+      padding: const EdgeInsets.fromLTRB(16, 8, 20, 8),
       child: Row(
         children: [
           Expanded(
@@ -340,7 +340,7 @@ class _StatCardGrid extends StatelessWidget {
         physics: const NeverScrollableScrollPhysics(),
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
-        // Taller cells for the Spectral 30 stat values + Inter captions.
+        // Taller cells for the mono 28 stat values + Inter captions.
         childAspectRatio: 1.1,
         children: cards.map((c) => _StatCard(data: c)).toList(),
       ),
@@ -371,7 +371,7 @@ class _StatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
     return HeroCard(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -385,16 +385,21 @@ class _StatCard extends StatelessWidget {
             child: Icon(data.icon, color: data.color, size: 18),
           ),
           const Spacer(),
-          // FittedBox: the Spectral value can never wrap or overflow the
-          // grid cell — it scales down a touch instead.
+          // FittedBox: the mono value can never wrap or overflow the grid
+          // cell — it scales down a touch instead.
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
             child: Text(
               '${_format(data.value)}${data.suffix}',
               maxLines: 1,
-              style:
-                  HeroTokens.titleLarge.copyWith(color: h.accent, fontSize: 30),
+              // JetBrains Mono — the x.ai metric-counter dialect.
+              style: HeroTokens.eyebrow.copyWith(
+                color: h.foreground,
+                fontSize: 26,
+                letterSpacing: -0.3,
+                fontWeight: FontWeight.w400,
+              ),
             ),
           ),
           const SizedBox(height: 2),
@@ -474,12 +479,12 @@ class _HeatmapSection extends ConsumerWidget {
               children: [
                 Text('Less',
                     style: HeroTokens.caption.copyWith(color: h.muted)),
-                const SizedBox(width: 6),
+                const SizedBox(width: 8),
                 ...LuminaTheme.heatLevels.map((c) => Padding(
-                      padding: const EdgeInsets.only(right: 3),
+                      padding: const EdgeInsets.only(right: 4),
                       child: _HeatCell(color: c, size: 12),
                     )),
-                const SizedBox(width: 6),
+                const SizedBox(width: 8),
                 Text('More',
                     style: HeroTokens.caption.copyWith(color: h.muted)),
               ],
@@ -614,7 +619,7 @@ class _GoalProgressCard extends ConsumerWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
             HeroProgress(
               value: primary.progress,
               height: 10,
@@ -625,7 +630,7 @@ class _GoalProgressCard extends ConsumerWidget {
               '${primary.current}/${primary.target} ${primary.unit} • ${primary.period.label}',
               style: HeroTokens.caption.copyWith(color: h.muted),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
             Text('All goals',
                 style: HeroTokens.body.copyWith(
                   color: h.foreground,
@@ -673,12 +678,12 @@ class _GoalTile extends StatelessWidget {
                 small: true,
                 color: done ? HeroColorRole.success : HeroColorRole.accent,
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 8),
               Text(goal.period.label,
                   style: HeroTokens.caption.copyWith(color: h.muted)),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           HeroProgress(
             value: goal.progress,
             height: 6,
@@ -754,9 +759,9 @@ class _HistorySummaryCard extends StatelessWidget {
                     style: HeroTokens.title.copyWith(color: h.foreground)),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             ...rows.map((r) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Row(
                     children: [
                       Container(

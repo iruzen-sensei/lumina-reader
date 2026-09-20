@@ -292,7 +292,7 @@ class _UpdateTileState extends ConsumerState<_UpdateTile> {
                         Container(
                           width: 8,
                           height: 8,
-                          margin: const EdgeInsets.only(left: 6),
+                          margin: const EdgeInsets.only(left: 8),
                           decoration: BoxDecoration(
                             color: h.accent,
                             shape: BoxShape.circle,
@@ -300,19 +300,19 @@ class _UpdateTileState extends ConsumerState<_UpdateTile> {
                         ),
                     ],
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 4),
                   Text(
                     item.chapterName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: HeroTokens.caption.copyWith(color: h.muted),
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 4),
                   Row(
                     children: [
                       if (item.scanlator != null) ...[
                         Icon(Icons.group_outlined, size: 12, color: h.muted),
-                        const SizedBox(width: 3),
+                        const SizedBox(width: 4),
                         Flexible(
                           child: Text(
                             item.scanlator!,
@@ -324,7 +324,7 @@ class _UpdateTileState extends ConsumerState<_UpdateTile> {
                         const SizedBox(width: 8),
                       ],
                       Icon(Icons.schedule_rounded, size: 12, color: h.muted),
-                      const SizedBox(width: 3),
+                      const SizedBox(width: 4),
                       Text(
                         timeAgo(item.date),
                         style: HeroTokens.caption.copyWith(color: h.muted),
