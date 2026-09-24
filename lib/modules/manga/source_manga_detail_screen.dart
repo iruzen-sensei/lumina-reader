@@ -177,13 +177,17 @@ class _SourceMangaDetailScreenState
       );
       if (!mounted) return;
       // Anime catalog entries open the video player via the anime detail
-      // screen; manga the reader via the manga detail screen.
+      // screen; novels the text reader via the novel reader; manga the
+      // image reader via the manga detail screen.
+      final isNovel = persisted.itemType == ItemType.novel;
       context.pushReplacement(persisted.isAnime
           ? '/animeDetail/${persisted.id}'
           : '/mangaDetail/${persisted.id}');
       unawaited(context.push(persisted.isAnime
           ? '/animePlayer/${persistedChapter.id}'
-          : '/reader/${persistedChapter.id}'));
+          : isNovel
+              ? '/novelReader/${persistedChapter.id}'
+              : '/reader/${persistedChapter.id}'));
     } catch (e) {
       if (mounted) showSnack(ref, context, 'Could not open chapter: $e');
     } finally {

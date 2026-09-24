@@ -22,6 +22,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../data/providers.dart' as data;
+import '../../providers/providers.dart';
+import '../../providers/storage_provider.dart';
 import '../shared/widgets.dart';
 
 // ---------------------------------------------------------------------------
@@ -501,6 +503,13 @@ class _NovelReaderViewState extends ConsumerState<NovelReaderView> {
   bool _fileLoadAttempted = false;
   String? _fileLoadError;
 
+  /// Chapter ids belonging to a SOURCE-backed novel (fetched on open).
+  /// When non-empty, [NovelChapter.html] is filled lazily via the
+  /// extension coordinator (`chapterText`) instead of the local file.
+  final Set<int> _sourceChapterIds = {};
+  bool _fetchingText = false;
+  String? _fetchError;
+
   @override
   void initState() {
     super.initState();
@@ -522,6 +531,12 @@ class _NovelReaderViewState extends ConsumerState<NovelReaderView> {
   /// called — so it rendered its "No chapters loaded" empty state forever.
   /// Now a .txt import on the Library tab is split into chapters (by
   /// heading pattern, falling back to fixed-size chunks) and cached.
+  ///
+  /// SOURCE-BACKED novels (added from an installed novel extension) take
+  /// the library-DB path: their Chapter rows become the reader's chapter
+  /// list and each chapter's text is fetched on open through the extension
+  /// coordinator (previously these novels opened EMPTY forever — the reader
+  /// had no text pipeline at all).
   Future<void> _loadFromFileIfNeeded() async {
     if (_fileLoadAttempted) return;
     _fileLoadAttempted = true;
@@ -531,6 +546,45 @@ class _NovelReaderViewState extends ConsumerState<NovelReaderView> {
           .getManga(widget.novelId);
       if (manga == null) return;
       final path = manga.url;
+
+      // ---- Source-backed novel: chapters from the library DB. ----
+      if (path.startsWith('http://') || path.startsWith('https://')) {
+        final rows = await ref
+            .read(data.libraryRepositoryProvider)
+            .getChapters(widget.novelId);
+        if (rows.isEmpty) {
+          if (mounted) {
+            setState(() => _fileLoadError =
+                'This novel has no chapters yet — open it from its source '
+                'detail page first so the chapter list is fetched.');
+          }
+          return;
+        }
+        final chapters = <NovelChapter>[
+          for (var i = 0; i < rows.length; i++)
+            NovelChapter(
+              id: rows[i].id,
+              title: rows[i].name,
+              html: '', // fetched lazily on open
+              number: rows[i].number,
+            ),
+        ];
+        _sourceChapterIds.addAll(chapters.map((c) => c.id));
+        cacheNovelChapters(widget.novelId, chapters);
+        if (!mounted) return;
+        setState(() {
+          final initial = widget.initialChapterId;
+          if (initial != null) {
+            final match =
+                chapters.where((c) => c.id == initial).firstOrNull;
+            _chapter = match;
+          }
+          _chapter ??= chapters.last; // first chapter (list is newest-first)
+        });
+        return;
+      }
+
+      // ---- Local .txt import. ----
       if (!path.toLowerCase().endsWith('.txt')) return;
 
       final text = await File(path).readAsString();
@@ -548,7 +602,7 @@ class _NovelReaderViewState extends ConsumerState<NovelReaderView> {
     } catch (e) {
       if (mounted) {
         setState(() =>
-            _fileLoadError = 'Could not load the novel file: $e');
+            _fileLoadError = 'Could not load the novel: $e');
       }
     }
   }
@@ -636,7 +690,16 @@ class _NovelReaderViewState extends ConsumerState<NovelReaderView> {
           ? _scrollController.offset
           : 0);
     }
-    setState(() => _chapter = chapter);
+    setState(() {
+      _chapter = chapter;
+      _fetchError = null;
+    });
+
+    // Source-backed chapter whose text has not been fetched yet.
+    if (_sourceChapterIds.contains(chapter.id) && chapter.html.isEmpty) {
+      _fetchChapterText(chapter);
+    }
+
     final target = restoreScroll ? store.get(chapter.id) : 0.0;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients) return;
@@ -644,6 +707,69 @@ class _NovelReaderViewState extends ConsumerState<NovelReaderView> {
         math.min(target, _scrollController.position.maxScrollExtent),
       );
     });
+  }
+
+  /// Fetches a source chapter's text through the extension coordinator and
+  /// swaps it into the reader. Runs once per chapter (cached by the
+  /// coordinator's service layer / HTTP cache headers).
+  ///
+  /// LOCAL-FIRST: a downloaded chapter (DownloadEngine writes
+  /// `<downloads>/chapters/<novelId>/<chapterId>/chapter.html`) is read
+  /// from disk without touching the network.
+  Future<void> _fetchChapterText(NovelChapter chapter) async {
+    if (_fetchingText) return;
+    setState(() => _fetchingText = true);
+    try {
+      String? html;
+
+      // 1. Downloaded copy on disk.
+      try {
+        final base = await StorageProvider().getDownloadsDir();
+        final f = File('$base/chapters/${widget.novelId}/${chapter.id}/'
+            'chapter.html');
+        if (await f.exists()) {
+          final local = await f.readAsString();
+          if (local.trim().isNotEmpty) html = local;
+        }
+      } catch (_) {/* fall through to network */}
+
+      // 2. Network via the source chain.
+      html ??= await ref
+          .read(extensionCoordinatorProvider)
+          .chapterText(chapter.id)
+          .timeout(const Duration(seconds: 30));
+
+      if (!mounted) return;
+      if (html == null || html.isEmpty) {
+        setState(() => _fetchError =
+            'The source did not return any text for this chapter.');
+        return;
+      }
+      final filled = NovelChapter(
+        id: chapter.id,
+        title: chapter.title,
+        html: html,
+        number: chapter.number,
+      );
+      // Update the shared cache so revisits are instant.
+      final cached = _novelChapterCache[widget.novelId];
+      if (cached != null) {
+        final i = cached.indexWhere((c) => c.id == chapter.id);
+        if (i >= 0) cached[i] = filled;
+      }
+      if (_chapter?.id == chapter.id) {
+        setState(() {
+          _chapter = filled;
+          _fetchError = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _fetchError = 'Could not load this chapter: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _fetchingText = false);
+    }
   }
 
   void _openSettings() {
@@ -686,6 +812,39 @@ class _NovelReaderViewState extends ConsumerState<NovelReaderView> {
         _chapter ?? chapters.first; // latest chapter by default
     final index = chapters.indexWhere((c) => c.id == chapter.id);
 
+    final body = _fetchingText && chapter.html.isEmpty
+        ? const Center(child: CircularProgressIndicator())
+        : _fetchError != null && chapter.html.isEmpty
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.cloud_off_outlined, size: 48),
+                      const SizedBox(height: 12),
+                      Text(
+                        _fetchError!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                      const SizedBox(height: 12),
+                      TextButton(
+                        onPressed: () => _fetchChapterText(chapter),
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : _NovelContent(
+                chapter: chapter,
+                settings: settings,
+                scrollController: _scrollController,
+                ttsWords: const [],
+                ttsWordIndex: null,
+              );
+
     return Scaffold(
       backgroundColor: settings.background.color,
       appBar: AppBar(
@@ -703,13 +862,7 @@ class _NovelReaderViewState extends ConsumerState<NovelReaderView> {
           ),
         ],
       ),
-      body: _NovelContent(
-        chapter: chapter,
-        settings: settings,
-        scrollController: _scrollController,
-        ttsWords: const [],
-        ttsWordIndex: null,
-      ),
+      body: body,
       bottomNavigationBar: _ChapterNavBar(
         hasPrev: index >= 0 && index < chapters.length - 1,
         hasNext: index > 0,

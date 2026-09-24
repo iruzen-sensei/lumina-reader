@@ -73,6 +73,12 @@ class ExtensionCoordinator {
     }
   }
 
+  /// Resolves a chapter id to its parent manga + chapter DTOs. Public
+  /// wrapper over the library's deep-link resolution for callers that need
+  /// both (e.g. the download engine resolving per-source headers).
+  Future<(dto.Manga?, dto.Chapter?)> resolveForDownload(int chapterId) =>
+      _library.resolveChapter(chapterId);
+
   // -----------------------------------------------------------------------
   // Catalog operations (Browse)
   // -----------------------------------------------------------------------
@@ -202,6 +208,24 @@ class ExtensionCoordinator {
     }
   }
 
+  /// Chapter body TEXT as HTML for novel chapters (the text equivalent of
+  /// [pageList]). Returns `null` when the chapter is not text-backed (manga
+  /// chapters) or its source cannot deliver text — the novel reader falls
+  /// back to its empty state with the reason surfaced.
+  Future<String?> chapterText(int chapterId) async {
+    final (manga, chapter) = await _library.resolveChapter(chapterId);
+    if (manga == null || chapter == null) return null;
+    if (manga.sourceId == 0) return null;
+    final service = await _serviceForSourceId(manga.sourceId);
+    if (service is! eval.BaseExtensionService) return null;
+    try {
+      return await service.getChapterContent(chapter.url);
+    } catch (e) {
+      debugPrint('ExtensionCoordinator.chapterText($chapterId): $e');
+      return null;
+    }
+  }
+
   /// Available video streams for an episode (anime sources).
   Future<List<dto.VideoQuality>> videoList(int episodeId) async {
     final (manga, episode) = await _library.resolveChapter(episodeId);
@@ -262,12 +286,23 @@ class ExtensionCoordinator {
   // -----------------------------------------------------------------------
 
   dto.Manga _mangaToDto(m.MManga e, int sourceId) {
+    // Madara-family sites host text novels under /novel/ (and some under
+    // /series/) while comics live under /manga/ — classifying by URL path
+    // routes novel entries to the TEXT reader instead of a blank image
+    // reader with zero pages.
+    final link = e.link ?? '';
+    final lowerLink = link.toLowerCase();
+    final isNovel = lowerLink.contains('/novel/');
     return dto.Manga(
       id: 0, // not yet persisted — ids are assigned by Isar on library add
       title: e.name ?? e.link ?? 'Untitled',
       sourceId: sourceId,
       url: e.link ?? '',
-      itemType: e.isAnime == true ? dto.ItemType.anime : dto.ItemType.manga,
+      itemType: e.isAnime == true
+          ? dto.ItemType.anime
+          : isNovel
+              ? dto.ItemType.novel
+              : dto.ItemType.manga,
       author: (e.author == null || e.author!.isEmpty) ? null : e.author,
       artist: (e.artist == null || e.artist!.isEmpty) ? null : e.artist,
       description: (e.description == null || e.description!.trim().isEmpty)

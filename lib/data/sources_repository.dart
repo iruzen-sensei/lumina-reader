@@ -18,6 +18,36 @@ class SourcesRepository {
   /// Stable id for the built-in native MangaDex source.
   static const String mangadexIdString = 'builtin.mangadex';
 
+  /// Verified-alive template sources seeded alongside MangaDex so a fresh
+  /// install has REAL working content on day one (the default extension
+  /// repo is ~60% dead domains — a bare install left Browse with a single
+  /// source and, for users whose ISP blocks MangaDex, literally nothing).
+  ///
+  /// All were live-verified end-to-end (popular → detail → chapters →
+  /// pages) before being added. They run through the same native
+  /// madara/mangareader templates as repo-installed extensions.
+  static const List<({String id, String name, String baseUrl,
+      String template})> _seedSources = [
+    (
+      id: 'builtin.mangasushi',
+      name: 'Mangasushi',
+      baseUrl: 'https://mangasushi.org',
+      template: 'madara',
+    ),
+    (
+      id: 'builtin.lhtranslation',
+      name: 'LHTranslation',
+      baseUrl: 'https://lhtranslation.net',
+      template: 'madara',
+    ),
+    (
+      id: 'builtin.ravenscans',
+      name: 'Raven Scans',
+      baseUrl: 'https://ravenscans.com',
+      template: 'mangareader',
+    ),
+  ];
+
   Future<List<dto.Source>> getSources() async {
     final sources = await _isar.sources.where().findAll();
     sources.sort((a, b) => a.displayName.compareTo(b.displayName));
@@ -58,26 +88,47 @@ class SourcesRepository {
   /// safe to call on every boot.
   Future<void> ensureBuiltinSources() async {
     final existing = await getSourceByIdString(mangadexIdString);
-    if (existing != null) return;
-    final mangadex = db.Source(
-      idString: mangadexIdString,
-      name: 'MangaDex',
-      lang: 'en',
-      baseUrl: 'https://api.mangadex.org',
-      version: '1.0.0',
-      isManga: true,
-      isAnime: false,
-      isEnabled: true,
-      isFullData: true,
-      supportsLatest: true,
-      supportsFilter: true,
-      // Native Dart implementation — see eval/native/mangadex_source.dart.
-      // `sourceCode` uses the reserved `builtin:` scheme which
-      // getExtensionService() dispatches to native implementations.
-      sourceCodeLanguage: db.SourceCodeLanguage.dart,
-      sourceCode: 'builtin:mangadex',
-    );
-    await putSource(mangadex);
+    if (existing == null) {
+      final mangadex = db.Source(
+        idString: mangadexIdString,
+        name: 'MangaDex',
+        lang: 'en',
+        baseUrl: 'https://api.mangadex.org',
+        version: '1.0.0',
+        isManga: true,
+        isAnime: false,
+        isEnabled: true,
+        isFullData: true,
+        supportsLatest: true,
+        supportsFilter: true,
+        // Native Dart implementation — see eval/native/mangadex_source.dart.
+        // `sourceCode` uses the reserved `builtin:` scheme which
+        // getExtensionService() dispatches to native implementations.
+        sourceCodeLanguage: db.SourceCodeLanguage.dart,
+        sourceCode: 'builtin:mangadex',
+      );
+      await putSource(mangadex);
+    }
+
+    // Verified-alive template sources (see [_seedSources]).
+    for (final s in _seedSources) {
+      final row = await getSourceByIdString(s.id);
+      if (row != null) continue;
+      await putSource(db.Source(
+        idString: s.id,
+        name: s.name,
+        lang: 'en',
+        baseUrl: s.baseUrl,
+        version: '1.0.0',
+        typeSource: s.template,
+        isManga: true,
+        isAnime: false,
+        isEnabled: true,
+        supportsLatest: true,
+        sourceCodeLanguage: db.SourceCodeLanguage.dart,
+        sourceCode: 'builtin:${s.template}',
+      ));
+    }
   }
 
   Stream<void> watchSources() {

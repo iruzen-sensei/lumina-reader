@@ -275,6 +275,46 @@ class MangaReaderSource extends BaseExtensionService {
     ];
   }
 
+  /// Novel chapters on MangaReader themes carry text in `#readerarea` as
+  /// <p> paragraphs. Mirrors [MadaraSource.getChapterContent].
+  @override
+  Future<String?> getChapterContent(String url) async {
+    final withoutDomain = _stripDomain(url);
+    final res = await _http.get(Uri.parse('${getBaseUrl()}$withoutDomain'),
+        headers: await getHeaders());
+    final doc = html_parser.parse(res.body);
+    final area = doc.querySelector('#readerarea') ??
+        doc.querySelector('div.reading-content');
+    if (area == null) return null;
+
+    area.querySelectorAll('script, style').forEach((e) => e.remove());
+
+    final paragraphs = area.querySelectorAll('p');
+    final buffer = StringBuffer();
+    if (paragraphs.isNotEmpty) {
+      for (final p in paragraphs) {
+        final text = p.text.trim();
+        if (text.isEmpty) continue;
+        buffer.write('<p>${_escapeHtml(text)}</p>');
+      }
+    } else {
+      final text = area.text.trim();
+      if (text.isEmpty) return null;
+      for (final line in text.split('\n')) {
+        final l = line.trim();
+        if (l.isEmpty) continue;
+        buffer.write('<p>${_escapeHtml(l)}</p>');
+      }
+    }
+    final html = buffer.toString();
+    return html.isEmpty ? null : html;
+  }
+
+  static String _escapeHtml(String s) => s
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;');
+
   @override
   Future<void> dispose() async {
     _chapterCache.clear();

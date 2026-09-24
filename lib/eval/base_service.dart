@@ -61,6 +61,14 @@ abstract class BaseExtensionService implements ExtensionService {
   @override
   Future<List<String>> getPageList(String url) async => const [];
 
+  /// Chapter body TEXT as HTML (novel / light-novel sources).
+  ///
+  /// Returns `null` for image-only sources — the caller distinguishes "this
+  /// source delivers text" from "empty text". This is the novel equivalent
+  /// of [getPageList]: without it, source-backed novels can list chapters
+  /// but never display a single paragraph.
+  Future<String?> getChapterContent(String url) async => null;
+
   @override
   Future<List<MVideo>> getVideoList(String url) async => const [];
 

@@ -27,6 +27,7 @@ import 'package:lumina_reader/eval/native/mangareader_source.dart';
 import 'package:lumina_reader/eval/null_extension_service.dart';
 import 'package:lumina_reader/models/source.dart';
 
+export 'package:lumina_reader/eval/base_service.dart';
 export 'package:lumina_reader/eval/null_extension_service.dart';
 
 // NOTE: the d4rt (Dart interpreter) backend was removed — every published

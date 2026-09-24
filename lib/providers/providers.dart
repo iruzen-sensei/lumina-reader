@@ -1405,12 +1405,21 @@ final wifiOnlyDownloadsProvider = StateProvider<bool>((ref) => true);
 class ExtensionReposNotifier
     extends StateNotifier<List<ExtensionRepo>> {
   ExtensionReposNotifier(this._service) : super(const []) {
-    _sub = _service.watchRepos().listen((_) => _reload());
+    _sub = _service.watchRepos().listen((_) => _scheduleReload());
     _reload();
   }
 
   final ExtensionRepoService _service;
   StreamSubscription<void>? _sub;
+  Timer? _debounce;
+
+  /// Debounced (150ms trailing): Isar's watchLazy fires per transaction and
+  /// bursts (repo sync writing hundreds of rows) previously triggered a
+  /// full reload + rebuild for every single write.
+  void _scheduleReload() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 150), _reload);
+  }
 
   Future<void> _reload() async {
     try {
@@ -1422,6 +1431,7 @@ class ExtensionReposNotifier
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _sub?.cancel();
     super.dispose();
   }
@@ -1433,15 +1443,24 @@ final extensionReposProvider =
       ref.watch(data.extensionRepoServiceProvider)),
 );
 
-/// Extension catalog (installed + available), Isar watch-backed.
+/// Extension catalog (installed + available), Isar watch-backed. Reloads
+/// are DEBOUNCED like [ExtensionReposNotifier] — a 361-row repo sync used
+/// to fire 361 full-catalog queries + rebuilds (the extensions-sheet jank
+/// storm).
 class ExtensionCatalogNotifier extends StateNotifier<List<Source>> {
   ExtensionCatalogNotifier(this._service) : super(const []) {
-    _sub = _service.watchCatalog().listen((_) => _reload());
+    _sub = _service.watchCatalog().listen((_) => _scheduleReload());
     _reload();
   }
 
   final ExtensionRepoService _service;
   StreamSubscription<void>? _sub;
+  Timer? _debounce;
+
+  void _scheduleReload() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 150), _reload);
+  }
 
   Future<void> _reload() async {
     try {
@@ -1454,6 +1473,7 @@ class ExtensionCatalogNotifier extends StateNotifier<List<Source>> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _sub?.cancel();
     super.dispose();
   }

@@ -301,6 +301,11 @@ class ExtensionRepoService {
   /// Fetches the repo index and upserts the catalog Source rows (NOT
   /// installed). Existing installs keep their enabled state; versionLast is
   /// refreshed. Returns the number of extensions in the index.
+  ///
+  /// All rows are persisted in ONE write transaction — 361 individual
+  /// writeTxns fired the sources watcher 361 times, which rebuilt the
+  /// extensions sheet in a jank storm on every sync ("the whole app bugs
+  /// out" — live-reproduced).
   Future<int> syncRepo(String url) async {
     final res = await _http.get(Uri.parse(url));
     if (res.statusCode != 200) {
@@ -313,16 +318,26 @@ class ExtensionRepoService {
 
     final repoName = inferRepoName(url);
     final entries = decoded.whereType<Map<dynamic, dynamic>>().toList();
+
+    // Resolve existing rows (read-only pass) so install state survives.
+    final existingByld = <String, db.Source>{};
+    final existingRows = await _isar.sources
+        .filter()
+        .idStringContains('repo-')
+        .findAll();
+    for (final r in existingRows) {
+      final key = r.idString;
+      if (key != null) existingByld[key] = r;
+    }
+
+    final batch = <db.Source>[];
     for (final e in entries) {
       final id = e['id'];
       final name = e['name'];
       if (id is! int || name is! String) continue;
 
       final idString = 'repo-$repoName-$id';
-      final existing = await _isar.sources
-          .filter()
-          .idStringEqualTo(idString)
-          .findFirst();
+      final existing = existingByld[idString];
       final row = existing ?? db.Source();
       row.idString = idString;
       row.name = name;
@@ -357,8 +372,11 @@ class ExtensionRepoService {
         hasCloudflare: row.hasCloudflare,
       );
       row.lastUpdateAt = DateTime.now().millisecondsSinceEpoch;
-      await _isar.writeTxn(() async => _isar.sources.put(row));
+      batch.add(row);
     }
+
+    // ONE transaction for the whole batch — one watcher fire, one fsync.
+    await _isar.writeTxn(() async => _isar.sources.putAll(batch));
 
     // Update repo stats.
     final repos = await getRepos();
@@ -433,12 +451,19 @@ class ExtensionRepoService {
   }
 
   /// Every catalog row (installed + available) from every registered repo.
+  /// Installed entries sort first (they are the ones users act on), then
+  /// alphabetically.
   Future<List<db.Source>> catalog() async {
     final rows = await _isar.sources
         .filter()
         .idStringContains('repo-')
         .findAll();
-    rows.sort((a, b) => (a.name ?? '').compareTo(b.name ?? ''));
+    rows.sort((a, b) {
+      final aInstalled = (a.isEnabled ?? false) ? 0 : 1;
+      final bInstalled = (b.isEnabled ?? false) ? 0 : 1;
+      if (aInstalled != bInstalled) return aInstalled - bInstalled;
+      return (a.name ?? '').compareTo(b.name ?? '');
+    });
     return rows;
   }
 

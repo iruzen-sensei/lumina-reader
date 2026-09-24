@@ -38,6 +38,14 @@ http.Client _fixtureClient() {
     if (url.contains('m_orderby=views')) {
       return _html(_fixture('madara_popular.html'));
     }
+    // NOVEL chapter (text) — must route before the generic chapter check.
+    if (url.contains('/novel/hell-mode') && url.contains('chapter-')) {
+      return _html(_fixture('madara_novel_chapter.html'));
+    }
+    // Missing novel chapter — 404 must degrade to null, never throw.
+    if (url.contains('/novel/does-not-exist')) {
+      return _html('not found', 404);
+    }
     if (url.contains('/chapter-')) {
       return _html(_fixture('madara_chapter.html'));
     }
@@ -102,5 +110,34 @@ void main() {
         'chapter-103-2/');
     expect(pages.length, greaterThan(5));
     expect(pages.first, startsWith('http'));
+  });
+
+  test('NOVEL chapter page extracts text paragraphs as clean HTML', () async {
+    final html = await makeService().getChapterContent(
+        'https://ksgroupscans.com/novel/'
+        'hell-mode-yarikomi-suki-no-gamer-wa-hai-settei-no-isekai-de-musou-suru/'
+        'chapter-1/');
+    // Fixture (madara_novel_chapter.html) carries five <p> paragraphs plus
+    // a script and an ad block that must be stripped.
+    expect(html, isNotNull);
+    final paragraphs =
+        RegExp('<p>(.*?)</p>').allMatches(html!).toList();
+    expect(paragraphs.length, 5);
+    expect(html, contains('rain had not stopped'));
+    expect(html, contains('old man from the shrine'));
+    // Noise stripped, not leaked into the text.
+    expect(html, isNot(contains('adsbygoogle')));
+    expect(html, isNot(contains('window.ads')));
+    // No raw markup smuggled through unescaped.
+    expect(html, isNot(contains('<script')));
+  });
+
+  test('getChapterContent returns null for image-only chapters (404 page)',
+      () async {
+    // The fixture client 404s unknown paths — a missing/renamed chapter
+    // must degrade to null, never throw.
+    final html = await makeService().getChapterContent(
+        'https://ksgroupscans.com/novel/does-not-exist/chapter-99/');
+    expect(html, isNull);
   });
 }

@@ -29,6 +29,7 @@ import 'package:lumina_reader/data/library_repository.dart';
 import 'package:lumina_reader/data/sources_repository.dart';
 import 'package:lumina_reader/models/chapter.dart';
 import 'package:lumina_reader/models/download.dart' as db;
+import 'package:lumina_reader/models/models.dart' show ItemType;
 import 'package:lumina_reader/models/settings.dart';
 import 'package:lumina_reader/providers/storage_provider.dart';
 import 'package:lumina_reader/services/download_manager/m_downloader.dart';
@@ -203,7 +204,19 @@ class DownloadEngine {
       return;
     }
 
-    final downloader = MDownloader(concurrency: 3);
+    // Per-source HTTP headers (Referer / User-Agent). Madara-family CDNs
+    // 403 every hotlinked page image without a Referer — downloads were
+    // failing on exactly those sources while the online reader worked.
+    final (manga, _) = await _coordinator.resolveForDownload(chapterId);
+    var sourceHeaders = const <String, String>{};
+    if (manga != null && manga.sourceId != 0) {
+      sourceHeaders = await _coordinator.sourceHeaders(manga.sourceId);
+    }
+
+    final downloader = MDownloader(
+      concurrency: 3,
+      headers: sourceHeaders,
+    );
     _active[downloadId] = downloader;
     await _downloads.updateState(
         downloadId, state: db.DownloadState.downloading);
@@ -250,6 +263,32 @@ class DownloadEngine {
         );
         await _markChapterDownloaded(downloadId, chapterId, chapterDir, 1);
         _log('completed episode ${row.mangaTitle} / ${row.chapterName}');
+        return;
+      }
+
+      // ---- Novel chapter: fetch the chapter TEXT as HTML. ----
+      // (Text chapters have no page images — the image path below would
+      // fail every novel download with "No pages resolved".)
+      if (manga != null && manga.itemType == ItemType.novel) {
+        final html = await _coordinator.chapterText(chapterId);
+        if (html == null || html.isEmpty) {
+          throw StateError(
+              'No text resolved for novel chapter #$chapterId');
+        }
+        await Directory(chapterDir).create(recursive: true);
+        final outPath = '$chapterDir/chapter.html';
+        await File(outPath).writeAsString(html, flush: true);
+
+        if (_stopped || !_active.containsKey(downloadId)) return;
+
+        await _downloads.updateState(
+          downloadId,
+          state: db.DownloadState.completed,
+          savedPath: outPath,
+          downloadedBytes: html.length,
+        );
+        await _markChapterDownloaded(downloadId, chapterId, chapterDir, 1);
+        _log('completed novel chapter ${row.mangaTitle} / ${row.chapterName}');
         return;
       }
 

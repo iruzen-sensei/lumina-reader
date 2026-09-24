@@ -302,6 +302,51 @@ class MadaraSource extends BaseExtensionService {
     return _parseProtectorImages(document);
   }
 
+  /// Novel chapters on Madara themes carry the text in the SAME
+  /// `div.reading-content` container that holds `div.page-break` images for
+  /// manga — as <p> paragraphs instead of <img> tags. Returns the cleaned
+  /// inner HTML so the novel reader can render it; `null` when the page has
+  /// no text content (an image chapter / wrong URL).
+  @override
+  Future<String?> getChapterContent(String url) async {
+    final res = await _http.get(Uri.parse(url), headers: await getHeaders());
+    final document = html_parser.parse(res.body);
+    final container = document.querySelector('div.reading-content') ??
+        document.querySelector('div.entry-content') ??
+        document.querySelector('article .entry-content');
+    if (container == null) return null;
+
+    // Strip reader noise: page-break image spacers, scripts, inline styles.
+    container.querySelectorAll('script, style, .code-block, .adsbygoogle')
+        .forEach((e) => e.remove());
+
+    final paragraphs = container.querySelectorAll('p');
+    final buffer = StringBuffer();
+    if (paragraphs.isNotEmpty) {
+      for (final p in paragraphs) {
+        final text = p.text.trim();
+        if (text.isEmpty) continue;
+        // Basic sanitisation: escape raw < > so flutter_html renders text.
+        buffer.write('<p>${_escapeHtml(text)}</p>');
+      }
+    } else {
+      final text = container.text.trim();
+      if (text.isEmpty) return null;
+      for (final line in text.split('\n')) {
+        final l = line.trim();
+        if (l.isEmpty) continue;
+        buffer.write('<p>${_escapeHtml(l)}</p>');
+      }
+    }
+    final html = buffer.toString();
+    return html.isEmpty ? null : html;
+  }
+
+  static String _escapeHtml(String s) => s
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;');
+
   List<String> _imagesFromPage(dom.Document doc) {
     final urls = <String>[];
     // "div.page-break img" is the canonical Madara container; the gallery +

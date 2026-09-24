@@ -37,8 +37,10 @@ class MangaDexSource extends BaseExtensionService {
   static const String _uploads = 'https://uploads.mangadex.org';
   static const int _limit = 20;
 
-  /// Chapters above this count paginate the feed (rare; 500 per page).
-  static const int _maxFeedPages = 2;
+  /// Chapters above this count paginate the feed (500 per page). Long
+  /// runners (One Piece is 1100+) need more than two pages — 12 pages
+  /// covers 6,000 chapters, more than any title on the site.
+  static const int _maxFeedPages = 12;
 
   http.Client? _client;
 
@@ -198,10 +200,15 @@ class MangaDexSource extends BaseExtensionService {
   Future<List<MChapter>> getChapterList(String url) async {
     final id = _mangaId(url);
     final chapters = <MChapter>[];
+    // ALL languages: many popular titles have their EN chapters licensed
+    // away (externalUrl) — an EN-only feed returns zero readable chapters
+    // for exactly the titles users tap first (live-verified: Solo Leveling
+    // has 24 licensed EN + 38 readable non-EN chapters). EN chapters float
+    // to the front of the list via the sort below.
     for (var page = 0; page < _maxFeedPages; page++) {
       final offset = page * 500;
       final json = await _getJson(
-          '$_api/manga/$id/feed?translatedLanguage[]=en&order[chapter]=desc'
+          '$_api/manga/$id/feed?order[chapter]=desc'
           '&limit=500&offset=$offset&contentRating[]=safe'
           '&contentRating[]=suggestive&contentRating[]=erotica'
           '&includes[]=scanlation_group');
@@ -242,6 +249,15 @@ class MangaDexSource extends BaseExtensionService {
       final total = (json['total'] as num?)?.toInt() ?? 0;
       if (offset + 500 >= total || data.isEmpty) break;
     }
+    // EN first, then everything else, newest-first inside each bucket.
+    chapters.sort((a, b) {
+      final aEn = a.language == 'en' ? 0 : 1;
+      final bEn = b.language == 'en' ? 0 : 1;
+      if (aEn != bEn) return aEn - bEn;
+      final an = double.tryParse(a.chapterNumber ?? '') ?? 0;
+      final bn = double.tryParse(b.chapterNumber ?? '') ?? 0;
+      return bn.compareTo(an);
+    });
     return chapters;
   }
 
