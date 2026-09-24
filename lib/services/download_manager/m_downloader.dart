@@ -292,6 +292,10 @@ class MDownloader {
           completed++;
           bytesDownloaded += bytes.length;
           bytesTotal += bytes.length;
+          if (bytesDownloaded > kMaxTotalBytes) {
+            throw const HttpException('chapter exceeded total download cap '
+                '— aborting');
+          }
           onProgress?.call(DownloadProgress(
             total: pages.length,
             completed: completed,
@@ -420,6 +424,10 @@ class MDownloader {
           completed++;
           bytesDownloaded += bytes.length;
           bytesTotal += bytes.length;
+          if (bytesDownloaded > kMaxTotalBytes) {
+            throw const HttpException('episode exceeded total download cap '
+                '— aborting');
+          }
           onProgress?.call(DownloadProgress(
             total: segments.length,
             completed: completed,
