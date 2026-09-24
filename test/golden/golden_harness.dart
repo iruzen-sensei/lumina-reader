@@ -77,7 +77,11 @@ class _FixtureHttpClient implements HttpClient {
     if (name == #openUrl || name == #open) {
       final args = invocation.positionalArguments;
       final String url = args.isNotEmpty ? args.last.toString() : '';
-      return _FixtureRequest(url, covers);
+      // The real HttpClient.openUrl/open return Future<HttpClientRequest>;
+      // returning the request synchronously caused
+      // "'_FixtureRequest' is not a subtype of 'Future<HttpClientRequest>'"
+      // to surface as a notifier load failure with timing-dependent UI.
+      return Future.value(_FixtureRequest(url, covers));
     }
     if (_futureReturning.contains(name)) {
       final args = invocation.positionalArguments;

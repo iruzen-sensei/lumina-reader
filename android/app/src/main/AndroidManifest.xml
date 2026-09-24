@@ -51,13 +51,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Deep links -->
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="lumina" />
-            </intent-filter>
+            <!-- NOTE: a `lumina` custom-scheme deep-link intent-filter was
+                 removed: nothing in the Dart layer handled incoming links,
+                 so it was dead config that only let other apps cold-open
+                 the launcher activity. Re-add together with a real
+                 app-link handler if deep links become a feature. -->
         </activity>
 
         <!-- Background service for downloads -->

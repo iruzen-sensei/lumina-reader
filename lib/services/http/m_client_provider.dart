@@ -41,9 +41,3 @@ final sourceClientProvider =
   // cached instance. Use MClient.closeAllSourceClients() for a full purge.
   return client;
 });
-
-/// Submits a Cloudflare challenge to the WebView broker (advanced use).
-final cloudflareSolverProvider =
-    Provider<Future<Map<String, String>> Function(Uri url)>(
-  (ref) => (url) => solveCloudFlare(url),
-);

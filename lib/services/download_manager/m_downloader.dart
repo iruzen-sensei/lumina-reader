@@ -103,6 +103,31 @@ typedef ErrorCallback = void Function(Object error, StackTrace stack);
 // Parsers
 // ---------------------------------------------------------------------------
 
+/// Default cap for a single downloaded file (page image / ts segment).
+/// Malicious sources serving endless streams would otherwise buffer
+/// unbounded bytes in memory (OOM) or fill app storage.
+const int kMaxFileBytes = 96 * 1024 * 1024; // 96 MiB
+
+/// Default cap for the total bytes a single download job may write.
+const int kMaxTotalBytes = 2 * 1024 * 1024 * 1024; // 2 GiB
+
+/// Strip characters that would let a source-controlled title escape the
+/// download directory when used as a file name ('../', separators, NUL,
+/// control chars). Collapses whitespace; keeps readable punctuation.
+String sanitizeFileName(String input) {
+  final cleaned = input
+      .replaceAll('/', ' ')
+      .replaceAll('\\', ' ')
+      .replaceAll('\u0000', '')
+      .replaceAll(RegExp(r'[\x00-\x1f]'), '')
+      .replaceAll(RegExp(r'^[. ]+'), '')
+      .trim()
+      .replaceAll(RegExp(r'\s+'), ' ');
+  if (cleaned.isEmpty) return 'untitled';
+  // Windows-illegal & Android-problematic characters.
+  return cleaned.replaceAll(RegExp(r'[<>:"|?*]'), '_');
+}
+
 /// Parse a master or media m3u8 playlist. Returns the list of segment URLs.
 ///
 /// If the playlist is a master playlist (with `#EXT-X-STREAM-INF`), the
@@ -332,7 +357,8 @@ class MDownloader {
         return dir.path;
       }
 
-      final String cbzPath = p.join(p.dirname(dir.path), '$chapterTitle.cbz');
+      final String cbzPath =
+          p.join(p.dirname(dir.path), '${sanitizeFileName(chapterTitle)}.cbz');
       await _writeCbz(results, cbzPath, chapterTitle);
       return cbzPath;
     } finally {
@@ -464,6 +490,11 @@ class MDownloader {
   // ---- Internals -----------------------------------------------------------
 
   /// Fetch a single URL with exponential backoff.
+  ///
+  /// Enforces [kMaxFileBytes] per file via [readCapped]: the declared
+  /// Content-Length is checked before download and the streamed body is
+  /// capped while reading, so a hostile source cannot buffer unbounded
+  /// bytes in memory.
   Future<Uint8List> _fetchWithRetry(
     String url, {
     Map<String, String> headers = const <String, String>{},
@@ -474,7 +505,6 @@ class MDownloader {
     while (attempt <= maxRetries) {
       if (_cancelled) throw StateError('cancelled');
       try {
-        final Stopwatch sw = Stopwatch()..start();
         final http.StreamedResponse res = await MClient.httpClient(
                 timeout: requestTimeout)
             .send(http.Request('GET', uri)
@@ -483,12 +513,8 @@ class MDownloader {
                 'x-lumina-ts': DateTime.now().toIso8601String(),
               }));
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          final List<int> body = <int>[];
-          await for (final List<int> chunk in res.stream) {
-            body.addAll(chunk);
-          }
-          sw.stop();
-          return Uint8List.fromList(body);
+          return await readCapped(res.stream, url,
+              declaredLength: res.headers['content-length']);
         }
         throw HttpException('HTTP ${res.statusCode} for $url');
       } catch (e) {
@@ -500,6 +526,36 @@ class MDownloader {
       }
     }
     throw lastError ?? StateError('download-failed');
+  }
+
+  /// Reads [stream] fully, refusing to buffer more than [kMaxFileBytes].
+  ///
+  /// Public + static so the cap logic is directly unit-testable; used by
+  /// [_fetchWithRetry]. [declaredLength] is the raw Content-Length header
+  /// value (may be null or garbage) and is checked up-front.
+  static Future<Uint8List> readCapped(
+    Stream<List<int>> stream,
+    String url, {
+    String? declaredLength,
+  }) async {
+    if (declaredLength != null) {
+      final int? expected = int.tryParse(declaredLength);
+      if (expected != null && expected > kMaxFileBytes) {
+        throw HttpException(
+            'refusing ${expected}B download (cap $kMaxFileBytes) for $url');
+      }
+    }
+    final List<int> body = <int>[];
+    await for (final List<int> chunk in stream) {
+      body.addAll(chunk);
+      if (body.length > kMaxFileBytes) {
+        // Abandon the stream: a source that lies about Content-Length (or
+        // never ends) must not exhaust memory.
+        throw HttpException(
+            'response exceeded ${kMaxFileBytes}B cap for $url');
+      }
+    }
+    return Uint8List.fromList(body);
   }
 
   /// Pack an ordered list of image files into a `.cbz` (zip) archive.

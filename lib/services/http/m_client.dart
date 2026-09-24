@@ -18,48 +18,59 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:http_interceptor/http_interceptor.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 /// MClient — Central HTTP client factory for Lumina Reader.
 ///
 /// Provides:
-/// * [InterceptedClient] with cookie management, request logging, and
-///   Cloudflare challenge bypass.
-/// * [MCookieManager] — Isar-backed cookie jar that mirrors cookies to
-///   SharedPreferences so they survive across launches.
-/// * [LoggerInterceptor] — Pretty request/response logger.
-/// * [ResolveCloudFlareChallenge] — Retries a request when a 403/503
-///   Cloudflare interstitial is detected, optionally invoking the loopback
-///   [webviewServer] to solve the JS challenge.
+/// * [InterceptedClient] with cookie management and request logging.
+/// * [MCookieManager] — file-backed cookie jar (survives restarts) keyed by
+///   host, persisted as JSON under the app-support directory.
+/// * [LoggerInterceptor] — Pretty request/response logger (secrets redacted).
+/// * [ResolveCloudFlareChallenge] — Retry policy that backs off when a
+///   Cloudflare interstitial is detected.
 /// * Helpers: [setCookie], [getCookiesPref], [deleteAllCookies].
 /// * [httpClient] — Convenience factory that returns a fully wired client.
-
-// ---------------------------------------------------------------------------
-// Lightweight Isar-free preference shim.
-// ---------------------------------------------------------------------------
-
-/// In-memory persistence map used as a stand-in for Isar's settings store.
 ///
-/// In a production fork this would be replaced by a real Isar-backed key/value
-/// box, but the public API stays identical so callers do not need to change.
-class _SettingsPref {
-  _SettingsPref._();
-  static final _SettingsPref instance = _SettingsPref._();
+/// SECURITY NOTE: an earlier revision exposed a loopback HTTP "webview
+/// broker" server (GET /pop, POST /push, POST /fail) meant to hand Cloudflare
+/// challenges to a native WebView poller. No such poller ever existed in the
+/// Android shell, so challenges always timed out AND the unauthenticated
+/// server let any other app on the device read pending challenge URLs or
+/// push attacker-chosen cookies into a pending solve. Both the server and
+/// the solver plumbing were removed; the retry policy remains an honest
+/// exponential backoff.
 
-  final Map<String, dynamic> _box = <String, dynamic>{};
+// ---------------------------------------------------------------------------
+// Cookie persistence (file-backed, app-support directory)
+// ---------------------------------------------------------------------------
 
-  Future<void> put(String key, dynamic value) async {
-    _box[key] = value;
+/// Where the cookie jar lives on disk (lazily resolved).
+Future<File> _cookieStoreFile() async {
+  final dir = await getApplicationSupportDirectory();
+  return File(p.join(dir.path, 'http_cookies.json'));
+}
+
+Future<Map<String, dynamic>> _readCookieStore() async {
+  try {
+    final file = await _cookieStoreFile();
+    if (!file.existsSync()) return <String, dynamic>{};
+    final decoded = jsonDecode(await file.readAsString());
+    return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+  } catch (_) {
+    return <String, dynamic>{}; // corrupt store -> start fresh
   }
+}
 
-  dynamic get(String key) => _box[key];
-
-  Future<void> delete(String key) async {
-    _box.remove(key);
+Future<void> _writeCookieStore(Map<String, dynamic> data) async {
+  try {
+    final file = await _cookieStoreFile();
+    await file.parent.create(recursive: true);
+    await file.writeAsString(jsonEncode(data), flush: true);
+  } catch (_) {
+    // Persistence is best-effort (e.g. unit tests without path_provider).
   }
-
-  bool containsKey(String key) => _box.containsKey(key);
-
-  Set<String> get keys => _box.keys.toSet();
 }
 
 /// Cookie preference key prefix.
@@ -71,21 +82,70 @@ const String _kCookiePrefix = 'cookies_';
 
 /// An [InterceptorContract] that injects & persists cookies per host.
 ///
-/// Cookies are stored in the settings store as a JSON-encoded map of
-/// `name -> value` keyed by host. This means they survive application
-/// restarts and can be shared between isolates (because they live in the
-/// underlying Isar database).
+/// Cookies live in an in-memory map mirrored to
+/// `<app-support>/http_cookies.json` (debounced writes), so they survive
+/// application restarts. Cloudflare clearances obtained mid-session are
+/// therefore still valid on the next launch.
 class MCookieManager implements HttpInterceptor {
   MCookieManager();
 
-  /// Hostname -> Map<name, value>.
+  /// Shared instance state — every [MCookieManager] sees the same jar
+  /// (they all delegate here), matching the previous single-instance
+  /// behaviour while keeping the class instantiable for tests.
+  static final Map<String, dynamic> _store = <String, dynamic>{};
+  static bool _loaded = false;
+  static Timer? _saveTimer;
+  static bool _writing = false;
+
+  static Future<void> _ensureLoaded() async {
+    if (_loaded) return;
+    _loaded = true; // set first to avoid re-entrancy
+    _store.addAll(await _readCookieStore());
+  }
+
+  static void _scheduleSave() {
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(seconds: 1), _flushNow);
+  }
+
+  static Future<void> _flushNow() async {
+    if (_writing) {
+      _scheduleSave(); // retry shortly
+      return;
+    }
+    _writing = true;
+    try {
+      await _writeCookieStore(Map<String, dynamic>.of(_store));
+    } finally {
+      _writing = false;
+    }
+  }
+
+  /// Flush pending cookie writes to disk immediately (app pause / exit).
+  static Future<void> flush() async {
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    if (_loaded) await _flushNow();
+  }
+
+  /// Reload the jar from disk and drop in-memory state (tests / resets).
+  static Future<void> resetFromDisk() async {
+    _store.clear();
+    _loaded = false;
+    await _ensureLoaded();
+  }
+
+  /// Load the persisted jar into memory if it has not been loaded yet
+  /// (called once at app boot; harmless afterwards).
+  Future<void> preloadFromDisk() async => _ensureLoaded();
+
   Map<String, Map<String, String>> _loadAll() {
     final Map<String, Map<String, String>> result =
         <String, Map<String, String>>{};
-    for (final String key in _SettingsPref.instance.keys) {
+    for (final String key in _store.keys.toList()) {
       if (!key.startsWith(_kCookiePrefix)) continue;
       final String host = key.substring(_kCookiePrefix.length);
-      final dynamic raw = _SettingsPref.instance.get(key);
+      final dynamic raw = _store[key];
       if (raw is String) {
         try {
           final Map<String, dynamic> decoded =
@@ -102,7 +162,7 @@ class MCookieManager implements HttpInterceptor {
 
   Map<String, String> _loadFor(Uri uri) {
     final String key = '$_kCookiePrefix${uri.host}';
-    final dynamic raw = _SettingsPref.instance.get(key);
+    final dynamic raw = _store[key];
     if (raw is String && raw.isNotEmpty) {
       try {
         final Map<String, dynamic> decoded =
@@ -118,7 +178,8 @@ class MCookieManager implements HttpInterceptor {
 
   Future<void> _saveFor(Uri uri, Map<String, String> cookies) async {
     final String key = '$_kCookiePrefix${uri.host}';
-    await _SettingsPref.instance.put(key, jsonEncode(cookies));
+    _store[key] = jsonEncode(cookies);
+    _scheduleSave();
   }
 
   /// Build a `name=value; name2=value2` cookie header from the store.
@@ -133,24 +194,72 @@ class MCookieManager implements HttpInterceptor {
   /// Parse `Set-Cookie` response headers and persist them.
   Future<void> _absorbResponse(http.BaseResponse response) async {
     if (response is! http.StreamedResponse) return;
-    final Map<String, String> existing = _loadFor(response.request?.url ?? Uri());
+    final Uri? url = response.request?.url;
+    if (url == null) return;
+    final Map<String, String> existing = _loadFor(url);
     bool changed = false;
-    for (final String value in response.headers['set-cookie']?.split(',') ??
-        const <String>[]) {
-      final String? pair = _parseSetCookie(value);
-      if (pair == null) continue;
-      final int eq = pair.indexOf('=');
-      if (eq <= 0) continue;
-      final String name = pair.substring(0, eq).trim();
-      final String val = pair.substring(eq + 1).trim();
-      if (existing[name] != val) {
-        existing[name] = val;
-        changed = true;
+    final String? header = response.headers['set-cookie'];
+    if (header != null) {
+      for (final String value in splitSetCookieHeader(header)) {
+        final String? pair = _parseSetCookie(value);
+        if (pair == null) continue;
+        final int eq = pair.indexOf('=');
+        if (eq <= 0) continue;
+        final String name = pair.substring(0, eq).trim();
+        final String val = pair.substring(eq + 1).trim();
+        if (existing[name] != val) {
+          existing[name] = val;
+          changed = true;
+        }
       }
     }
     if (changed) {
-      await _saveFor(response.request!.url, existing);
+      await _saveFor(url, existing);
     }
+  }
+
+  /// Split a merged `set-cookie` header on commas, but only where a new
+  /// cookie actually starts. Public + static so the parsing is testable. The http package folds multiple `Set-Cookie`
+  /// lines into one comma-joined string; cookie values themselves may
+  /// contain commas (`Expires=Wed, 09 Jun 2021 ...`), so a naive split
+  /// corrupts them.
+  static List<String> splitSetCookieHeader(String header) {
+    final List<String> parts = <String>[];
+    final buffer = StringBuffer();
+    final int len = header.length;
+    for (var i = 0; i < len; i++) {
+      final String ch = header[i];
+      if (ch != ',') {
+        buffer.write(ch);
+        continue;
+      }
+      // A comma only ends a cookie when what follows (after optional
+      // spaces) looks like `token=` or `token =` — i.e. a fresh name=value
+      // pair, not a continuation such as a date.
+      var j = i + 1;
+      while (j < len && (header[j] == ' ' || header[j] == '\t')) {
+        j++;
+      }
+      var k = j;
+      while (k < len &&
+          header[k] != '=' &&
+          header[k] != ';' &&
+          header[k] != ',' &&
+          header[k] != ' ') {
+        k++;
+      }
+      final bool newCookieStarts =
+          k > j && k < len && header[k] == '=';
+      if (newCookieStarts) {
+        parts.add(buffer.toString());
+        buffer.clear();
+        i = j - 1; // skip the spaces we consumed
+      } else {
+        buffer.write(ch);
+      }
+    }
+    parts.add(buffer.toString());
+    return parts;
   }
 
   String? _parseSetCookie(String header) {
@@ -167,6 +276,7 @@ class MCookieManager implements HttpInterceptor {
   Future<BaseRequest> interceptRequest({
     required BaseRequest request,
   }) async {
+    await _ensureLoaded();
     final String cookieHeader = _buildHeader(request.url);
     if (cookieHeader.isNotEmpty) {
       request.headers[HttpHeaders.cookieHeader] = cookieHeader;
@@ -178,15 +288,18 @@ class MCookieManager implements HttpInterceptor {
   Future<BaseResponse> interceptResponse({
     required BaseResponse response,
   }) async {
+    await _ensureLoaded();
     await _absorbResponse(response);
     return response;
   }
 
   @override
-  Future<bool> shouldInterceptRequest({required BaseRequest request}) async => true;
+  Future<bool> shouldInterceptRequest({required BaseRequest request}) async =>
+      true;
 
   @override
-  Future<bool> shouldInterceptResponse({required BaseResponse response}) async => true;
+  Future<bool> shouldInterceptResponse({required BaseResponse response}) async =>
+      true;
 
   // ---- Public helpers ------------------------------------------------------
 
@@ -202,12 +315,13 @@ class MCookieManager implements HttpInterceptor {
 
   /// Delete every persisted cookie for every host.
   Future<void> deleteAll() async {
-    final List<String> keys = _SettingsPref.instance.keys
+    final List<String> keys = _store.keys
         .where((String k) => k.startsWith(_kCookiePrefix))
         .toList();
     for (final String k in keys) {
-      await _SettingsPref.instance.delete(k);
+      _store.remove(k);
     }
+    _scheduleSave();
   }
 }
 
@@ -217,13 +331,21 @@ class MCookieManager implements HttpInterceptor {
 
 /// Pretty-prints every HTTP request & response.
 ///
-/// Body output is truncated to 1 KiB to keep logs readable. Toggle by setting
-/// [enabled] to `false`.
+/// Sensitive header values (cookies, authorization) are redacted so debug
+/// logs never leak session credentials. Body output is truncated to 1 KiB to
+/// keep logs readable. Toggle by setting [enabled] to `false`.
 class LoggerInterceptor implements HttpInterceptor {
   LoggerInterceptor({this.enabled = true, this.maxBody = 1024});
 
   final bool enabled;
   final int maxBody;
+
+  static const Set<String> _redactedHeaders = {
+    'cookie',
+    'set-cookie',
+    'authorization',
+    'proxy-authorization',
+  };
 
   String _fmtDuration(Duration d) {
     if (d.inMilliseconds < 1000) return '${d.inMilliseconds}ms';
@@ -236,12 +358,18 @@ class LoggerInterceptor implements HttpInterceptor {
     print('[MClient] $line');
   }
 
+  String _fmtHeader(String name, String value) =>
+      _redactedHeaders.contains(name.toLowerCase())
+          ? '$name: <redacted>'
+          : '$name: $value';
+
   @override
   Future<BaseRequest> interceptRequest({
     required BaseRequest request,
   }) async {
     _log('--> ${request.method} ${request.url}');
-    request.headers.forEach((String k, String v) => _log('  $k: $v'));
+    request.headers
+        .forEach((String k, String v) => _log('  ${_fmtHeader(k, v)}'));
     return request;
   }
 
@@ -252,42 +380,40 @@ class LoggerInterceptor implements HttpInterceptor {
     final DateTime? sent = response.request != null
         ? DateTime.tryParse(response.request!.headers['x-lumina-ts'] ?? '')
         : null;
-    final Duration elapsed = sent != null ? DateTime.now().difference(sent) : Duration.zero;
-    _log('<-- ${response.statusCode} ${response.request?.url} (${_fmtDuration(elapsed)})');
+    final Duration elapsed = sent != null
+        ? DateTime.now().difference(sent)
+        : Duration.zero;
+    _log('<-- ${response.statusCode} ${response.request?.url} '
+        '(${_fmtDuration(elapsed)})');
     return response;
   }
 
   @override
-  Future<bool> shouldInterceptRequest({required BaseRequest request}) async => enabled;
+  Future<bool> shouldInterceptRequest({required BaseRequest request}) async =>
+      enabled;
 
   @override
-  Future<bool> shouldInterceptResponse({required BaseResponse response}) async => enabled;
+  Future<bool> shouldInterceptResponse({required BaseResponse response}) async =>
+      enabled;
 }
 
 // ---------------------------------------------------------------------------
 // ResolveCloudFlareChallenge
 // ---------------------------------------------------------------------------
 
-/// Retry policy that detects Cloudflare interstitials and solves them.
+/// Retry policy that detects Cloudflare interstitials and backs off.
 ///
-/// Detection logic:
-/// * HTTP status is 403, 429, 503, or 521-523 **and** the body contains
-///  `cloudflare` or `cf-browser-verification`.
-///
-/// When triggered, the interceptor asks the optional [webviewSolver] to solve
-/// the challenge in a headless WebView and replay the request with the fresh
-/// `cf_clearance` cookie. If no solver is available, the request is retried
-/// with exponential backoff up to [maxRetries] times.
-typedef CloudFlareSolver = Future<Map<String, String>> Function(Uri url);
-
+/// Detection logic: HTTP status is 403, 429, 503, or 521-523 **and** the
+/// response carries `server: cloudflare`. There is no challenge solver in
+/// this build (the old loopback webview broker never had a native poller
+/// and was removed), so the policy retries with exponential backoff up to
+/// [maxRetries] times and then surfaces the failure to the caller.
 class ResolveCloudFlareChallenge implements RetryPolicy {
   ResolveCloudFlareChallenge({
     this.maxRetries = 3,
-    this.webviewSolver,
   });
 
   final int maxRetries;
-  final CloudFlareSolver? webviewSolver;
 
   @override
   int get maxRetryAttempts => maxRetries;
@@ -316,132 +442,12 @@ class ResolveCloudFlareChallenge implements RetryPolicy {
         (code >= 521 && code <= 523);
     if (!suspicious) return false;
 
-    // v3's retry hook hands us the live response — reading (and thereby
-    // consuming) the body stream here would corrupt the response the caller
-    // eventually receives, so detection is header-based only: Cloudflare's
-    // edge sets `server: cloudflare` on challenge interstitials.
-    final isCloudflare =
-        (response.headers['server'] ?? '').toLowerCase() == 'cloudflare';
-
-    if (isCloudflare && webviewSolver != null && response.request?.url != null) {
-      try {
-        final solved = await webviewSolver!(response.request!.url);
-        await MCookieManager()
-            .setCookiesFor(response.request!.url, solved);
-        return true; // solved — retry with the fresh cookies
-      } catch (_) {
-        return true; // retry anyway; exponential backoff applies
-      }
-    }
-    return isCloudflare;
+    // Detection is header-based only: reading (and thereby consuming) the
+    // body stream here would corrupt the response the caller eventually
+    // receives. Cloudflare's edge sets `server: cloudflare` on challenge
+    // interstitials.
+    return (response.headers['server'] ?? '').toLowerCase() == 'cloudflare';
   }
-}
-
-// ---------------------------------------------------------------------------
-// Loopback webview server
-// ---------------------------------------------------------------------------
-
-/// A tiny loopback HTTP server used to broker Cloudflare challenges between
-/// the Dart isolate and the platform WebView (which must run on the platform
-/// thread).
-///
-/// The native side polls `GET /pop` to retrieve a pending challenge URL,
-/// solves it in a WebView, and `POST /push` the resulting cookies back. The
-/// Dart side awaits the result via a [Completer] keyed by request id.
-HttpServer? _webviewServer;
-final Map<String, Completer<Map<String, String>>> _pending = <String, Completer<Map<String, String>>>{};
-
-/// Starts (or returns the already running) loopback HTTP server.
-///
-/// The server listens on `127.0.0.1:0` (OS-assigned port). The actual port
-/// can be obtained via [webviewServerPort] once [webviewServer] has been
-/// awaited at least once.
-Future<HttpServer> webviewServer() async {
-  if (_webviewServer != null) return _webviewServer!;
-  _webviewServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-  _webviewServer!.listen(_handleWebviewRequest);
-  return _webviewServer!;
-}
-
-/// The port the [webviewServer] is bound to.
-int? get webviewServerPort => _webviewServer?.port;
-
-Future<void> _handleWebviewRequest(HttpRequest req) async {
-  final String path = req.uri.path;
-  try {
-    if (path == '/pop' && req.method == 'GET') {
-      if (_pending.isEmpty) {
-        unawaited((req.response..statusCode = HttpStatus.noContent).close());
-        return;
-      }
-      final MapEntry<String, Completer<Map<String, String>>> entry =
-          _pending.entries.first;
-      req.response
-        ..statusCode = HttpStatus.ok
-        ..headers.contentType = ContentType.json
-        ..write(jsonEncode(<String, dynamic>{
-          'id': entry.key,
-          'url': entry.key, // Encoded as URL for simplicity.
-        }));
-      await req.response.close();
-      return;
-    }
-
-    if (path == '/push' && req.method == 'POST') {
-      final String body =
-          await utf8.decoder.bind(req).join();
-      final Map<String, dynamic> decoded =
-          jsonDecode(body) as Map<String, dynamic>;
-      final String id = decoded['id']?.toString() ?? '';
-      final Map<String, String> cookies = (decoded['cookies']
-              as Map<String, dynamic>? ??
-          const <String, dynamic>{})
-          .map((String k, dynamic v) => MapEntry(k, v.toString()));
-      final Completer<Map<String, String>>? c = _pending.remove(id);
-      if (c != null && !c.isCompleted) {
-        c.complete(cookies);
-      }
-      unawaited((req.response..statusCode = HttpStatus.ok).close());
-      return;
-    }
-
-    if (path == '/fail' && req.method == 'POST') {
-      final String body = await utf8.decoder.bind(req).join();
-      final Map<String, dynamic> decoded =
-          jsonDecode(body) as Map<String, dynamic>;
-      final String id = decoded['id']?.toString() ?? '';
-      final Completer<Map<String, String>>? c = _pending.remove(id);
-      if (c != null && !c.isCompleted) {
-        c.completeError(Exception('webview-challenge-failed'));
-      }
-      unawaited((req.response..statusCode = HttpStatus.ok).close());
-      return;
-    }
-
-    unawaited((req.response..statusCode = HttpStatus.notFound).close());
-  } catch (e) {
-    unawaited((req.response
-          ..statusCode = HttpStatus.internalServerError
-          ..write(e.toString()))
-        .close());
-  }
-}
-
-/// Submits a Cloudflare challenge URL to the loopback server and awaits the
-/// resolved cookies. Times out after [timeout] (default 25 s).
-Future<Map<String, String>> solveCloudFlare(
-  Uri url, {
-  Duration timeout = const Duration(seconds: 25),
-}) async {
-  await webviewServer();
-  final String id = url.toString();
-  final Completer<Map<String, String>> c =
-      Completer<Map<String, String>>();
-  _pending[id] = c;
-  return c.future.timeout(timeout, onTimeout: () {
-    _pending.remove(id);
-    return const <String, String>{};
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -461,6 +467,9 @@ Map<String, String> getCookiesPref(Uri uri) => MCookieManager().getCookiesFor(ur
 
 /// Remove every cookie from every host.
 Future<void> deleteAllCookies() => MCookieManager().deleteAll();
+
+/// Flush the cookie jar to disk (call on app pause / lifecycle changes).
+Future<void> persistCookies() => MCookieManager.flush();
 
 // ---------------------------------------------------------------------------
 // MClient
@@ -486,15 +495,16 @@ class MClient {
   /// * [useCookies] — toggle cookie jar (default `true`).
   /// * [useLogger] — toggle request logging (default `true` in debug, `false`
   ///   otherwise).
-  /// * [cfBypass] — enable Cloudflare challenge auto-solve (default `true`).
+  /// * [cfBypass] — enable Cloudflare-aware retry/backoff (default `true`).
   /// * [timeout] — per-request timeout.
   /// * [extraInterceptors] — additional interceptors appended to the chain.
   static InterceptedClient httpClient({
     bool useCookies = true,
     bool? useLogger,
-    bool cfBypass = true,
     Duration timeout = const Duration(seconds: 30),
     List<HttpInterceptor> extraInterceptors = const <HttpInterceptor>[],
+    @Deprecated('No solver exists in this build; kept for source compat')
+        bool cfBypass = true,
   }) {
     final List<HttpInterceptor> interceptors = <HttpInterceptor>[];
     if (useCookies) interceptors.add(_cookieManager);
@@ -502,18 +512,14 @@ class MClient {
       interceptors.add(_logger);
     }
 
-    final List<RetryPolicy> retryPolicies = <RetryPolicy>[];
-    if (cfBypass) {
-      retryPolicies.add(ResolveCloudFlareChallenge(
-        maxRetries: 3,
-        webviewSolver: solveCloudFlare,
-      ));
-    }
+    final List<RetryPolicy> retryPolicies = <RetryPolicy>[
+      ResolveCloudFlareChallenge(maxRetries: 3),
+    ];
 
     return InterceptedClient.build(
       client: http.Client(),
       interceptors: interceptors,
-      retryPolicy: retryPolicies.isEmpty ? null : retryPolicies.first,
+      retryPolicy: retryPolicies.first,
       requestTimeout: timeout,
     );
   }
@@ -524,19 +530,18 @@ class MClient {
   /// Per-source client cache. Extensions call this with their numeric source
   /// id to get a client whose cookies are scoped per host (cookies are shared
   /// through [_cookieManager]) and whose lifetime is managed centrally.
-  static final Map<int, InterceptedClient> _sourceClients = {};
+  static final Map<String, InterceptedClient> _sourceClients = {};
 
   /// Returns a cached [InterceptedClient] for the given [sourceId].
   ///
-  /// [sourceId] may be an int (Isar source id) or a String (extension
-  /// runtime id) — both are keyed by hashCode. Falls back to a shared
-  /// anonymous client when null (native built-in sources have no per-source
-  /// cookie isolation needs).
+  /// The cache key includes the id's runtime type, so a numeric Isar id and
+  /// a String extension id never collide (String.hashCode == int.hashCode is
+  /// possible, which previously cross-shared a client between sources).
   static http.Client forSource(Object? sourceId, {bool useCookies = true}) {
-    final key = sourceId?.hashCode ?? 0;
-    if (key == 0) {
+    if (sourceId == null) {
       return httpClient(useCookies: useCookies, useLogger: false);
     }
+    final key = '${sourceId.runtimeType}#$sourceId';
     return _sourceClients[key] ??= httpClient(
       useCookies: useCookies,
       useLogger: false,

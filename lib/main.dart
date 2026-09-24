@@ -16,6 +16,7 @@ import 'data/library_repository.dart';
 import 'data/sources_repository.dart';
 import 'models/settings.dart' as db_s;
 import 'providers/storage_provider.dart';
+import 'services/http/m_client.dart';
 import 'data/backup_data_source.dart';
 import 'services/backup.dart';
 import 'services/download_engine.dart';
@@ -44,6 +45,15 @@ void main() async {
       // If even the fallback fails, still launch the app with an error
       // screen instead of dying silently.
       debugPrint('Database initialization failed: $e');
+    }
+
+    // Load the persisted cookie jar (file-backed since the webview-broker
+    // removal) so Cloudflare clearances survive restarts. Best-effort —
+    // a missing store just starts an empty jar.
+    try {
+      await MCookieManager().preloadFromDisk();
+    } catch (e) {
+      debugPrint('Cookie jar load failed (starting empty): $e');
     }
 
     // First-run bootstrap: default categories, built-in sources (MangaDex),

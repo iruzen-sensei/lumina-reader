@@ -206,6 +206,90 @@ class BackupService {
   /// the format quickly.
   static const String _kMagic = 'LUMINABACKUP';
 
+  /// Guards against zip bombs: maximum declared uncompressed size of the
+  /// whole archive / a single entry before [ZipDecoder] is allowed to
+  /// inflate anything. A crafted "backup" with a nested decompression bomb
+  /// would otherwise be fully expanded in memory (OOM).
+  static const int _kMaxBackupUncompressedTotal = 512 * 1024 * 1024;
+  static const int _kMaxBackupUncompressedEntry = 256 * 1024 * 1024;
+
+  /// Scans the zip central directory (without inflating anything) and throws
+  /// if any entry's declared uncompressed size is unreasonable or if the
+  /// archive structure looks like a bomb/ZIP64 monstrosity.
+  ///
+  /// Public + static so the guard is directly unit-testable.
+  static void validateZipSizes(List<int> bytes) {
+    final data = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+    final n = data.length;
+
+    // Locate End Of Central Directory (signature 0x06054b50).
+    const minEocd = 22;
+    if (n < minEocd) {
+      throw BackupException('Backup zip is truncated');
+    }
+    var eocd = -1;
+    for (var i = n - minEocd; i >= 0; i--) {
+      if (data[i] == 0x50 &&
+          data[i + 1] == 0x4b &&
+          data[i + 2] == 0x05 &&
+          data[i + 3] == 0x06) {
+        eocd = i;
+        break;
+      }
+    }
+    if (eocd < 0) {
+      throw BackupException('Backup zip has no central directory');
+    }
+    int rd16(int off) => data[eocd + off] | (data[eocd + off + 1] << 8);
+    int rd32(int off) =>
+        data[eocd + off] |
+        (data[eocd + off + 1] << 8) |
+        (data[eocd + off + 2] << 16) |
+        (data[eocd + off + 3] << 24);
+
+    final entryCount = rd16(10);
+    var cdOffset = rd32(16);
+    var total = 0;
+    for (var e = 0; e < entryCount; e++) {
+      if (cdOffset + 46 > n) {
+        throw BackupException('Backup zip central directory is corrupt');
+      }
+      if (data[cdOffset] != 0x50 ||
+          data[cdOffset + 1] != 0x4b ||
+          data[cdOffset + 2] != 0x01 ||
+          data[cdOffset + 3] != 0x02) {
+        throw BackupException('Backup zip central directory is corrupt');
+      }
+      final nameLen =
+          data[cdOffset + 28] | (data[cdOffset + 29] << 8);
+      final extraLen =
+          data[cdOffset + 30] | (data[cdOffset + 31] << 8);
+      final commentLen =
+          data[cdOffset + 32] | (data[cdOffset + 33] << 8);
+      final uncompressed =
+          data[cdOffset + 24] |
+          (data[cdOffset + 25] << 8) |
+          (data[cdOffset + 26] << 16) |
+          (data[cdOffset + 27] << 24);
+      if (uncompressed == 0xFFFFFFFF) {
+        // ZIP64 — a backup this size is neither produced nor plausibly
+        // legitimate; refuse rather than mis-size it.
+        throw BackupException('Backup uses unsupported ZIP64 entries');
+      }
+      if (uncompressed > _kMaxBackupUncompressedEntry) {
+        throw BackupException('Backup entry declares '
+            '${uncompressed}B uncompressed (cap '
+            '$_kMaxBackupUncompressedEntry)');
+      }
+      total += uncompressed;
+      if (total > _kMaxBackupUncompressedTotal) {
+        throw BackupException('Backup declares more than '
+            '$_kMaxBackupUncompressedTotal uncompressed bytes');
+      }
+      cdOffset += 46 + nameLen + extraLen + commentLen;
+    }
+  }
+
   /// Current backup schema version. Bumped when the JSON layout changes.
   static const int _kVersion = 1;
 
@@ -346,6 +430,8 @@ class BackupService {
       throw BackupException('Not a Lumina Reader backup (bad magic header)');
     }
     final zipBytes = bytes.sublist(magicLen);
+    // Zip-bomb guard: validate declared sizes BEFORE any inflation.
+    validateZipSizes(zipBytes);
     final archive = ZipDecoder().decodeBytes(zipBytes);
     final encrypted = archive.findFile('backup.json.enc');
     if (encrypted != null) {
