@@ -4,6 +4,7 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
@@ -24,10 +25,38 @@ import 'services/extension_coordinator.dart';
 import 'services/extension_repo_service.dart';
 import 'services/library_updater.dart';
 
+/// Whether [runApp] has completed and at least one frame was pumped.
+///
+/// The error boundary behaves differently before/after this flips:
+///   * BEFORE — a failure IS fatal (the app never came up): show the
+///     full-screen error + Restart button.
+///   * AFTER — the app is live; a stray unhandled async error from a
+///     background sync / download / updater must NEVER replace the running
+///     app with an error screen. It is logged and dropped. Previously ANY
+///     zone error re-ran runApp() with the error screen — the "a message
+///     pops up saying it has to restart" bug.
+bool _startupComplete = false;
+
 void main() async {
-  // Error boundary — NEVER crash to a black screen (the HyperOS lesson).
+  // Error boundary — NEVER crash to a black screen (the HyperOS lesson),
+  // but also NEVER kill a RUNNING app over a background hiccup.
   await runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
+
+    // Framework (widget-build/layout) errors: print in debug, never abort.
+    // In release builds the default handler would render the grey error
+    // screen for a single bad frame — we keep the app alive instead.
+    FlutterError.onError = (details) {
+      FlutterError.presentError(details);
+    };
+
+    // Platform-level uncaught errors (timers, microtasks outside the zone,
+    // platform channels): claim them as handled so the engine does not
+    // terminate the isolate.
+    PlatformDispatcher.instance.onError = (error, stack) {
+      debugPrint('Platform error: $error\n$stack');
+      return true;
+    };
 
     // media_kit requires a one-time native init before any Player is
     // created — previously missing, which would crash the anime player.
@@ -73,7 +102,11 @@ void main() async {
         // (previously the repo list was in-memory and always empty).
         try {
           await repoService.ensureDefaultRepo();
-          unawaited(repoService.syncAll());
+          // syncAll contains its own per-repo failures; this catch is the
+          // last resort (e.g. the settings row itself unreadable).
+          unawaited(repoService.syncAll().catchError((e) {
+            debugPrint('Extension repo background sync failed: $e');
+          }));
         } catch (e) {
           debugPrint('Extension repo seed/sync failed (non-fatal): $e');
         }
@@ -107,19 +140,34 @@ void main() async {
       }
     }
 
-    // Set image cache limits (prevents OOM on low-RAM devices).
-    PaintingBinding.instance.imageCache.maximumSizeBytes = 64 << 20; // 64 MB
-    PaintingBinding.instance.imageCache.maximumSize = 100;
+    // Set image cache limits (prevents OOM on low-RAM devices). The byte
+    // cap (64 MB) does the real memory policing; the ENTRY count must stay
+    // high because a manga reader keeps hundreds of small cover thumbs and
+    // page images live — at the old 100-entry cap the cache thrashed
+    // (evict + re-decode on every scroll back), which read as "janky".
+    PaintingBinding.instance.imageCache.maximumSizeBytes = 96 << 20; // 96 MB
+    PaintingBinding.instance.imageCache.maximumSize = 1000;
 
     runApp(
       const ProviderScope(
         child: LuminaApp(),
       ),
     );
+
+    // First successful frame = the app is up. From here on, zone errors are
+    // NON-fatal (logged, app continues).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startupComplete = true;
+    });
   }, (error, stack) {
     debugPrint('Uncaught error: $error');
     debugPrint('Stack: $stack');
-    // Show error app instead of black screen
+    // Only a STARTUP failure may show the error screen. Once the app is
+    // running, background errors are logged above and the UI is untouched —
+    // the previous unconditional runApp() here is what wiped the whole app
+    // ("it has to restart") whenever a repo sync / download / updater
+    // threw.
+    if (_startupComplete) return;
     runApp(MaterialApp(
       home: Scaffold(
         body: Center(

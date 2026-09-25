@@ -21,9 +21,12 @@
 import 'package:lumina_reader/eval/base_service.dart';
 import 'package:lumina_reader/eval/interface.dart';
 import 'package:lumina_reader/eval/model/m_models.dart';
+import 'package:lumina_reader/eval/native/anizone_source.dart';
 import 'package:lumina_reader/eval/native/madara_source.dart';
+import 'package:lumina_reader/eval/native/mangabox_source.dart';
 import 'package:lumina_reader/eval/native/mangadex_source.dart';
 import 'package:lumina_reader/eval/native/mangareader_source.dart';
+import 'package:lumina_reader/eval/native/mmrcms_source.dart';
 import 'package:lumina_reader/eval/null_extension_service.dart';
 import 'package:lumina_reader/models/source.dart';
 
@@ -47,6 +50,10 @@ final Map<String, BaseExtensionService Function(Source)> _nativeSources = {
   'builtin:mangadex': (s) => MangaDexSource(s),
   'builtin:madara': (s) => MadaraSource(s),
   'builtin:mangareader': (s) => MangaReaderSource(s),
+  'builtin:mangabox': (s) => MangaBoxSource(s),
+  'builtin:mmrcms': (s) => MmrcmsSource(s),
+  // Anilili-style anime streaming: AniList catalog + AniZone streams.
+  'builtin:anizone': (s) => AniZoneSource(s),
 };
 
 /// Multisrc template identifiers natively supported by this build — repo
@@ -58,6 +65,12 @@ const Set<String> kSupportedTemplates = {
   // MangaDex sites in the repo use a JS single-source; we ship a native
   // MangaDex implementation instead (installed as builtin.mangadex).
   'mangadex',
+  // Classic "MangaBox" family (Mangabat / Mangakakalot / Manganato /
+  // Mangairo) — live-verified against mangabats.com.
+  'mangabox',
+  // MMRCMS family (scan-vf.net, onma.top, readcomicsonline.ru) —
+  // live-verified against scan-vf.net.
+  'mmrcms',
 };
 
 /// Creates the appropriate [ExtensionService] for the given [source].
@@ -91,6 +104,15 @@ ExtensionService getExtensionService(Source source) {
       if (template == 'mangadex') return MangaDexSource(source);
       return factory(source);
     }
+  }
+
+  // MangaDex LANGUAGE VARIANTS: 45 of the repo's `single` entries are the
+  // same MangaDex site in different languages (baseUrl = mangadex.org with
+  // a per-language sourceCode). Routing them through the native MangaDex
+  // template turns 45 "Not supported" rows into working extensions.
+  final baseUrl = (source.displayBaseUrl).toLowerCase();
+  if (baseUrl.contains('mangadex.org')) {
+    return MangaDexSource(source);
   }
 
   // 2. Interpreter-backed sources (EXPERIMENTAL — see class docs).

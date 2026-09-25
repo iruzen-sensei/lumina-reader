@@ -69,6 +69,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   int _sessionStartPage = 0;
   int _sessionMaxPage = 0;
 
+  // Resume target: the persisted lastPageRead for the chapter being opened.
+  // The page list arrives ASYNC (totalPages is 0 on first build), so the
+  // resume position must be held here and applied on the first non-empty
+  // page list — previously the saved position was read, multiplied against
+  // a zero page count and silently dropped, so every reopen landed on
+  // page 1 ("the app can't keep track of progress").
+  int _resumePage = 0;
+  bool _resumeApplied = false;
+
   // Current chapter pointer so chapter navigation can mutate it.
   // Nullable: the async Isar resolve in _loadChapter may not have finished
   // when the first frame builds — every access must be guarded (the previous
@@ -125,8 +134,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       _manga = manga;
       _chapter = chapter;
       _totalPages = ref.read(readerPagesProvider(chapter.id)).length;
+      // Hold the persisted position: pages are not loaded yet, so it cannot
+      // be clamped here — it is clamped + applied by the pages listener.
+      _resumePage = chapter.lastPageRead.clamp(0, 100000);
+      _resumeApplied = false;
       _currentPage =
-          _totalPages > 0 ? chapter.lastPageRead.clamp(0, _totalPages - 1) : 0;
+          _totalPages > 0 ? _resumePage.clamp(0, _totalPages - 1) : 0;
       _isLoadingChapter = _totalPages == 0; // until pages stream in
     });
     _resetPageAccounting();
@@ -178,6 +191,25 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   void _resetPageAccounting() {
     _sessionStartPage = _currentPage;
     _sessionMaxPage = _currentPage;
+  }
+
+  /// Captures the resume target for chapter switches via prev/next.
+  void _switchChapter(Chapter next, {required bool atEnd}) {
+    setState(() {
+      _chapter = next;
+      _totalPages = ref.read(readerPagesProvider(next.id)).length;
+      // atEnd with unknown page count: sentinel clamps to the last page
+      // when the list arrives (0 would wrongly resume at page 1).
+      _resumePage = atEnd
+          ? (_totalPages > 0 ? _totalPages - 1 : 1 << 30)
+          : (next.lastPageRead.clamp(0, 100000));
+      _resumeApplied = false;
+      _currentPage = _totalPages > 0
+          ? _resumePage.clamp(0, _totalPages - 1)
+          : (atEnd ? _totalPages : 0);
+      _isLoadingChapter = _totalPages == 0;
+    });
+    _resetPageAccounting();
   }
 
   /// Persists reading progress (debounced — fires at most every 2 s).
@@ -304,21 +336,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final chapter = _chapter;
     if (manga == null || chapter == null) return;
     final idx = manga.chapters.indexWhere((c) => c.id == chapter.id);
+    // Stored newest-first: a lower index = a HIGHER chapter number. Being
+    // at index 0 means the latest released chapter — nothing newer exists.
     if (idx <= 0) {
-      showSnack(ref, context, 'Already at the first chapter');
+      showSnack(ref, context, 'No newer chapter yet');
       return;
     }
     await _flushProgress();
     await _recordSession();
     final next = manga.chapters[idx - 1];
     if (!mounted) return;
-    setState(() {
-      _chapter = next;
-      _totalPages = ref.read(readerPagesProvider(next.id)).length;
-      _currentPage = 0;
-      _isLoadingChapter = _totalPages == 0;
-    });
-    _resetPageAccounting();
+    _switchChapter(next, atEnd: false);
     unawaited(_recordHistoryRead(0));
     if (ref.read(readerSettingsProvider).mode == ReaderMode.paged &&
         _pageController.hasClients) {
@@ -333,21 +361,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final chapter = _chapter;
     if (manga == null || chapter == null) return;
     final idx = manga.chapters.indexWhere((c) => c.id == chapter.id);
+    // Stored newest-first: index length-1 is chapter 1 — nothing older.
     if (idx >= manga.chapters.length - 1) {
-      showSnack(ref, context, 'Already at the last chapter');
+      showSnack(ref, context, 'Already at the first chapter');
       return;
     }
     await _flushProgress();
     await _recordSession();
     final prev = manga.chapters[idx + 1];
     if (!mounted) return;
-    setState(() {
-      _chapter = prev;
-      _totalPages = ref.read(readerPagesProvider(prev.id)).length;
-      _currentPage = _totalPages > 0 ? _totalPages - 1 : 0;
-      _isLoadingChapter = _totalPages == 0;
-    });
-    _resetPageAccounting();
+    _switchChapter(prev, atEnd: true);
     unawaited(_recordHistoryRead(0));
     if (ref.read(readerSettingsProvider).mode == ReaderMode.paged &&
         _pageController.hasClients) {
@@ -402,6 +425,21 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             }
             _isLoadingChapter = _totalPages == 0;
           });
+          // First non-empty page list → jump to the persisted position.
+          if (!_resumeApplied && next.isNotEmpty && _resumePage > 0) {
+            _resumeApplied = true;
+            final target = _resumePage.clamp(0, next.length - 1);
+            if (settings.mode == ReaderMode.paged) {
+              if (_pageController.hasClients) {
+                _pageController.jumpToPage(target);
+              }
+            } else if (_itemScrollController.isAttached) {
+              _itemScrollController.jumpTo(index: target);
+            }
+            setState(() => _currentPage = target);
+          } else if (next.isNotEmpty) {
+            _resumeApplied = true;
+          }
         });
       }
     });

@@ -273,6 +273,7 @@ class ExtensionCoordinator {
             v.quality ?? v.title ?? 'Stream',
             v.originalUrl ?? v.url,
             _heightFromLabel(v.quality),
+            subtitles: _subtitlesFrom(v),
           ),
       ].where((q) => q.url.isNotEmpty).toList();
     } catch (e) {
@@ -359,7 +360,25 @@ class ExtensionCoordinator {
   int _heightFromLabel(String? label) {
     if (label == null) return 0;
     final match = RegExp(r'(\d{3,4})').firstMatch(label);
-    return match == null ? 0 : int.parse(match.group(1)!) ;
+    return match == null ? 0 : int.parse(match.group(1)!);
+  }
+
+  /// Extracts subtitle tracks a provider attached to an [MVideo] via its
+  /// `parameters['subtitles']` payload (list of {url,label,language,…}).
+  List<dto.SubtitleTrack> _subtitlesFrom(m.MVideo v) {
+    final raw = v.parameters?['subtitles'];
+    if (raw is! List) return const [];
+    final out = <dto.SubtitleTrack>[];
+    for (final e in raw) {
+      if (e is! Map) continue;
+      final url = (e['url'] ?? '') as String;
+      if (url.isEmpty) continue;
+      final language = (e['language'] ?? '') as String;
+      var label = (e['label'] ?? language) as String;
+      if (label.isEmpty) label = 'Subtitle';
+      out.add(dto.SubtitleTrack(label, url));
+    }
+    return out;
   }
 
   /// Disposes every cached service (called on logout / source purge).

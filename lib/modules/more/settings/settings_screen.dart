@@ -833,11 +833,11 @@ class _BrowseCard extends ConsumerWidget {
           title: 'Manage extensions',
           subtitle: '$installedCount installed across ${repos.length} repos',
           showChevron: true,
-          // go(), not push(): /browse lives INSIDE the shell route, so a
-          // push stacked a SECOND MainScreen (duplicate tab bar + broken
-          // back-stack) on top of Settings — the "app bugs out" report.
-          // go() switches the shell to the Browse tab cleanly.
-          onTap: () => context.go('/browse'),
+          // The dedicated extension manager (installed / catalog / repos
+          // tabs). Previous behaviour hopped to the Browse tab, which had
+          // no management UI at all — the "extensions page is empty / bugs
+          // out" report. push() (not go) keeps Settings on the back stack.
+          onTap: () => context.push('/extensions'),
         ),
         for (final r in repos)
           HeroListTile(
@@ -865,8 +865,10 @@ class _BrowseCard extends ConsumerWidget {
           title: 'Add repository',
           subtitle: 'Paste a Mangayomi extension repo URL',
           showChevron: true,
-          // Same shell-route rule as "Manage extensions" above.
-          onTap: () => context.go('/browse'),
+          // Opens the manager on its Repositories tab, where the add-repo
+          // form + existing repo list live (previously a blind hop to the
+          // Browse tab with no repo UI in sight).
+          onTap: () => context.push('/extensions?tab=repos'),
         ),
       ],
     );

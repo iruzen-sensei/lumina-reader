@@ -509,11 +509,15 @@ class StatDay {
 
 /// One selectable video stream quality for an anime episode.
 class VideoQuality {
-  VideoQuality(this.label, this.url, this.height);
+  VideoQuality(this.label, this.url, this.height, {this.subtitles = const []});
 
   final String label;
   final String url;
   final int height;
+
+  /// External subtitle tracks bundled with this stream (AniZone and other
+  /// anime providers attach ASS/VTT tracks to their HLS entries).
+  final List<SubtitleTrack> subtitles;
 }
 
 /// An external subtitle track for an anime episode.

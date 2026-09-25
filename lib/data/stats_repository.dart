@@ -4,6 +4,8 @@
 // STATS REPOSITORY — reading sessions, goals, streaks and heatmap queries.
 // All numbers are derived from ReadingSession rows; nothing is faked.
 
+import 'dart:async';
+
 import 'package:isar/isar.dart';
 
 import '../models/chapter.dart' as db;
@@ -284,8 +286,38 @@ class StatsRepository {
     }
   }
 
+  /// Fires whenever any input to the summary changes. Reading sessions
+  /// alone are NOT enough: `chaptersRead` / `episodesWatched` are derived
+  /// from chapter `isRead` flags and `mangaRead` from manga rows — a
+  /// chapter marked read (without a session) or an anime finished left the
+  /// More-screen card and the stats page stale until the next session.
   Stream<void> watch() {
-    return _isar.readingSessions.watchLazy(fireImmediately: true);
+    return _mergeStreams([
+      _isar.readingSessions.watchLazy(fireImmediately: true),
+      _isar.chapters.watchLazy(fireImmediately: false),
+      _isar.mangas.watchLazy(fireImmediately: false),
+    ]);
+  }
+
+  static Stream<void> _mergeStreams(List<Stream<void>> streams) {
+    // The controller is handed to the consumer; cancelling the returned
+    // stream subscription drives onCancel below.
+    // ignore: close_sinks
+    final controller = StreamController<void>();
+    final subs = <StreamSubscription<void>>[];
+    controller.onListen = () {
+      for (final s in streams) {
+        subs.add(s.listen((_) {
+          if (!controller.isClosed) controller.add(null);
+        }));
+      }
+    };
+    controller.onCancel = () async {
+      for (final sub in subs) {
+        await sub.cancel();
+      }
+    };
+    return controller.stream;
   }
 }
 

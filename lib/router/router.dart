@@ -10,6 +10,7 @@ import '../modules/anime/anime_detail_screen.dart';
 import '../modules/anime/player/anime_player_screen.dart';
 import '../modules/anime_library/anime_library_screen.dart';
 import '../modules/browse/browse_screen.dart';
+import '../modules/browse/extensions_screen.dart';
 import '../modules/calendar/calendar_screen.dart';
 import '../modules/cbz/cbz_reader_screen.dart';
 import '../modules/downloads/downloads_screen.dart';
@@ -181,6 +182,22 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/settings',
         name: 'settings',
         builder: (context, state) => const SettingsScreen(),
+      ),
+      // Extension manager — the dedicated management surface (installed /
+      // catalog / repositories). Settings → "Manage extensions" and
+      // "Add repository" deep-link here; previously both hopped to the
+      // Browse tab which looked like a dead, empty page.
+      GoRoute(
+        path: '/extensions',
+        name: 'extensions',
+        builder: (context, state) {
+          final tab = switch (state.uri.queryParameters['tab']) {
+            'catalog' => ExtensionsTab.catalog,
+            'repos' => ExtensionsTab.repositories,
+            _ => ExtensionsTab.installed,
+          };
+          return ExtensionsScreen(initialTab: tab);
+        },
       ),
     ],
   );

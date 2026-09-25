@@ -97,7 +97,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
               inLibrary: manga.favorite,
               onContinue: () {
                 // Imported books (epub / pdf) open their dedicated readers;
-                // manga/anime continue into the first unread chapter. The old
+                // manga/anime continue into the next unread chapter. The old
                 // code crashed with StateError on empty chapter lists.
                 final route = _bookReaderRoute(manga);
                 if (route != null) {
@@ -108,11 +108,7 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                   showSnack(ref, context, 'No chapters available yet');
                   return;
                 }
-                final first = manga.chapters.firstWhere(
-                  (c) => !c.isRead,
-                  orElse: () => manga.chapters.first,
-                );
-                _openChapter(manga, first);
+                _openChapter(manga, _nextUnread(manga.chapters));
               },
               onToggleLibrary: () => _toggleFavorite(manga),
               onTrack: () => _showTrackSheet(manga),
@@ -167,15 +163,27 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     if (manga.chapters.isEmpty) {
       return manga.isAnime ? 'Start watching' : 'Start reading';
     }
-    final next = manga.chapters.firstWhere(
-      (c) => !c.isRead,
-      orElse: () => manga.chapters.first,
-    );
+    final next = _nextUnread(manga.chapters);
     if (next.isRead) {
       return manga.isAnime ? 'Watch again' : 'Read again';
     }
     final n = next.number.toStringAsFixed(0);
     return manga.isAnime ? 'Continue watching Ep $n' : 'Continue reading Ch $n';
+  }
+
+  /// The chapter "Continue" should open: the LOWEST-numbered unread entry.
+  ///
+  /// The stored list is newest-first (coordinator sort order), so the old
+  /// `firstWhere((c) => !c.isRead)` matched the HIGHEST-numbered unread
+  /// chapter — a fresh series opened at its latest chapter and "progress"
+  /// appeared to jump around randomly.
+  Chapter _nextUnread(List<Chapter> chapters) {
+    Chapter? best;
+    for (final c in chapters) {
+      if (c.isRead) continue;
+      if (best == null || c.number < best.number) best = c;
+    }
+    return best ?? chapters.first;
   }
 
   /// Returns the dedicated reader route for imported book files

@@ -19,6 +19,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../data/providers.dart' as data;
@@ -503,6 +504,17 @@ class _NovelReaderViewState extends ConsumerState<NovelReaderView> {
   bool _fileLoadAttempted = false;
   String? _fileLoadError;
 
+  // ---- Read-aloud (TTS) state -------------------------------------------
+  // The reader was originally shipped TTS-READY (ttsWords/ttsWordIndex
+  // plumbing + stripHtml) but no engine was ever attached — the buttons
+  // simply never existed. flutter_tts speaks the chapter sentence by
+  // sentence; the active sentence is surfaced in the reading view.
+  FlutterTts? _tts;
+  bool _speaking = false;
+  bool _ttsPaused = false;
+  List<String> _sentences = const [];
+  int _sentenceIndex = 0;
+
   /// Chapter ids belonging to a SOURCE-backed novel (fetched on open).
   /// When non-empty, [NovelChapter.html] is filled lazily via the
   /// extension coordinator (`chapterText`) instead of the local file.
@@ -679,11 +691,106 @@ class _NovelReaderViewState extends ConsumerState<NovelReaderView> {
 
   @override
   void dispose() {
+    _stopSpeaking();
+    _tts?.stop();
     _scrollController.dispose();
     super.dispose();
   }
 
+  // ---- Read-aloud ---------------------------------------------------------
+
+  FlutterTts _ensureTts() {
+    final tts = _tts ??= FlutterTts()
+      ..setStartHandler(() {
+        if (mounted) {
+          setState(() {
+            _speaking = true;
+            _ttsPaused = false;
+          });
+        }
+      })
+      ..setCompletionHandler(_onSentenceDone)
+      ..setCancelHandler(() {
+        if (mounted) {
+          setState(() {
+            _speaking = false;
+            _ttsPaused = false;
+          });
+        }
+      })
+      ..setErrorHandler((msg) {
+        if (mounted) {
+          setState(() {
+            _speaking = false;
+            _ttsPaused = false;
+          });
+        }
+      });
+    return tts;
+  }
+
+  Future<void> _toggleSpeak() async {
+    if (_speaking) {
+      if (_ttsPaused) {
+        // flutter_tts has no resume() — re-speaking the current sentence
+        // continues from the last completed boundary.
+        await _tts?.speak(_sentenceIndex < _sentences.length
+            ? _sentences[_sentenceIndex]
+            : '');
+        if (mounted) setState(() => _ttsPaused = false);
+      } else {
+        await _tts?.pause();
+        if (mounted) setState(() => _ttsPaused = true);
+      }
+      return;
+    }
+    final chapter = _chapter;
+    if (chapter == null || chapter.html.isEmpty) return;
+    final text = stripHtml(chapter.html);
+    if (text.isEmpty) return;
+
+    final tts = _ensureTts();
+    await tts.setLanguage('en-US');
+    await tts.setSpeechRate(0.5);
+    await tts.awaitSpeakCompletion(true);
+
+    // Sentence chunks: each completion advances the highlight; a single
+    // sentence failing never kills the run.
+    _sentences = text
+        .split(RegExp(r'(?<=[.!?])\s+(?=[A-Z0-9\u201c"])'))
+        .map((s) => s.trim())
+        .where((s) => s.length > 1)
+        .toList();
+    _sentenceIndex = 0;
+    if (_sentences.isEmpty) return;
+    if (mounted) setState(() => _speaking = true);
+    await tts.speak(_sentences[0]);
+  }
+
+  void _onSentenceDone() {
+    if (!mounted || !_speaking) return;
+    _sentenceIndex++;
+    if (_sentenceIndex >= _sentences.length) {
+      setState(() {
+        _speaking = false;
+        _ttsPaused = false;
+        _sentenceIndex = 0;
+      });
+      return;
+    }
+    setState(() {}); // advance the highlight
+    _tts?.speak(_sentences[_sentenceIndex]);
+  }
+
+  void _stopSpeaking() {
+    _speaking = false;
+    _ttsPaused = false;
+    _sentenceIndex = 0;
+    _tts?.stop();
+  }
+
   void _setChapter(NovelChapter chapter, {bool restoreScroll = false}) {
+    if (_speaking) _stopSpeaking();
     final store = ref.read(novelScrollStoreProvider);
     if (_chapter != null) {
       store.put(_chapter!.id, _scrollController.hasClients
@@ -855,6 +962,15 @@ class _NovelReaderViewState extends ConsumerState<NovelReaderView> {
         ),
         backgroundColor: settings.background.color,
         actions: [
+          IconButton(
+            icon: Icon(_speaking
+                ? (_ttsPaused ? Icons.play_arrow : Icons.pause)
+                : Icons.volume_up_outlined),
+            tooltip: _speaking
+                ? (_ttsPaused ? 'Resume reading aloud' : 'Pause reading aloud')
+                : 'Read aloud',
+            onPressed: _toggleSpeak,
+          ),
           IconButton(
             icon: const Icon(Icons.tune),
             tooltip: 'Reader settings',

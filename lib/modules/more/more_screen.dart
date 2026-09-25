@@ -147,13 +147,9 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
               index: 3,
               child: _GroupCard(
                 children: [
-                  HeroListTile(
-                    leadingIcon: Icons.download_outlined,
-                    title: 'Downloads',
-                    subtitle: 'Queue & offline content',
-                    showChevron: true,
-                    onTap: () => context.push('/downloads'),
-                  ),
+                  // NOTE: Downloads intentionally NOT listed — it is a
+                  // bottom-navigation tab already; a second entry here was
+                  // the duplicated-feature report.
                   HeroListTile(
                     leadingIcon: Icons.sticky_note_2_outlined,
                     title: 'Notes',

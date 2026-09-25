@@ -20,6 +20,7 @@
 
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 import 'package:isar/isar.dart';
 
@@ -119,8 +120,11 @@ class RepoExtension {
 
   /// Whether this build can run the extension natively.
   bool get isSupported =>
-      const {'madara', 'mangareader', 'mangadex'}
-          .contains(typeSource.toLowerCase());
+      const {'madara', 'mangareader', 'mangadex', 'mangabox', 'mmrcms'}
+          .contains(typeSource.toLowerCase()) ||
+      // 45 repo entries are MangaDex language variants disguised as
+      // `single` sources (baseUrl = mangadex.org) — natively supported.
+      (typeSource.toLowerCase() == 'single' && baseUrl.contains('mangadex.org'));
 }
 
 /// Default repository seeded on first launch — the official Mangayomi
@@ -403,21 +407,28 @@ class ExtensionRepoService {
       try {
         await syncRepo(repo.url);
       } catch (e) {
-        final updated = await getRepos();
-        await _saveRepos([
-          for (final r in updated)
-            if (r.url == repo.url)
-              ExtensionRepo(
-                url: r.url,
-                name: r.name,
-                addedAt: r.addedAt,
-                lastSyncAt: r.lastSyncAt,
-                extensionCount: r.extensionCount,
-                lastError: e.toString(),
-              )
-            else
-              r,
-        ]);
+        try {
+          final updated = await getRepos();
+          await _saveRepos([
+            for (final r in updated)
+              if (r.url == repo.url)
+                ExtensionRepo(
+                  url: r.url,
+                  name: r.name,
+                  addedAt: r.addedAt,
+                  lastSyncAt: r.lastSyncAt,
+                  extensionCount: r.extensionCount,
+                  lastError: e.toString(),
+                )
+              else
+                r,
+          ]);
+        } catch (e2) {
+          // Even the error-recording path must never propagate — syncAll
+          // runs as an unawaited background task from main().
+          debugPrint('ExtensionRepoService.syncAll: recording failure for '
+              '${repo.url} failed too: $e2');
+        }
       }
     }
   }

@@ -34,17 +34,46 @@ class LibraryRepository {
   // -----------------------------------------------------------------------
 
   /// All library entries with their chapters loaded, mapped to DTOs.
+  ///
+  /// PERFORMANCE: one chapters query for the whole library instead of a
+  /// per-manga `link.load()` — the old N+1 issued one internal query per
+  /// library row on EVERY watcher fire (every read-flag write!), which
+  /// made the library grid jank on large libraries and stacked Isar work
+  /// on the UI thread.
   Future<List<dto.Manga>> getLibrary() async {
     final categories = await _categoryIdMap();
     final mangas = await _isar.mangas.where().findAll();
-    final result = <dto.Manga>[];
-    for (final m in mangas) {
-      await m.chapters.load();
-      result.add(map.mangaToDto(m,
-          chapters: m.chapters.toList(),
-          categoryIdsByName: categories));
+    final chaptersByManga = <int, List<db.Chapter>>{};
+    for (final c in await _isar.chapters.where().findAll()) {
+      // Group by parent manga id; the IsarLink may be unloaded in this
+      // fresh query result, so resolve the owner synchronously.
+      final owner = c.manga.value?.id ?? _chapterOwner(c);
+      if (owner == null) continue;
+      chaptersByManga.putIfAbsent(owner, () => []).add(c);
     }
-    return result;
+    // Match the previous IsarLink order semantics: the coordinator stores
+    // chapters newest-first, and the reader's prev/next navigation indexes
+    // into this exact order.
+    for (final list in chaptersByManga.values) {
+      list.sort((a, b) => b.chapterNumber.compareTo(a.chapterNumber));
+    }
+    return [
+      for (final m in mangas)
+        map.mangaToDto(
+          m,
+          chapters: chaptersByManga[m.id] ?? const [],
+          categoryIdsByName: categories,
+        ),
+    ];
+  }
+
+  int? _chapterOwner(db.Chapter c) {
+    try {
+      c.manga.loadSync();
+      return c.manga.value?.id;
+    } catch (_) {
+      return null;
+    }
   }
 
   dto.Manga? getMangaSync(int id) {

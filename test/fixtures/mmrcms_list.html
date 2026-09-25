@@ -1,0 +1,1001 @@
+<!doctype html>
+<!--[if lt IE 8 ]><html lang="fr" class="ie7"> <![endif]-->
+<!--[if IE 8 ]><html lang="fr" class="ie8"> <![endif]-->
+<!--[if IE 9 ]><html lang="fr" class="ie9"> <![endif]-->
+<!--[if (gt IE 9)|!(IE)]><!--><html lang="fr"> <!--<![endif]-->
+    <head>
+        <meta charset="utf-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+        <title>Scan One Piece Lecture en ligne Scan manga VF | Annuaire des Manga
+</title>
+        <meta name="description" content="Scan One Piece, lecture en ligne de scans et chapitre Dragon Ball Super,scan one piece,bleach scan, One Piece Scan.
+"/>
+        <meta name="keywords" content="Scan One Piece, Lecture en Ligne Dragon Ball Super, Lecture bleach, lecture, scan manga, chapitre one piece, lecture One Piece, one piece vf
+"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+
+                
+        <meta name="google-site-verification" content="cYm0xyTwDVxDGTt10N1WmRxz9GK89KTm6HZ7gHyT1Tg" />
+        
+                                <link rel="shortcut icon" href="https://www.scan-vf.net/uploads/favicon.png">
+                
+        <link rel="canonical" href="https://www.scan-vf.net"/>
+
+        <link rel="stylesheet" href="https://www.scan-vf.net/css/bootswatch/flatly/bootstrap.min.css"/>
+        <link rel="stylesheet" href="https://www.scan-vf.net/css/style.css"/>
+        <link rel="stylesheet" href="https://www.scan-vf.net/css/font-awesome.min.css"/>
+
+        <script src="https://www.scan-vf.net/js/vendor/modernizr-2.6.2-respond-1.1.0.min.js"></script>
+        <script src="https://www.scan-vf.net/js/vendor/jquery-1.11.0.min.js"></script>
+        <script src="https://www.scan-vf.net/js/vendor/bootstrap.min.js"></script>
+        <script src="https://www.scan-vf.net/js/vendor/jquery.autocomplete.min.js"></script>
+        <script src="https://www.scan-vf.net/js/main.js"></script>
+
+        
+        <script>
+    var type = "image";
+    var cat = "";
+    var catName = "";
+    var alpha = "";
+    var author = "";
+    var artist = "";
+    var tag = "";
+    var sortBy = "name";
+    var asc = true;
+
+    var ascIcon = '<i class="fa fa-sort-amount-asc"></i>';
+    var descIcon = '<i class="fa fa-sort-amount-desc"></i>';
+
+    $(document).ready(function(){
+        href=window.location.href;
+        tab = href.split('/');
+        if(tab[tab.length-2] == 'category'){
+            cat = tab[tab.length-1];
+            cat = cat.charAt(0).toUpperCase()+ cat.substr(1);
+            $('.filter-text').text(cat + ' Manga');
+        } else if(tab[tab.length-2] == 'author'){
+            author = tab[tab.length-1];
+            $('.filter-text').text('Author: ' + author.replace(/%20/g," "));
+        } else if(tab[tab.length-2] == 'artist'){
+            artist = tab[tab.length-1];
+            $('.filter-text').text('Artist: ' + artist.replace(/%20/g," "));
+        } else if(tab[tab.length-2] == 'tag'){
+            tag = tab[tab.length-1];
+            $('.filter-text').text('Tag: ' + tag.replace(/%20/g," "));
+        }
+    });
+
+    // change filter type
+    $(document).on('click', '#filter-types .btn-group', function(e) {
+        newType = $(this).find('input').attr('id');
+        if (type != newType) {
+            type = newType;
+            changeMangaList(type);
+        }
+    });
+
+    // sort
+    $(document).on('click', '#sort-types .btn-group', function(e) {
+        $('#sort-types').find('i').remove();
+        
+        newSortBy = $(this).find('input').attr('id');
+        if (sortBy == newSortBy) {
+            asc = !asc;
+            if(asc) {
+                $(this).find('input').after(ascIcon);
+            } else {
+                $(this).find('input').after(descIcon);
+            }
+        } else {
+            sortBy = newSortBy;
+            asc = true;
+            $(this).find('input').after(ascIcon);
+        }
+
+        getMangaList(1);
+    });
+
+    // filter by category
+    $(document).on('click', '.category', function(e) {
+        e.preventDefault();
+
+        alpha = "";
+        author = "";
+        artist = "";
+        tag = "";
+        cat = $(this).attr('href').split('cat=')[1];
+        catName = $(this).text();
+        getMangaList(1);
+    });
+
+    // filter by alphabet
+    $(document).on('click', '.alphabet', function(e) {
+        e.preventDefault();
+
+        cat = "";
+        author = "";
+        artist = "";
+        tag = "";
+        catName = "";
+        alpha = $(this).attr('href').split('alpha=')[1];
+        getMangaList(1);
+    });
+    
+    // paginate
+    $(document).on('click', '.pagination a', function(e) {
+        e.preventDefault();
+
+        var page = $(this).attr('href').split('page=')[1];
+        getMangaList(page);
+    });
+
+    function getMangaList(page) {
+        $('#waiting').show();
+        
+        $.ajax({
+            url: "https://www.scan-vf.net/filterList",
+            data: {'page': page, 'cat': cat, 'alpha': alpha, 'sortBy': sortBy, 'asc': asc, 'author': author, 'artist': artist, 'tag': tag}
+        }).done(function(data) {
+            $('#waiting').hide();
+            $('.content').html(data);
+            
+            $('.filter-text').text('');
+            if(catName != "") {
+                $('.filter-text').text(catName + ' Manga');
+            } else if (alpha != "") {
+                $('.filter-text').text(alpha);
+            }
+        });
+    }
+
+    function changeMangaList(type) {
+        $('#waiting').show();
+        
+        $.ajax({
+            url: 'https://www.scan-vf.net/changeMangaList',
+            data: {'type': type}
+        }).done(function(data) {
+            $('#waiting').hide();
+            $('.type-content').html(data);
+            
+            if (type == 'text') {
+                $('.image-version-sidebar').hide();
+                $('.text-version-sidebar').show();
+            } else if (type == 'image') {
+                cat = "";
+                catName = "";
+                alpha = "";
+                author = "";
+                artist = "";
+                tag = "";
+                sortBy = "name";
+                asc = true;
+                $('.filter-text').text('');
+
+                $('.image-version-sidebar').show();
+                $('.text-version-sidebar').hide();
+            }
+        });
+    }
+</script>
+
+<script src="https://www.scan-vf.net/packages/escapeboy/jraty/raty/lib/jquery.raty.min.js" type="text/javascript" charset="utf-8"></script>
+
+        <!--[if lt IE 9]>
+        <script src="https://www.scan-vf.net/js/vendor/html5shiv.js"></script>
+        <script src="https://www.scan-vf.net/js/vendor/respond.min.js"></script>
+        <![endif]-->
+    </head>
+    <body class=" layout-boxed ">
+        <!--[if lt IE 7]>
+            <p class="browsehappy">You are using an <strong>outdated</strong> browser. Please <a href="http://browsehappy.com/">upgrade your browser</a> to improve your experience.</p>
+        <![endif]-->
+
+                <!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-18Q2KBR53C"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-18Q2KBR53C');
+</script>        
+        <div class="wrapper">
+            <!-- Website Menu -->
+            <nav class="navbar navbar-default" role="navigation">
+    <div class=" container ">
+        <div class="navbar-header">
+            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#navbar-menu">
+                <span class="sr-only">Toggle navigation</span><span class="icon-bar"></span><span class="icon-bar"></span><span class="icon-bar"></span>
+            </button> 
+            <h1 class="" style="margin:0;">
+                <a class="navbar-brand" href="https://www.scan-vf.net">
+                                        ScanOnePiece
+                                    </a>
+            </h1>
+        </div>
+        <div class="navbar-custom-menu">
+            <ul class="nav navbar-nav  navbar-right ">
+                                <li class="search dropdown">
+                    <a href="#" class="dropdown-toggle" data-toggle="dropdown"><i class="fa fa-search"></i></a>
+                    <div class="dropdown-menu">
+                        <form class="navbar-form">
+                            <div class="navbar-form  navbar-right " role="search">
+                                <div class="form-group">
+                                    <input id="autocomplete" class="form-control" type="text" placeholder="Recherche..." style="border-radius:0;"/>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </li>
+                <!-- Notifications Menu -->
+                            </ul>
+        </div>
+        <div class="collapse navbar-collapse" id="navbar-menu">
+            <!-- menu -->
+            <ul class="nav navbar-nav  navbar-right ">
+                                <li >
+     <a href="https://www.scan-vf.net"
+      title="Accueil">
+           Accueil
+    </a>
+</li>
+<li >
+     <a href="https://www.scan-vf.net/manga-list"
+      title="Annuaire des Manga">
+           Annuaire des Manga
+    </a>
+</li>
+<li >
+     <a href="https://www.scan-vf.net/latest-release"
+      title="Derniers chapitres">
+           Derniers chapitres
+    </a>
+</li>
+
+                            </ul>
+        </div>
+    </div>
+</nav>
+
+<style>
+    .searching {
+        background-image: url('https://www.scan-vf.net/images/ajax-loader.gif');
+        background-position: 95% 50%;
+        background-repeat: no-repeat;
+    }
+</style>
+<script>
+    $('#autocomplete').autocomplete({
+        serviceUrl: "https://www.scan-vf.net/search",
+        onSearchStart: function (query) {
+            $('#autocomplete').addClass('searching');
+        },
+        onSearchComplete: function (query, suggestions) {
+            $('#autocomplete').removeClass('searching');
+        },
+        onSelect: function (suggestion) {
+            showURL = "https://www.scan-vf.net/SELECTION";
+            window.location.href = showURL.replace('SELECTION', suggestion.data);
+        }
+    });
+</script>
+            <!--/ Website Menu -->
+
+            <div class=" container ">
+                <!-- row -->
+                <div class="row">
+                    <div class="col-sm-12">
+                                            </div>
+                </div>
+                <!--/ row -->
+
+                <!-- row -->
+                <div class="row"> 
+                    <div class="col-sm-4 col-sm-push-8">
+                        <div id="filter-types" class="btn-group btn-group-justified" role="group" data-toggle="buttons" style="margin-bottom: 10px">
+    <div class="btn-group" role="group">
+        <label class="btn btn-primary">
+            <input type="radio" name="filter-type" id="text" />
+            <i class="fa fa-file-text-o"></i> Texte version
+        </label>
+    </div>
+    <div class="btn-group" role="group">
+        <label class="btn btn-primary active">
+            <input type="radio" name="filter-type" id="image" />
+            <i class="fa fa-image"></i> Image version
+        </label>
+    </div>
+</div>
+
+<div class="image-version-sidebar">
+    <div class="panel panel-default">
+        <div class="panel-heading">Parcourir suivant la categorie</div>
+        <div class="panel-body">
+            <ul class="list-category">
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=1" class="category">Action</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=2" class="category">Adventure</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=3" class="category">Comedy</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=4" class="category">Doujinshi</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=5" class="category">Drama</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=6" class="category">Ecchi</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=7" class="category">Fantasy</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=8" class="category">Gender Bender</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=9" class="category">Harem</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=10" class="category">Historical</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=11" class="category">Horror</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=12" class="category">Josei</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=13" class="category">Martial Arts</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=14" class="category">Mature</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=15" class="category">Mecha</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=16" class="category">Mystery</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=17" class="category">One Shot</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=18" class="category">Psychological</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=19" class="category">Romance</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=20" class="category">School Life</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=21" class="category">Sci-fi</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=22" class="category">Seinen</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=23" class="category">Shoujo</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=24" class="category">Shoujo Ai</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=25" class="category">Shounen</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=26" class="category">Shounen Ai</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=27" class="category">Slice of Life</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=28" class="category">Sports</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=29" class="category">Supernatural</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=30" class="category">Tragedy</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=31" class="category">Yaoi</a></li>
+                                <li><a href="https://www.scan-vf.net/manga-list?cat=32" class="category">Yuri</a></li>
+                            </ul>
+        </div>
+    </div>
+    <div class="panel panel-default">
+        <div class="panel-heading">Parcourir suivant l&#039;initial du Manga</div>
+        <div class="panel-body">
+            <div class="list-alphabet">
+                <a href="https://www.scan-vf.net/manga-list?alpha=Other" class="alphabet">#</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=A" class="alphabet">A</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=B" class="alphabet">B</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=C" class="alphabet">C</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=D" class="alphabet">D</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=E" class="alphabet">E</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=F" class="alphabet">F</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=G" class="alphabet">G</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=H" class="alphabet">H</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=I" class="alphabet">I</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=J" class="alphabet">J</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=K" class="alphabet">K</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=L" class="alphabet">L</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=M" class="alphabet">M</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=N" class="alphabet">N</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=O" class="alphabet">O</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=P" class="alphabet">P</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=Q" class="alphabet">Q</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=R" class="alphabet">R</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=S" class="alphabet">S</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=T" class="alphabet">T</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=U" class="alphabet">U</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=V" class="alphabet">V</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=W" class="alphabet">W</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=X" class="alphabet">X</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=Y" class="alphabet">Y</a>
+                                <a href="https://www.scan-vf.net/manga-list?alpha=Z" class="alphabet">Z</a>
+                            </div>
+        </div>
+    </div>
+    </div>
+<div class="text-version-sidebar" style="display: none;">
+    <div class="alert alert-danger">
+        <h6><em>Parcourir suivant l&#039;initial du Manga</em></h6>
+        <div>
+            <span class="alphabetic media disabled unknown">#</span>
+                        <span class="alphabetic media disabled A">A</span>
+                        <span class="alphabetic media disabled B">B</span>
+                        <span class="alphabetic media disabled C">C</span>
+                        <span class="alphabetic media disabled D">D</span>
+                        <span class="alphabetic media disabled E">E</span>
+                        <span class="alphabetic media disabled F">F</span>
+                        <span class="alphabetic media disabled G">G</span>
+                        <span class="alphabetic media disabled H">H</span>
+                        <span class="alphabetic media disabled I">I</span>
+                        <span class="alphabetic media disabled J">J</span>
+                        <span class="alphabetic media disabled K">K</span>
+                        <span class="alphabetic media disabled L">L</span>
+                        <span class="alphabetic media disabled M">M</span>
+                        <span class="alphabetic media disabled N">N</span>
+                        <span class="alphabetic media disabled O">O</span>
+                        <span class="alphabetic media disabled P">P</span>
+                        <span class="alphabetic media disabled Q">Q</span>
+                        <span class="alphabetic media disabled R">R</span>
+                        <span class="alphabetic media disabled S">S</span>
+                        <span class="alphabetic media disabled T">T</span>
+                        <span class="alphabetic media disabled U">U</span>
+                        <span class="alphabetic media disabled V">V</span>
+                        <span class="alphabetic media disabled W">W</span>
+                        <span class="alphabetic media disabled X">X</span>
+                        <span class="alphabetic media disabled Y">Y</span>
+                        <span class="alphabetic media disabled Z">Z</span>
+                    </div>
+    </div>
+</div>
+                    </div>
+                    <div class="col-sm-8 col-sm-pull-4">
+                        
+                        <div class="col-sm-12">
+                            <div id="waiting" style="display: none;" class=" pull-right ">
+    <img src="https://www.scan-vf.net/images/ajax-loader.gif" />
+</div>
+
+<h2 class="widget-title">Annuaire des Manga</h2>
+<hr/>
+
+<div class="type-content">
+    <div class="panel panel-default">
+        <div class="panel-body">
+            <div class="filter-text pull-left"></div>
+            <div class="pull-right">
+                Trier par :
+                <div id="sort-types" class="btn-group" role="group" data-toggle="buttons">
+                    <div class="btn-group" role="group">
+                        <label class="btn btn-default active">
+                            <input type="radio" name="sort-type" id="name" /> AZ
+                        </label>
+                    </div>
+                    <div class="btn-group" role="group">
+                        <label class="btn btn-default">
+                            <input type="radio" name="sort-type" id="views" /> Vues
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="content">
+            <div class="col-sm-6">
+    <div class="media" style="margin-bottom: 20px;">
+        <div class="media-left">
+            <a href="https://www.scan-vf.net/attaque-des-titans" class="thumbnail">
+                <img width="100" src='https://www.scan-vf.net/uploads/manga/attaque-des-titans/cover/cover_250x350.jpg' alt='Attaque des titans'>
+            </a>
+        </div>
+        <div class="media-body">
+                        <h5 class="media-heading"><a href="https://www.scan-vf.net/attaque-des-titans" class="chart-title"><strong>Attaque des titans</strong></a></h5>
+            <div class="readOnly-9" style="display: inline-block;"></div> <span style="vertical-align: middle;">4.77</span>
+            <script>$('.readOnly-9').raty({path: "https://www.scan-vf.net/packages/escapeboy/jraty/raty/lib/img", readOnly: true, score: "4.77"});</script>
+            <div>
+                <i class="fa fa-eye"></i> 895151
+            </div>
+                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 95%;">
+                Action, Drama, Fantasy, Horror
+            </div>
+                                                <div style="position: absolute; bottom: 20px">
+                <a href="https://www.scan-vf.net/attaque-des-titans/chapitre-139.5">#139.5 </a>
+            </div>
+                    </div>
+    </div>
+</div>
+<div class="col-sm-6">
+    <div class="media" style="margin-bottom: 20px;">
+        <div class="media-left">
+            <a href="https://www.scan-vf.net/Beelzebub" class="thumbnail">
+                <img width="100" src='https://www.scan-vf.net/uploads/manga/Beelzebub/cover/cover_250x350.jpg' alt='Beelzebub'>
+            </a>
+        </div>
+        <div class="media-body">
+                        <h5 class="media-heading"><a href="https://www.scan-vf.net/Beelzebub" class="chart-title"><strong>Beelzebub</strong></a></h5>
+            <div class="readOnly-3" style="display: inline-block;"></div> <span style="vertical-align: middle;">4.6</span>
+            <script>$('.readOnly-3').raty({path: "https://www.scan-vf.net/packages/escapeboy/jraty/raty/lib/img", readOnly: true, score: "4.6"});</script>
+            <div>
+                <i class="fa fa-eye"></i> 112983
+            </div>
+                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 95%;">
+                Action, Comedy
+            </div>
+                                                <div style="position: absolute; bottom: 20px">
+                <a href="https://www.scan-vf.net/Beelzebub/chapitre-240">#240 Le dernier babu, le bon babu &agrave; l&#039;&eacute;cole d&#039;ishiyama</a>
+            </div>
+                    </div>
+    </div>
+</div>
+<div class="col-sm-6">
+    <div class="media" style="margin-bottom: 20px;">
+        <div class="media-left">
+            <a href="https://www.scan-vf.net/black-clover" class="thumbnail">
+                <img width="100" src='https://www.scan-vf.net/uploads/manga/black-clover/cover/cover_250x350.jpg' alt='Black Clover'>
+            </a>
+        </div>
+        <div class="media-body">
+                        <h5 class="media-heading"><a href="https://www.scan-vf.net/black-clover" class="chart-title"><strong>Black Clover</strong></a></h5>
+            <div class="readOnly-17" style="display: inline-block;"></div> <span style="vertical-align: middle;">4.35</span>
+            <script>$('.readOnly-17').raty({path: "https://www.scan-vf.net/packages/escapeboy/jraty/raty/lib/img", readOnly: true, score: "4.35"});</script>
+            <div>
+                <i class="fa fa-eye"></i> 2034333
+            </div>
+                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 95%;">
+                Action, Fantasy, Shounen
+            </div>
+                                                <div style="position: absolute; bottom: 20px">
+                <a href="https://www.scan-vf.net/black-clover/chapitre-389">#389 Un formidable exploit</a>
+            </div>
+                    </div>
+    </div>
+</div>
+<div class="col-sm-6">
+    <div class="media" style="margin-bottom: 20px;">
+        <div class="media-left">
+            <a href="https://www.scan-vf.net/bleach" class="thumbnail">
+                <img width="100" src='https://www.scan-vf.net/uploads/manga/bleach/cover/cover_250x350.jpg' alt='Bleach'>
+            </a>
+        </div>
+        <div class="media-body">
+                        <h5 class="media-heading"><a href="https://www.scan-vf.net/bleach" class="chart-title"><strong>Bleach</strong></a></h5>
+            <div class="readOnly-10" style="display: inline-block;"></div> <span style="vertical-align: middle;">4.76</span>
+            <script>$('.readOnly-10').raty({path: "https://www.scan-vf.net/packages/escapeboy/jraty/raty/lib/img", readOnly: true, score: "4.76"});</script>
+            <div>
+                <i class="fa fa-eye"></i> 346209
+            </div>
+                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 95%;">
+                Action, Comedy, Drama, Fantasy, Shounen, Supernatural
+            </div>
+                                                <div style="position: absolute; bottom: 20px">
+                <a href="https://www.scan-vf.net/bleach/chapitre-686.5">#686.5 No breathes from hell</a>
+            </div>
+                    </div>
+    </div>
+</div>
+<div class="col-sm-6">
+    <div class="media" style="margin-bottom: 20px;">
+        <div class="media-left">
+            <a href="https://www.scan-vf.net/boruto" class="thumbnail">
+                <img width="100" src='https://www.scan-vf.net/uploads/manga/boruto/cover/cover_250x350.jpg' alt='Boruto'>
+            </a>
+        </div>
+        <div class="media-body">
+                        <h5 class="media-heading"><a href="https://www.scan-vf.net/boruto" class="chart-title"><strong>Boruto</strong></a></h5>
+            <div class="readOnly-4" style="display: inline-block;"></div> <span style="vertical-align: middle;">4.45</span>
+            <script>$('.readOnly-4').raty({path: "https://www.scan-vf.net/packages/escapeboy/jraty/raty/lib/img", readOnly: true, score: "4.45"});</script>
+            <div>
+                <i class="fa fa-eye"></i> 1358915
+            </div>
+                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 95%;">
+                Fantasy, One Shot
+            </div>
+                                                <div style="position: absolute; bottom: 20px">
+                <a href="https://www.scan-vf.net/boruto/chapitre-117">#117 BLUE VORTEX 37 VA</a>
+            </div>
+                    </div>
+    </div>
+</div>
+<div class="col-sm-6">
+    <div class="media" style="margin-bottom: 20px;">
+        <div class="media-left">
+            <a href="https://www.scan-vf.net/dr-stone" class="thumbnail">
+                <img width="100" src='https://www.scan-vf.net/uploads/manga/dr-stone/cover/cover_250x350.jpg' alt='Dr. Stone'>
+            </a>
+        </div>
+        <div class="media-body">
+                        <h5 class="media-heading"><a href="https://www.scan-vf.net/dr-stone" class="chart-title"><strong>Dr. Stone</strong></a></h5>
+            <div class="readOnly-23" style="display: inline-block;"></div> <span style="vertical-align: middle;">4.76</span>
+            <script>$('.readOnly-23').raty({path: "https://www.scan-vf.net/packages/escapeboy/jraty/raty/lib/img", readOnly: true, score: "4.76"});</script>
+            <div>
+                <i class="fa fa-eye"></i> 276819
+            </div>
+                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 95%;">
+                Adventure, Fantasy
+            </div>
+                                                <div style="position: absolute; bottom: 20px">
+                <a href="https://www.scan-vf.net/dr-stone/chapitre-232">#232 Dr. Stone - Fin</a>
+            </div>
+                    </div>
+    </div>
+</div>
+<div class="col-sm-6">
+    <div class="media" style="margin-bottom: 20px;">
+        <div class="media-left">
+            <a href="https://www.scan-vf.net/dragon-Ball-Super" class="thumbnail">
+                <img width="100" src='https://www.scan-vf.net/uploads/manga/dragon-Ball-Super/cover/cover_250x350.jpg' alt='Dragon Ball Super'>
+            </a>
+        </div>
+        <div class="media-body">
+                        <h5 class="media-heading"><a href="https://www.scan-vf.net/dragon-Ball-Super" class="chart-title"><strong>Dragon Ball Super</strong></a></h5>
+            <div class="readOnly-2" style="display: inline-block;"></div> <span style="vertical-align: middle;">4.4</span>
+            <script>$('.readOnly-2').raty({path: "https://www.scan-vf.net/packages/escapeboy/jraty/raty/lib/img", readOnly: true, score: "4.4"});</script>
+            <div>
+                <i class="fa fa-eye"></i> 1023164
+            </div>
+                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 95%;">
+                Shounen
+            </div>
+                                                <div style="position: absolute; bottom: 20px">
+                <a href="https://www.scan-vf.net/dragon-Ball-Super/chapitre-101">#101 Carmine et Soldat N&deg;15</a>
+            </div>
+                    </div>
+    </div>
+</div>
+<div class="col-sm-6">
+    <div class="media" style="margin-bottom: 20px;">
+        <div class="media-left">
+            <a href="https://www.scan-vf.net/fairy-tail" class="thumbnail">
+                <img width="100" src='https://www.scan-vf.net/uploads/manga/fairy-tail/cover/cover_250x350.jpg' alt='Fairy Tail'>
+            </a>
+        </div>
+        <div class="media-body">
+                        <h5 class="media-heading"><a href="https://www.scan-vf.net/fairy-tail" class="chart-title"><strong>Fairy Tail</strong></a></h5>
+            <div class="readOnly-5" style="display: inline-block;"></div> <span style="vertical-align: middle;">4.75</span>
+            <script>$('.readOnly-5').raty({path: "https://www.scan-vf.net/packages/escapeboy/jraty/raty/lib/img", readOnly: true, score: "4.75"});</script>
+            <div>
+                <i class="fa fa-eye"></i> 411756
+            </div>
+                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 95%;">
+                Action, Adventure, Comedy, Drama, Ecchi, Fantasy, Shounen, Supernatural
+            </div>
+                                                <div style="position: absolute; bottom: 20px">
+                <a href="https://www.scan-vf.net/fairy-tail/chapitre-545">#545 Des amis irrempla&ccedil;ables - FIN </a>
+            </div>
+                    </div>
+    </div>
+</div>
+<div class="col-sm-6">
+    <div class="media" style="margin-bottom: 20px;">
+        <div class="media-left">
+            <a href="https://www.scan-vf.net/fairy-tail-100-years-quest" class="thumbnail">
+                <img width="100" src='https://www.scan-vf.net/uploads/manga/fairy-tail-100-years-quest/cover/cover_250x350.jpg' alt='Fairy Tail 100 Years Quest'>
+            </a>
+        </div>
+        <div class="media-body">
+                        <h5 class="media-heading"><a href="https://www.scan-vf.net/fairy-tail-100-years-quest" class="chart-title"><strong>Fairy Tail 100 Years Quest</strong></a></h5>
+            <div class="readOnly-22" style="display: inline-block;"></div> <span style="vertical-align: middle;">4.76</span>
+            <script>$('.readOnly-22').raty({path: "https://www.scan-vf.net/packages/escapeboy/jraty/raty/lib/img", readOnly: true, score: "4.76"});</script>
+            <div>
+                <i class="fa fa-eye"></i> 311592
+            </div>
+                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 95%;">
+                Action, Adventure, Comedy, Drama, Ecchi, Fantasy, Shounen, Supernatural
+            </div>
+                                                <div style="position: absolute; bottom: 20px">
+                <a href="https://www.scan-vf.net/fairy-tail-100-years-quest/chapitre-125">#125 La Grande Bibliotheque de Saber</a>
+            </div>
+                    </div>
+    </div>
+</div>
+<div class="col-sm-6">
+    <div class="media" style="margin-bottom: 20px;">
+        <div class="media-left">
+            <a href="https://www.scan-vf.net/haikyuu" class="thumbnail">
+                <img width="100" src='https://www.scan-vf.net/uploads/manga/haikyuu/cover/cover_250x350.jpg' alt='Haikyuu'>
+            </a>
+        </div>
+        <div class="media-body">
+                        <h5 class="media-heading"><a href="https://www.scan-vf.net/haikyuu" class="chart-title"><strong>Haikyuu</strong></a></h5>
+            <div class="readOnly-25" style="display: inline-block;"></div> <span style="vertical-align: middle;">4.39</span>
+            <script>$('.readOnly-25').raty({path: "https://www.scan-vf.net/packages/escapeboy/jraty/raty/lib/img", readOnly: true, score: "4.39"});</script>
+            <div>
+                <i class="fa fa-eye"></i> 168496
+            </div>
+                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 95%;">
+                Shounen
+            </div>
+                                            </div>
+    </div>
+</div>
+<div class="col-sm-6">
+    <div class="media" style="margin-bottom: 20px;">
+        <div class="media-left">
+            <a href="https://www.scan-vf.net/hunter-x-hunter" class="thumbnail">
+                <img width="100" src='https://www.scan-vf.net/uploads/manga/hunter-x-hunter/cover/cover_250x350.jpg' alt='Hunter X Hunter'>
+            </a>
+        </div>
+        <div class="media-body">
+                        <h5 class="media-heading"><a href="https://www.scan-vf.net/hunter-x-hunter" class="chart-title"><strong>Hunter X Hunter</strong></a></h5>
+            <div class="readOnly-14" style="display: inline-block;"></div> <span style="vertical-align: middle;">4.74</span>
+            <script>$('.readOnly-14').raty({path: "https://www.scan-vf.net/packages/escapeboy/jraty/raty/lib/img", readOnly: true, score: "4.74"});</script>
+            <div>
+                <i class="fa fa-eye"></i> 565517
+            </div>
+                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 95%;">
+                Action
+            </div>
+                                                <div style="position: absolute; bottom: 20px">
+                <a href="https://www.scan-vf.net/hunter-x-hunter/chapitre-390">#390 Confrontation</a>
+            </div>
+                    </div>
+    </div>
+</div>
+<div class="col-sm-6">
+    <div class="media" style="margin-bottom: 20px;">
+        <div class="media-left">
+            <a href="https://www.scan-vf.net/jujutsu-kaisen" class="thumbnail">
+                <img width="100" src='https://www.scan-vf.net/uploads/manga/jujutsu-kaisen/cover/cover_250x350.jpg' alt='Jujutsu Kaisen'>
+            </a>
+        </div>
+        <div class="media-body">
+                        <h5 class="media-heading"><a href="https://www.scan-vf.net/jujutsu-kaisen" class="chart-title"><strong>Jujutsu Kaisen</strong></a></h5>
+            <div class="readOnly-26" style="display: inline-block;"></div> <span style="vertical-align: middle;">4.75</span>
+            <script>$('.readOnly-26').raty({path: "https://www.scan-vf.net/packages/escapeboy/jraty/raty/lib/img", readOnly: true, score: "4.75"});</script>
+            <div>
+                <i class="fa fa-eye"></i> 1321696
+            </div>
+                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 95%;">
+                Shounen
+            </div>
+                                                <div style="position: absolute; bottom: 20px">
+                <a href="https://www.scan-vf.net/jujutsu-kaisen/chapitre-271">#271 &Agrave; partir d&#039;aujourd&#039;hui</a>
+            </div>
+                    </div>
+    </div>
+</div>
+<div class="col-sm-6">
+    <div class="media" style="margin-bottom: 20px;">
+        <div class="media-left">
+            <a href="https://www.scan-vf.net/jujutsu-kaisen-modulo" class="thumbnail">
+                <img width="100" src='https://www.scan-vf.net/uploads/manga/jujutsu-kaisen-modulo/cover/cover_250x350.jpg' alt='Jujutsu Kaisen Modulo'>
+            </a>
+        </div>
+        <div class="media-body">
+                        <h5 class="media-heading"><a href="https://www.scan-vf.net/jujutsu-kaisen-modulo" class="chart-title"><strong>Jujutsu Kaisen Modulo</strong></a></h5>
+            <div class="readOnly-28" style="display: inline-block;"></div> <span style="vertical-align: middle;">4.4</span>
+            <script>$('.readOnly-28').raty({path: "https://www.scan-vf.net/packages/escapeboy/jraty/raty/lib/img", readOnly: true, score: "4.4"});</script>
+            <div>
+                <i class="fa fa-eye"></i> 21457
+            </div>
+                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 95%;">
+                Action, Drama, Sci-fi, Supernatural
+            </div>
+                                                <div style="position: absolute; bottom: 20px">
+                <a href="https://www.scan-vf.net/jujutsu-kaisen-modulo/chapitre-25">#25 Un future radieux</a>
+            </div>
+                    </div>
+    </div>
+</div>
+<div class="col-sm-6">
+    <div class="media" style="margin-bottom: 20px;">
+        <div class="media-left">
+            <a href="https://www.scan-vf.net/kimetsu-no-yaiba" class="thumbnail">
+                <img width="100" src='https://www.scan-vf.net/uploads/manga/kimetsu-no-yaiba/cover/cover_250x350.jpg' alt='Kimetsu No Yaiba'>
+            </a>
+        </div>
+        <div class="media-body">
+                        <h5 class="media-heading"><a href="https://www.scan-vf.net/kimetsu-no-yaiba" class="chart-title"><strong>Kimetsu No Yaiba</strong></a></h5>
+            <div class="readOnly-21" style="display: inline-block;"></div> <span style="vertical-align: middle;">4.67</span>
+            <script>$('.readOnly-21').raty({path: "https://www.scan-vf.net/packages/escapeboy/jraty/raty/lib/img", readOnly: true, score: "4.67"});</script>
+            <div>
+                <i class="fa fa-eye"></i> 562188
+            </div>
+                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 95%;">
+                Action, Adventure, Drama, Fantasy, Supernatural
+            </div>
+                                                <div style="position: absolute; bottom: 20px">
+                <a href="https://www.scan-vf.net/kimetsu-no-yaiba/chapitre-206">#206 (VA)</a>
+            </div>
+                    </div>
+    </div>
+</div>
+<div class="col-sm-6">
+    <div class="media" style="margin-bottom: 20px;">
+        <div class="media-left">
+            <a href="https://www.scan-vf.net/kingdom" class="thumbnail">
+                <img width="100" src='https://www.scan-vf.net/uploads/manga/kingdom/cover/cover_250x350.jpg' alt='Kingdom'>
+            </a>
+        </div>
+        <div class="media-body">
+                        <h5 class="media-heading"><a href="https://www.scan-vf.net/kingdom" class="chart-title"><strong>Kingdom</strong></a></h5>
+            <div class="readOnly-20" style="display: inline-block;"></div> <span style="vertical-align: middle;">4.81</span>
+            <script>$('.readOnly-20').raty({path: "https://www.scan-vf.net/packages/escapeboy/jraty/raty/lib/img", readOnly: true, score: "4.81"});</script>
+            <div>
+                <i class="fa fa-eye"></i> 1286066
+            </div>
+                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 95%;">
+                Action, Drama, Historical
+            </div>
+                                                <div style="position: absolute; bottom: 20px">
+                <a href="https://www.scan-vf.net/kingdom/chapitre-888">#888 La guerre</a>
+            </div>
+                    </div>
+    </div>
+</div>
+<div class="col-sm-6">
+    <div class="media" style="margin-bottom: 20px;">
+        <div class="media-left">
+            <a href="https://www.scan-vf.net/my-hero-academia" class="thumbnail">
+                <img width="100" src='https://www.scan-vf.net/uploads/manga/my-hero-academia/cover/cover_250x350.jpg' alt='My Hero Academia'>
+            </a>
+        </div>
+        <div class="media-body">
+                        <h5 class="media-heading"><a href="https://www.scan-vf.net/my-hero-academia" class="chart-title"><strong>My Hero Academia</strong></a></h5>
+            <div class="readOnly-15" style="display: inline-block;"></div> <span style="vertical-align: middle;">4.79</span>
+            <script>$('.readOnly-15').raty({path: "https://www.scan-vf.net/packages/escapeboy/jraty/raty/lib/img", readOnly: true, score: "4.79"});</script>
+            <div>
+                <i class="fa fa-eye"></i> 3441324
+            </div>
+                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 95%;">
+                Shounen
+            </div>
+                                                <div style="position: absolute; bottom: 20px">
+                <a href="https://www.scan-vf.net/my-hero-academia/chapitre-431">#431 More</a>
+            </div>
+                    </div>
+    </div>
+</div>
+<div class="col-sm-6">
+    <div class="media" style="margin-bottom: 20px;">
+        <div class="media-left">
+            <a href="https://www.scan-vf.net/nanatsu-no-taizai" class="thumbnail">
+                <img width="100" src='https://www.scan-vf.net/uploads/manga/nanatsu-no-taizai/cover/cover_250x350.jpg' alt='Nanatsu no Taizai'>
+            </a>
+        </div>
+        <div class="media-body">
+                        <h5 class="media-heading"><a href="https://www.scan-vf.net/nanatsu-no-taizai" class="chart-title"><strong>Nanatsu no Taizai</strong></a></h5>
+            <div class="readOnly-13" style="display: inline-block;"></div> <span style="vertical-align: middle;">4.73</span>
+            <script>$('.readOnly-13').raty({path: "https://www.scan-vf.net/packages/escapeboy/jraty/raty/lib/img", readOnly: true, score: "4.73"});</script>
+            <div>
+                <i class="fa fa-eye"></i> 1499852
+            </div>
+                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 95%;">
+                Adventure, Fantasy, Shounen
+            </div>
+                                                <div style="position: absolute; bottom: 20px">
+                <a href="https://www.scan-vf.net/nanatsu-no-taizai/chapitre-346">#346 Comme le bleu de ce ciel</a>
+            </div>
+                    </div>
+    </div>
+</div>
+<div class="col-sm-6">
+    <div class="media" style="margin-bottom: 20px;">
+        <div class="media-left">
+            <a href="https://www.scan-vf.net/naruto" class="thumbnail">
+                <img width="100" src='https://www.scan-vf.net/uploads/manga/naruto/cover/cover_250x350.jpg' alt='Naruto'>
+            </a>
+        </div>
+        <div class="media-body">
+                        <h5 class="media-heading"><a href="https://www.scan-vf.net/naruto" class="chart-title"><strong>Naruto</strong></a></h5>
+            <div class="readOnly-7" style="display: inline-block;"></div> <span style="vertical-align: middle;">4.41</span>
+            <script>$('.readOnly-7').raty({path: "https://www.scan-vf.net/packages/escapeboy/jraty/raty/lib/img", readOnly: true, score: "4.41"});</script>
+            <div>
+                <i class="fa fa-eye"></i> 149619
+            </div>
+                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 95%;">
+                Action, Drama, Fantasy, Martial Arts, Shounen, Supernatural
+            </div>
+                                                <div style="position: absolute; bottom: 20px">
+                <a href="https://www.scan-vf.net/naruto/chapitre-710">#710 Le changement dans ces yeux - Fin</a>
+            </div>
+                    </div>
+    </div>
+</div>
+<div class="col-sm-6">
+    <div class="media" style="margin-bottom: 20px;">
+        <div class="media-left">
+            <a href="https://www.scan-vf.net/one_piece" class="thumbnail">
+                <img width="100" src='https://www.scan-vf.net/uploads/manga/one_piece/cover/cover_250x350.jpg' alt='One Piece'>
+            </a>
+        </div>
+        <div class="media-body">
+                        <h5 class="media-heading"><a href="https://www.scan-vf.net/one_piece" class="chart-title"><strong>One Piece</strong></a></h5>
+            <div class="readOnly-1" style="display: inline-block;"></div> <span style="vertical-align: middle;">4.79</span>
+            <script>$('.readOnly-1').raty({path: "https://www.scan-vf.net/packages/escapeboy/jraty/raty/lib/img", readOnly: true, score: "4.79"});</script>
+            <div>
+                <i class="fa fa-eye"></i> 10708874
+            </div>
+                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 95%;">
+                Action, Adventure, Comedy, Drama, Shounen
+            </div>
+                                                <div style="position: absolute; bottom: 20px">
+                <a href="https://www.scan-vf.net/one_piece/chapitre-1194">#1194 Toute chose est vou&eacute;e au changement</a>
+            </div>
+                    </div>
+    </div>
+</div>
+<div class="col-sm-6">
+    <div class="media" style="margin-bottom: 20px;">
+        <div class="media-left">
+            <a href="https://www.scan-vf.net/one-punch-man" class="thumbnail">
+                <img width="100" src='https://www.scan-vf.net/uploads/manga/one-punch-man/cover/cover_250x350.jpg' alt='One Punch Man'>
+            </a>
+        </div>
+        <div class="media-body">
+                        <h5 class="media-heading"><a href="https://www.scan-vf.net/one-punch-man" class="chart-title"><strong>One Punch Man</strong></a></h5>
+            <div class="readOnly-12" style="display: inline-block;"></div> <span style="vertical-align: middle;">4.76</span>
+            <script>$('.readOnly-12').raty({path: "https://www.scan-vf.net/packages/escapeboy/jraty/raty/lib/img", readOnly: true, score: "4.76"});</script>
+            <div>
+                <i class="fa fa-eye"></i> 2098342
+            </div>
+                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 95%;">
+                Shounen
+            </div>
+                                                <div style="position: absolute; bottom: 20px">
+                <a href="https://www.scan-vf.net/one-punch-man/chapitre-268">#268 Tendances</a>
+            </div>
+                    </div>
+    </div>
+</div>
+<div class="row">
+    <div class="col-xs-12">
+        <ul class="pagination">
+        
+                    <li class="disabled"><span>&laquo;</span></li>
+        
+        
+                    
+            
+            
+                                                                        <li class="active"><span>1</span></li>
+                                                                                <li><a href="https://www.scan-vf.net/manga-list?page=2">2</a></li>
+                                                        
+        
+                    <li><a href="https://www.scan-vf.net/manga-list?page=2" rel="next">&raquo;</a></li>
+            </ul>
+
+    </div>
+</div>
+        </div>
+    </div>
+</div>
+                        </div>
+                    </div>
+                </div>
+                <!--/ row -->
+
+                <div class="row"> 
+                    <div class="col-sm-12">
+                        <div class="row">
+                            <div class="manga-footer">
+                                <!-- menu -->
+                                <ul class=" pull-right ">
+                                                                        <li >
+     <a href="https://www.scan-vf.net"
+      title="Accueil">
+      <i class="fa fa-home"></i>
+                Accueil
+    </a>
+</li>
+<li >
+     <a href="https://www.scan-vf.net/manga-list"
+      title="Annuaire des Manga">
+      <i class="fa fa-th-large"></i>
+                Annuaire des Manga
+    </a>
+</li>
+<li >
+     <a href="https://www.scan-vf.net/latest-release"
+      title="Derniers chapitres">
+      <i class="fa fa-list"></i>
+                Derniers chapitres
+    </a>
+</li>
+
+                                                                    </ul>
+                                &copy;&nbsp;2026&nbsp;
+                                <a href="https://www.scan-vf.net">ScanOnePiece</a>
+                                &nbsp;
+                                <a href="https://www.scan-vf.net/contact-us" title="Contactez-nous"><i class="fa fa-envelope-square"></i></a>
+                                &nbsp;
+                                <a href="https://www.scan-vf.net/feed" title="RSS feed" style="color: #FF9900"><i class="fa fa-rss-square"></i></a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                
+                
+                <script>
+                    $(document).ready(function () {
+                        var url = window.location.href;
+                        var element = $('ul.nav a').filter(function () {
+                            if (url.charAt(url.length - 1) == '/') {
+                                url = url.substring(0, url.length - 1);
+                            }
+
+                            return this.href == url;
+                        }).parent();
+
+                        if (element.is('li')) {
+                            element.addClass('active');
+                        }
+                    });
+                </script>
+            </div>
+        </div>
+    </div>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a40becd3de7ec849',t:'MTc5MDM1OTE5MQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>

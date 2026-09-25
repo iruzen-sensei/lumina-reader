@@ -901,22 +901,25 @@ final videoSourcesProvider =
       episodeId, ref.watch(extensionCoordinatorProvider)),
 );
 
-/// Subtitle tracks. Sources without subtitle support get the default
-/// "Off" entry only.
-class SubtitleTracksNotifier extends StateNotifier<List<SubtitleTrack>> {
-  SubtitleTracksNotifier() : super(const [SubtitleTrack('Off', '')]);
-
-  void setTracks(List<SubtitleTrack> tracks) {
-    state = [
-      const SubtitleTrack('Off', ''),
-      ...tracks.where((t) => t.url.isNotEmpty),
-    ];
-  }
-}
-
+/// Subtitle tracks, DERIVED from the loaded video sources: providers
+/// (AniZone and friends) attach ASS/VTT tracks to their stream entries and
+/// the player picks them up automatically. Sources without subtitle
+/// support yield the "Off" entry only.
+///
+/// (Previously a mutable notifier whose setTracks() was never called —
+/// the player's subtitle selector was permanently dead with only "Off".)
 final subtitleTracksProvider =
-    StateNotifierProvider.family<SubtitleTracksNotifier, List<SubtitleTrack>,
-        int>((ref, episodeId) => SubtitleTracksNotifier());
+    Provider.family<List<SubtitleTrack>, int>((ref, episodeId) {
+  final videos = ref.watch(videoSourcesProvider(episodeId));
+  final tracks = <SubtitleTrack>[const SubtitleTrack('Off', '')];
+  final seen = <String>{};
+  for (final v in videos) {
+    for (final s in v.subtitles) {
+      if (s.url.isNotEmpty && seen.add(s.url)) tracks.add(s);
+    }
+  }
+  return tracks;
+});
 
 /// AniSkip segments for an episode, resolved through the real AniSkip API
 /// (MAL id looked up from the anime's tags when the source provides one).

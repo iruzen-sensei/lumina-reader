@@ -638,8 +638,13 @@ class _CatalogTile extends ConsumerWidget {
 
   final Source entry;
 
-  bool get _supported => const {'madara', 'mangareader', 'mangadex'}
-      .contains((entry.typeSource ?? '').toLowerCase());
+  bool get _supported =>
+      const {'madara', 'mangareader', 'mangadex', 'mangabox', 'mmrcms'}
+          .contains((entry.typeSource ?? '').toLowerCase()) ||
+      // MangaDex language variants: `single` template on mangadex.org runs
+      // through the native MangaDex implementation.
+      ((entry.typeSource ?? '').toLowerCase() == 'single' &&
+          entry.baseUrl.contains('mangadex.org'));
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

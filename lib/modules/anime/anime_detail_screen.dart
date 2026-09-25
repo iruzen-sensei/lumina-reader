@@ -92,11 +92,7 @@ class _AnimeDetailScreenState extends ConsumerState<AnimeDetailScreen> {
                   showSnack(ref, context, 'No episodes available yet');
                   return;
                 }
-                final first = manga.chapters.firstWhere(
-                  (c) => !c.isRead,
-                  orElse: () => manga.chapters.first,
-                );
-                _openEpisode(manga, first);
+                _openEpisode(manga, _nextUnread(manga.chapters));
               },
               onToggleLibrary: () => _toggleFavorite(manga),
               onTrack: () => _showTrackSheet(manga),
@@ -148,12 +144,21 @@ class _AnimeDetailScreenState extends ConsumerState<AnimeDetailScreen> {
   /// previous version crashed with a StateError while building the label).
   String _continueLabel(Manga manga) {
     if (manga.chapters.isEmpty) return 'Start watching';
-    final next = manga.chapters.firstWhere(
-      (c) => !c.isRead,
-      orElse: () => manga.chapters.first,
-    );
+    final next = _nextUnread(manga.chapters);
     if (next.isRead) return 'Watch again';
     return 'Continue watching Ep ${next.number.toStringAsFixed(0)}';
+  }
+
+  /// The episode "Continue" should open: the LOWEST-numbered unread entry.
+  /// The stored list is newest-first, so the old `firstWhere((c) => !c.isRead)`
+  /// matched the LATEST episode and resumed randomly mid-series.
+  Chapter _nextUnread(List<Chapter> chapters) {
+    Chapter? best;
+    for (final c in chapters) {
+      if (c.isRead) continue;
+      if (best == null || c.number < best.number) best = c;
+    }
+    return best ?? chapters.first;
   }
 
   /// REAL remove-from-library (the button truly deletes the entry, its

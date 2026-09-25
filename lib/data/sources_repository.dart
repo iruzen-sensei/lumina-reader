@@ -18,6 +18,9 @@ class SourcesRepository {
   /// Stable id for the built-in native MangaDex source.
   static const String mangadexIdString = 'builtin.mangadex';
 
+  /// Stable id for the built-in anime source (AniList + AniZone).
+  static const String animeSourceIdString = 'builtin.anizone';
+
   /// Verified-alive template sources seeded alongside MangaDex so a fresh
   /// install has REAL working content on day one (the default extension
   /// repo is ~60% dead domains — a bare install left Browse with a single
@@ -45,6 +48,22 @@ class SourcesRepository {
       name: 'Raven Scans',
       baseUrl: 'https://ravenscans.com',
       template: 'mangareader',
+    ),
+    (
+      // MangaBox family — live-verified 2026-09: popular/latest/search/
+      // detail/chapters (JSON API)/pages all clean, no Cloudflare.
+      id: 'builtin.mangabat',
+      name: 'Mangabat',
+      baseUrl: 'https://www.mangabats.com',
+      template: 'mangabox',
+    ),
+    (
+      // MMRCMS family — live-verified 2026-09: list/search JSON/detail/
+      // chapters/pages all clean.
+      id: 'builtin.scanvf',
+      name: 'Scan VF',
+      baseUrl: 'https://www.scan-vf.net',
+      template: 'mmrcms',
     ),
   ];
 
@@ -108,6 +127,29 @@ class SourcesRepository {
         sourceCode: 'builtin:mangadex',
       );
       await putSource(mangadex);
+    }
+
+    // Anilili-style anime streaming: AniList catalog (trending / seasonal /
+    // search / detail) + AniZone HLS streams with subtitles. Seeded as a
+    // top-level anime source so a fresh install can stream anime on day
+    // one (see eval/native/anizone_source.dart).
+    final anime = await getSourceByIdString(animeSourceIdString);
+    if (anime == null) {
+      await putSource(db.Source(
+        idString: animeSourceIdString,
+        name: 'AniList Anime (AniZone)',
+        lang: 'en',
+        baseUrl: 'https://anilist.co',
+        version: '1.0.0',
+        isManga: false,
+        isAnime: true,
+        isEnabled: true,
+        isFullData: true,
+        supportsLatest: true,
+        supportsFilter: true,
+        sourceCodeLanguage: db.SourceCodeLanguage.dart,
+        sourceCode: 'builtin:anizone',
+      ));
     }
 
     // Verified-alive template sources (see [_seedSources]).
