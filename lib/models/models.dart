@@ -170,6 +170,39 @@ class Manga {
 
   bool get isAnime => itemType == ItemType.anime;
 
+  /// Field-preserving copy (used by the source-detail preview merge so a
+  /// blank fetched field falls back to the browse seed instead of wiping).
+  Manga copyWith({
+    String? title,
+    String? thumbnailUrl,
+    String? author,
+    String? artist,
+    String? description,
+    List<Chapter>? chapters,
+  }) =>
+      Manga(
+        id: id,
+        title: title ?? this.title,
+        sourceId: sourceId,
+        url: url,
+        itemType: itemType,
+        author: author ?? this.author,
+        artist: artist ?? this.artist,
+        description: description ?? this.description,
+        genre: genre,
+        status: status,
+        thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+        favorite: favorite,
+        categoryIds: categoryIds,
+        chapters: chapters ?? this.chapters,
+        lastReadAt: lastReadAt,
+        dateAdded: dateAdded,
+        rating: rating,
+        unreadCount: unreadCount,
+        totalChapters: totalChapters,
+        lastChapterRead: lastChapterRead,
+      );
+
   int get readCount => totalChapters - unreadCount;
 
   double get progress {

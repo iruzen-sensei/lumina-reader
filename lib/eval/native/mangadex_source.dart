@@ -199,6 +199,33 @@ class MangaDexSource extends BaseExtensionService {
   @override
   Future<List<MChapter>> getChapterList(String url) async {
     final id = _mangaId(url);
+
+    // English-first: the catalogue is EN-facing, so prefer EN chapters.
+    final en = await _feed(id, 'translatedLanguage[]=en');
+    if (en.isNotEmpty) return en;
+
+    // Language fallback — live-verified failure mode: the MOST POPULAR
+    // titles on MangaDex (Solo Leveling, Bisque Doll, Slime, Nagatoro…)
+    // have every EN chapter licensed/external. An EN-only query returns
+    // ZERO readable chapters for them, which made the default source look
+    // completely dead ("no chapters" on the first thing users tap).
+    // Fall back to every language, keep filtering external (publisher)
+    // chapters, and tag the chapter name with its language so mixed feeds
+    // stay honest in the UI.
+    final all = await _feed(id, null);
+    if (all.isEmpty) return all;
+
+    // One language only → clean names, no per-chapter tags needed.
+    final langs = all.map((c) => c.language).toSet();
+    if (langs.length == 1) return all;
+    return [
+      for (final c in all) c.copyWithName('${c.name} [${c.language ?? '?'}]'),
+    ];
+  }
+
+  /// Fetches the chapter feed, paginated, filtering external (licensed)
+  /// chapters the at-home server cannot serve.
+  Future<List<MChapter>> _feed(String id, String? langFilter) async {
     final chapters = <MChapter>[];
     // ALL languages: many popular titles have their EN chapters licensed
     // away (externalUrl) — an EN-only feed returns zero readable chapters
@@ -207,11 +234,12 @@ class MangaDexSource extends BaseExtensionService {
     // to the front of the list via the sort below.
     for (var page = 0; page < _maxFeedPages; page++) {
       final offset = page * 500;
+      final langParam = langFilter == null ? '' : '$langFilter&';
       final json = await _getJson(
-          '$_api/manga/$id/feed?order[chapter]=desc'
+          '$_api/manga/$id/feed?${langParam}order[chapter]=desc'
           '&limit=500&offset=$offset&contentRating[]=safe'
           '&contentRating[]=suggestive&contentRating[]=erotica'
-          '&includes[]=scanlation_group');
+          '&contentRating[]=pornographic&includes[]=scanlation_group');
       final data = (json['data'] as List? ?? const []);
       for (final entry in data) {
         final attrs = entry['attributes'] as Map<String, dynamic>? ?? const {};

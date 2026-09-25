@@ -833,7 +833,11 @@ class _BrowseCard extends ConsumerWidget {
           title: 'Manage extensions',
           subtitle: '$installedCount installed across ${repos.length} repos',
           showChevron: true,
-          onTap: () => context.push('/browse'),
+          // go(), not push(): /browse lives INSIDE the shell route, so a
+          // push stacked a SECOND MainScreen (duplicate tab bar + broken
+          // back-stack) on top of Settings — the "app bugs out" report.
+          // go() switches the shell to the Browse tab cleanly.
+          onTap: () => context.go('/browse'),
         ),
         for (final r in repos)
           HeroListTile(
@@ -861,7 +865,8 @@ class _BrowseCard extends ConsumerWidget {
           title: 'Add repository',
           subtitle: 'Paste a Mangayomi extension repo URL',
           showChevron: true,
-          onTap: () => context.push('/browse'),
+          // Same shell-route rule as "Manage extensions" above.
+          onTap: () => context.go('/browse'),
         ),
       ],
     );

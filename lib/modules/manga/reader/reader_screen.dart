@@ -63,6 +63,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   DateTime _sessionStart = DateTime.now();
   Timer? _progressSaveDebounce;
 
+  // Session page accounting — REAL pages turned (the session used to be
+  // recorded with `pagesRead: 1`, so the pages stat, the heatmap and the
+  // pages-per-day goal all counted one page per session and looked frozen).
+  int _sessionStartPage = 0;
+  int _sessionMaxPage = 0;
+
   // Current chapter pointer so chapter navigation can mutate it.
   // Nullable: the async Isar resolve in _loadChapter may not have finished
   // when the first frame builds — every access must be guarded (the previous
@@ -123,6 +129,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           _totalPages > 0 ? chapter.lastPageRead.clamp(0, _totalPages - 1) : 0;
       _isLoadingChapter = _totalPages == 0; // until pages stream in
     });
+    _resetPageAccounting();
     unawaited(_recordHistoryRead(0));
 
     // Resolve the source's HTTP headers (Referer / User-Agent) for page
@@ -145,6 +152,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final first = positions.first;
     if (first.index != _currentPage) {
       setState(() => _currentPage = first.index);
+      _trackPage(first.index);
       _onPageSettled();
     }
   }
@@ -156,7 +164,20 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (page != _currentPage) {
       setState(() => _currentPage = page);
     }
+    _trackPage(page);
     _onPageSettled();
+  }
+
+  /// Records the furthest page reached this session (monotonic — flipping
+  /// back and forth never inflates the count).
+  void _trackPage(int page) {
+    if (page > _sessionMaxPage) _sessionMaxPage = page;
+  }
+
+  /// Starts a fresh page-accounting window (chapter open / switch).
+  void _resetPageAccounting() {
+    _sessionStartPage = _currentPage;
+    _sessionMaxPage = _currentPage;
   }
 
   /// Persists reading progress (debounced — fires at most every 2 s).
@@ -219,12 +240,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
     final seconds = DateTime.now().difference(_sessionStart).inSeconds;
     if (seconds < 5) return;
+    final pagesThisSession = _sessionMaxPage - _sessionStartPage;
     _sessionStart = DateTime.now();
+    _resetPageAccounting();
     try {
       await ref.read(data.statsRepositoryProvider).recordSession(
         mangaId: _manga!.id,
         chapterId: chapter.id,
-        pagesRead: 1,
+        pagesRead: pagesThisSession.clamp(0, 10000),
         durationSeconds: seconds,
       );
     } catch (_) {}
@@ -253,17 +276,23 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (page < 0 || page >= _totalPages) return;
     final settings = ref.read(readerSettingsProvider);
     if (settings.mode == ReaderMode.paged) {
+      if (!_pageController.hasClients) return;
       await _pageController.animateToPage(
         page,
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOutCubic,
       );
     } else {
+      // Guarded: jumpTo on a detached controller (pages still streaming in,
+      // or the continuous body not yet mounted after a mode switch) throws
+      // and took down the reader mid-read.
+      if (!_itemScrollController.isAttached) return;
       unawaited(_itemScrollController.scrollTo(
         index: page,
         duration: const Duration(milliseconds: 220),
       ));
     }
+    _trackPage(page);
     setState(() => _currentPage = page);
   }
 
@@ -289,11 +318,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       _currentPage = 0;
       _isLoadingChapter = _totalPages == 0;
     });
+    _resetPageAccounting();
     unawaited(_recordHistoryRead(0));
     if (ref.read(readerSettingsProvider).mode == ReaderMode.paged &&
         _pageController.hasClients) {
       _pageController.jumpToPage(0);
-    } else {
+    } else if (_itemScrollController.isAttached) {
       _itemScrollController.jumpTo(index: 0);
     }
   }
@@ -317,11 +347,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       _currentPage = _totalPages > 0 ? _totalPages - 1 : 0;
       _isLoadingChapter = _totalPages == 0;
     });
+    _resetPageAccounting();
     unawaited(_recordHistoryRead(0));
     if (ref.read(readerSettingsProvider).mode == ReaderMode.paged &&
         _pageController.hasClients) {
       _pageController.jumpToPage(_currentPage);
-    } else {
+    } else if (_itemScrollController.isAttached) {
       _itemScrollController.jumpTo(index: _currentPage);
     }
   }
@@ -373,6 +404,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           });
         });
       }
+    });
+
+    // Direction flips invert the PageView's axis semantics: without a
+    // re-sync the visible page jumped to its mirror position (page 3 of 20
+    // became 17) — the "reader bugs out when I change settings" report.
+    ref.listen(readerSettingsProvider.select((s) => s.direction),
+        (prev, next) {
+      if (prev == next || settings.mode != ReaderMode.paged) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_pageController.hasClients) return;
+        _pageController.jumpToPage(_currentPage);
+      });
     });
 
     return Scaffold(
@@ -931,8 +974,15 @@ class _ReaderSettingsSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(readerSettingsProvider);
     final notifier = ref.read(readerSettingsProvider.notifier);
-    return SafeArea(
-      child: Padding(
+    // Scrollable + height-capped: the sheet stacks four chip sections and
+    // three switches (~500 px). Uncapped, it overflowed the viewport in
+    // landscape (the classic "reader bugs out when changing layouts" —
+    // yellow/black overflow stripes over the page).
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
+      ),
+      child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 0, 20, 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,

@@ -33,6 +33,19 @@ class StatsRepository {
     final chaptersRead =
         await _isar.chapters.filter().isReadEqualTo(true).count();
 
+    // Episodes watched — previously hardcoded 0 ("wired when the anime
+    // player records sessions" — it records duration-only sessions, so the
+    // count must come from read episodes on anime library rows instead).
+    var episodesWatched = 0;
+    final animeRows = await _isar.mangas
+        .filter()
+        .itemTypeEqualTo(db.ItemType.anime)
+        .findAll();
+    for (final m in animeRows) {
+      await m.chapters.load();
+      episodesWatched += m.chapters.where((c) => c.isRead).length;
+    }
+
     final minutes = sessions.fold<int>(0, (a, s) => a + s.durationSeconds) ~/
         60;
     final pages = sessions.fold<int>(0, (a, s) => a + s.pagesRead);
@@ -42,7 +55,7 @@ class StatsRepository {
       'minutesRead': minutes,
       'pagesRead': pages,
       'chaptersRead': chaptersRead,
-      'episodesWatched': 0, // wired when the anime player records sessions
+      'episodesWatched': episodesWatched,
     };
   }
 

@@ -195,7 +195,15 @@ class _CbzReaderViewState extends State<CbzReaderView> {
         _index = initialIndex;
       });
       if (initialIndex > 0) {
-        _controller.jumpToPage(initialIndex);
+        // Deferred: on first load the PageView may not be mounted yet when
+        // the async archive read resolves — jumping immediately (controller
+        // without clients) throws, skipping silently loses the resume
+        // position. Post-frame the view exists and the jump lands.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _controller.hasClients) {
+            _controller.jumpToPage(initialIndex);
+          }
+        });
       }
       unawaited(WakelockPlus.enable());
     } catch (e) {

@@ -148,7 +148,7 @@ class MadaraSource extends BaseExtensionService {
     final document = html_parser.parse(res.body);
 
     final manga = MManga(
-      name: '',
+      name: _parseDetailTitle(document),
       link: url,
       isManga: true,
       source: source.idString,
@@ -248,6 +248,26 @@ class MadaraSource extends BaseExtensionService {
     if (cached != null) return cached;
     await getMangaDetail(url); // populates the cache
     return _chapterCache[url] ?? const [];
+  }
+
+  /// Series title — Madara themes render it as `div.post-title h1`/`h3`
+  /// (some also use `.series-title` / `h1.entry-title`). Live-verified
+  /// regression: the detail object used to ship an EMPTY name, and because
+  /// the Browse → detail → "Add to library" flow persists the FETCHED
+  /// detail, library rows saved from Madara sources were nameless.
+  String _parseDetailTitle(dom.Document document) {
+    for (final sel in [
+      'div.post-title h1',
+      'div.post-title h3',
+      'div.post-title',
+      '.series-title h2',
+      'h1.entry-title',
+    ]) {
+      final el = document.querySelector(sel);
+      final text = el?.text.trim() ?? '';
+      if (text.isNotEmpty) return text;
+    }
+    return '';
   }
 
   Future<String> _postChapterAjax(

@@ -142,7 +142,9 @@ class _SourceMangaDetailScreenState
     setState(() => _adding = true);
     try {
       final repo = ref.read(data.libraryRepositoryProvider);
-      final id = await repo.addToLibrary(detail, chapters: detail.chapters);
+      final id = await repo.addToLibrary(
+          _mergedWithSeed(detail),
+          chapters: detail.chapters);
       if (!mounted) return;
       showSnack(ref, context, 'Added to library');
       // go_router's context.pushReplacement returns void (unlike
@@ -211,12 +213,31 @@ class _SourceMangaDetailScreenState
   Future<Manga?> _ensureInLibrary(Manga detail) async {
     try {
       final repo = ref.read(data.libraryRepositoryProvider);
-      final id = await repo.addToLibrary(detail, chapters: detail.chapters);
+      final id = await repo.addToLibrary(
+          _mergedWithSeed(detail),
+          chapters: detail.chapters);
       return await repo.getManga(id);
     } catch (e) {
       debugPrint('SourceMangaDetail: ensureInLibrary failed: $e');
       return null;
     }
+  }
+
+  /// Defence-in-depth for the nameless-library-row bug: if the source's
+  /// detail payload failed to yield a title or cover (theme variance,
+  /// HTML drift), fall back to the browse-seed values so a persisted row
+  /// is never blank.
+  Manga _mergedWithSeed(Manga detail) {
+    final seed = widget.manga;
+    if (seed == null) return detail;
+    final blankTitle = detail.title.trim().isEmpty && seed.title.isNotEmpty;
+    final blankCover = (detail.thumbnailUrl ?? '').isEmpty &&
+        (seed.thumbnailUrl ?? '').isNotEmpty;
+    if (!blankTitle && !blankCover) return detail;
+    return detail.copyWith(
+      title: blankTitle ? seed.title : null,
+      thumbnailUrl: blankCover ? seed.thumbnailUrl : null,
+    );
   }
 }
 

@@ -21,7 +21,9 @@ import 'package:lumina_reader/eval/native/template_utils.dart';
 import 'package:lumina_reader/services/http/m_client.dart';
 
 class MangaReaderSource extends BaseExtensionService {
-  MangaReaderSource(super.source);
+  /// Optional injected client (fixture tests). When null a real MClient is
+  /// created lazily — same injection seam as MadaraSource / MangaDexSource.
+  MangaReaderSource(super.source, {http.Client? client}) : _client = client;
 
   http.Client? _client;
 
@@ -136,7 +138,7 @@ class MangaReaderSource extends BaseExtensionService {
         document.querySelector('div.postbody');
 
     final manga = MManga(
-      name: '',
+      name: _parseDetailTitle(document),
       link: url,
       isManga: true,
       source: source.idString,
@@ -212,6 +214,25 @@ class MangaReaderSource extends BaseExtensionService {
     }
     _chapterCache[url] = chapters;
     return manga;
+  }
+
+  /// Series title — MangaReader themes use `h1.entry-title` (with the
+  /// `.entry-title` / `.seriestual h1` variants). Same live-verified
+  /// regression as Madara: an empty detail name produced nameless library
+  /// rows after "Add to library".
+  String _parseDetailTitle(dom.Document document) {
+    for (final sel in [
+      'h1.entry-title',
+      '.seriestual h1',
+      '.seriestuheader h1',
+      'h1.post-title',
+      'div.infox h1',
+    ]) {
+      final el = document.querySelector(sel);
+      final text = el?.text.trim() ?? '';
+      if (text.isNotEmpty) return text;
+    }
+    return '';
   }
 
   @override

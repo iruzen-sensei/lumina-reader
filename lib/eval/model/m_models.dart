@@ -174,6 +174,19 @@ class MChapter {
 
   Map<String, dynamic> toJson() => _$MChapterToJson(this);
 
+  /// Copy with a different display name (used by sources that decorate
+  /// chapter names, e.g. MangaDex's cross-language fallback feed).
+  MChapter copyWithName(String newName) => MChapter(
+        name: newName,
+        url: url,
+        dateUpload: dateUpload,
+        scanlator: scanlator,
+        mangaId: mangaId,
+        chapterNumber: chapterNumber,
+        volumeNumber: volumeNumber,
+        language: language,
+      );
+
   @override
   String toString() =>
       'MChapter(name: $name, url: $url, chapterNumber: $chapterNumber)';
