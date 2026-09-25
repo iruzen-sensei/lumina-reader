@@ -123,9 +123,12 @@ void main() {
       expect(chapters.length, 3);
       // External chapters never leak into the reader (they cannot render).
       expect(chapters.every((c) => !c.url!.contains('ext-')), isTrue);
-      // Mixed languages → names carry a language tag.
-      expect(chapters[0].name, contains('[ka]'));
-      expect(chapters[1].name, contains('[pt-br]'));
+      // Mixed languages → every name carries its language tag (order is
+      // the feed's newest-first sort, not insertion order).
+      expect(chapters.map((c) => c.language).toSet(), {'ka', 'pt-br'});
+      for (final c in chapters) {
+        expect(c.name, contains('[${c.language}]'));
+      }
     });
 
     test('single-language fallback keeps clean names', () async {
