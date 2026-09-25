@@ -39,6 +39,7 @@ class AniListAnime {
     this.isAdult = false,
     this.nextEpisode,
     this.nextAiringAt,
+    this.idMal,
   });
 
   /// AniList media id — the stable identity used by providers.
@@ -69,6 +70,10 @@ class AniListAnime {
   /// Next episode number + unix air time (airing shows).
   final int? nextEpisode;
   final int? nextAiringAt;
+
+  /// MyAnimeList id cross-reference (AniSkip resolves skip segments by
+  /// MAL id — the tag `mal:<id>` is what the AniSkip provider searches).
+  final int? idMal;
 
   String get bestTitle => english?.isNotEmpty == true ? english! : romaji;
 
@@ -111,6 +116,7 @@ class AniListAnime {
       isAdult: m['isAdult'] as bool? ?? false,
       nextEpisode: (airing?['episode'] as num?)?.toInt(),
       nextAiringAt: (airing?['airingAt'] as num?)?.toInt(),
+      idMal: (m['idMal'] as num?)?.toInt(),
     );
   }
 }
@@ -140,6 +146,7 @@ class AniListService {
       genres
       averageScore
       isAdult
+      idMal
       nextAiringEpisode { episode airingAt }
   ''';
 
@@ -219,6 +226,7 @@ class AniListService {
           genres
           averageScore
           isAdult
+          idMal
           studios(isMain: true) { nodes { name } }
           nextAiringEpisode { episode airingAt }
         }

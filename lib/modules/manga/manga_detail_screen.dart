@@ -817,8 +817,12 @@ class _GenreChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final visible =
-        genres.where((g) => g.trim().isNotEmpty).toList(growable: false);
+    // Hide identity tags (`anilist:<id>` / `mal:<id>`) — they power the
+    // calendar cross-link and AniSkip lookups but are not real genres.
+    final visible = genres
+        .where((g) => g.trim().isNotEmpty)
+        .where((g) => !RegExp(r'^(anilist|mal):\d+$').hasMatch(g.trim()))
+        .toList(growable: false);
     if (visible.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 20, 0),

@@ -89,8 +89,16 @@ class AniZoneSource extends BaseExtensionService {
         link: 'anilist:${a.id}',
         imageUrl: a.coverUrl,
         description: a.description,
-        genre: a.genres.join(','),
-        categories: a.genres,
+        // Identity tags ride inside categories: `anilist:<id>` links the
+        // airing calendar to the library entry; `mal:<id>` powers AniSkip
+        // skip-intro/outro lookups. UI genre chips filter `xxx:<id>`
+        // entries out of display.
+        genre: [...a.genres, 'anilist:${a.id}', if (a.idMal != null) 'mal:${a.idMal}'].join(','),
+        categories: [
+          ...a.genres,
+          'anilist:${a.id}',
+          if (a.idMal != null) 'mal:${a.idMal}',
+        ],
         status: _status(a.status),
         isAnime: true,
         isManga: false,

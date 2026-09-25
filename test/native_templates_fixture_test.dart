@@ -312,6 +312,9 @@ void main() {
       expect(detail.name, contains('Frieren'));
       expect(detail.isAnime, isTrue);
       expect(detail.genre, isNotEmpty);
+      // Identity tags ride along for calendar + AniSkip lookups.
+      expect(detail.categories, contains('anilist:154587'));
+      expect(detail.categories, contains('mal:52991'));
     });
 
     test('episode list resolves the AniZone slug and scrapes episodes',
