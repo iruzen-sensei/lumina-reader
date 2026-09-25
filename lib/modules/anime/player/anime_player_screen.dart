@@ -222,7 +222,27 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     await _player.setRate(_speed);
     await _player.setVolume(_volume);
     await _resumeFromSavedPosition();
+    _applyDefaultSubtitle();
     _maybeStartAniSkipWatch();
+  }
+
+  /// Applies the persisted "Default subtitle" preference (Settings →
+  /// Player) — previously the option was stored but never consumed, so
+  /// every episode started with subtitles off regardless of the choice.
+  void _applyDefaultSubtitle() {
+    final pref = ref.read(appSettingsProvider).defaultSubtitle;
+    if (pref == 'Off') return;
+    final tracks = ref.read(subtitleTracksProvider(_currentEpisodeId));
+    for (var i = 0; i < tracks.length; i++) {
+      final label = tracks[i].label.toLowerCase();
+      final lang = pref.toLowerCase();
+      if (label.contains(lang) ||
+          (lang.startsWith('eng') && label.contains('english')) ||
+          (lang.contains('spanish') && label.contains('espa'))) {
+        _setSubtitle(i);
+        return;
+      }
+    }
   }
 
   /// REAL resume: jump to the saved watch position when it is meaningful

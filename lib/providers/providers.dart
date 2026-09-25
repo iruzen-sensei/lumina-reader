@@ -676,7 +676,7 @@ class MangaDetailNotifier extends StateNotifier<Manga?> {
 /// Detail data for a library entry. `null` while loading / when the id does
 /// not exist — consuming screens show a "not found" view.
 final mangaDetailProvider =
-    StateNotifierProvider.family<MangaDetailNotifier, Manga?, int>(
+    StateNotifierProvider.autoDispose.family<MangaDetailNotifier, Manga?, int>(
   (ref, id) => MangaDetailNotifier(id, ref.watch(data.libraryRepositoryProvider)),
 );
 
@@ -863,7 +863,7 @@ class ChapterPagesNotifier extends StateNotifier<List<String>> {
 }
 
 final readerPagesProvider =
-    StateNotifierProvider.family<ChapterPagesNotifier, List<String>, int>(
+    StateNotifierProvider.autoDispose.family<ChapterPagesNotifier, List<String>, int>(
   (ref, chapterId) => ChapterPagesNotifier(
       chapterId, ref.watch(extensionCoordinatorProvider)),
 );
@@ -895,8 +895,8 @@ class EpisodeMediaNotifier extends StateNotifier<List<VideoQuality>> {
 }
 
 final videoSourcesProvider =
-    StateNotifierProvider.family<EpisodeMediaNotifier, List<VideoQuality>,
-        int>(
+    StateNotifierProvider.autoDispose.family<EpisodeMediaNotifier,
+        List<VideoQuality>, int>(
   (ref, episodeId) => EpisodeMediaNotifier(
       episodeId, ref.watch(extensionCoordinatorProvider)),
 );
@@ -966,7 +966,7 @@ class AniSkipNotifier extends StateNotifier<List<SkipRange>> {
 }
 
 final aniSkipProvider =
-    StateNotifierProvider.family<AniSkipNotifier, List<SkipRange>, int>(
+    StateNotifierProvider.autoDispose.family<AniSkipNotifier, List<SkipRange>, int>(
   (ref, episodeId) => AniSkipNotifier(
     episodeId,
     ref.watch(data.libraryRepositoryProvider),
@@ -1374,7 +1374,7 @@ class NextAiringNotifier extends StateNotifier<NextAiring?> {
 }
 
 final nextAiringProvider =
-    StateNotifierProvider.family<NextAiringNotifier, NextAiring?, int>(
+    StateNotifierProvider.autoDispose.family<NextAiringNotifier, NextAiring?, int>(
   (ref, animeId) => NextAiringNotifier(
     animeId,
     ref.watch(data.libraryRepositoryProvider),
@@ -1675,7 +1675,7 @@ class BrowseGridNotifier extends StateNotifier<BrowseFeedState> {
   }
 }
 
-final browseFeedProvider = StateNotifierProvider.family<
+final browseFeedProvider = StateNotifierProvider.autoDispose.family<
     BrowseGridNotifier,
     BrowseFeedState,
     (int, bool)>((ref, key) => BrowseGridNotifier(
