@@ -16,6 +16,7 @@ import 'dart:async' show Timer, unawaited;
 import 'dart:io';
 
 import 'package:archive/archive.dart';
+import 'package:extended_image/extended_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -70,6 +71,14 @@ class _CbzReaderViewState extends State<CbzReaderView> {
   String? _error;
 
   int _index = 0;
+
+  // Session tracking for stats (duration + pages turned this session).
+  final DateTime _sessionStart = DateTime.now();
+
+  /// Page index when the session began (AFTER the resume jump) — the stats
+  /// count only pages turned THIS session. The old hardcoded 0 counted the
+  /// resume offset as freshly-read on every reopened comic.
+  int _sessionStartIndex = 0;
   bool _chromeVisible = false;
   Timer? _progressSaver;
 
@@ -137,9 +146,21 @@ class _CbzReaderViewState extends State<CbzReaderView> {
             totalPages: _pages.length,
           );
         }
+        // Stats: CBZ sessions previously NEVER reached the stats pipeline
+        // (reading a whole imported comic moved nothing on the stats page).
+        final seconds =
+            DateTime.now().difference(_sessionStart).inSeconds;
+        if (seconds >= 10) {
+          await container.read(data.statsRepositoryProvider).recordSession(
+            mangaId: id,
+            pagesRead: (_index - _sessionStartIndex).clamp(0, 10000),
+            durationSeconds: seconds.clamp(1, 60 * 60 * 6),
+          );
+        }
       }
-    } catch (_) {
+    } catch (e) {
       // Persistence must never break reading.
+      debugPrint('CBZ reader flush failed: $e');
     }
   }
 
@@ -193,6 +214,7 @@ class _CbzReaderViewState extends State<CbzReaderView> {
         _pages = pages;
         _error = null;
         _index = initialIndex;
+        _sessionStartIndex = initialIndex;
       });
       if (initialIndex > 0) {
         // Deferred: on first load the PageView may not be mounted yet when
@@ -282,21 +304,50 @@ class _CbzReaderViewState extends State<CbzReaderView> {
         setState(() => _index = i);
         _scheduleProgressSave();
       },
-      itemBuilder: (context, i) => InteractiveViewer(
-        maxScale: 5,
-        minScale: 0.8,
-        clipBehavior: Clip.none,
-        child: Center(
-          child: Image.memory(
-            _pages[i],
-            fit: BoxFit.contain,
-            gaplessPlayback: true,
-            errorBuilder: (_, __, ___) => const Icon(
-              Icons.broken_image,
-              size: 56,
-              color: Colors.white38,
-            ),
-          ),
+      // ExtendedImage (same engine as the main reader): gesture zoom/pan
+      // that cooperates with the PageView instead of the old
+      // InteractiveViewer, which fought page swipes and — with
+      // clipBehavior: Clip.none — bled zoomed pages over neighbouring UI.
+      // Fit-width matches the main reader's industry-standard default.
+      itemBuilder: (context, i) => ExtendedImage.memory(
+        _pages[i],
+        fit: BoxFit.fitWidth,
+        mode: ExtendedImageMode.gesture,
+        enableSlideOutPage: true,
+        onDoubleTap: (state) {
+          final pos = state.pointerDownPosition;
+          final begin = state.gestureDetails?.totalScale ?? 1.0;
+          state.handleDoubleTap(
+            scale: begin == 1.0 ? 2.2 : 1.0,
+            doubleTapPosition: pos,
+          );
+        },
+        loadStateChanged: (state) {
+          if (state.extendedImageLoadState == LoadState.failed) {
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.broken_image,
+                      size: 56, color: Colors.white38),
+                  TextButton(
+                      onPressed: state.reLoadImage,
+                      child: const Text('Retry')),
+                ],
+              ),
+            );
+          }
+          return state.completedWidget;
+        },
+        initGestureConfigHandler: (state) => GestureConfig(
+          minScale: 0.9,
+          animationMinScale: 0.7,
+          maxScale: 6.0,
+          animationMaxScale: 6.5,
+          speed: 1.0,
+          inertialSpeed: 100.0,
+          initialScale: 1.0,
+          inPageView: true,
         ),
       ),
     );

@@ -27,6 +27,14 @@ dependencies:
   http: ^1.2.2
   http_interceptor: ^3.0.0
   connectivity_plus: ^7.3.1
+  # Chrome's TLS/HTTP stack on Android (HTTP/2+3, Brotli). CRITICAL for
+  # Cloudflare-fronted sources: CF fingerprints dart:io HttpClient's TLS
+  # ClientHello (JA3) and serves challenge pages to it from ANY IP — curl
+  # and Cronet sail through the same edge. AniZone (and several Madara
+  # mirrors) are unreachable through dart:io on real devices without this.
+  # CI builds with --dart-define=cronetHttpNoPlay=true so the embedded
+  # Cronet is bundled (no Google-Play-Services dependency).
+  cronet_http: ^1.9.0
 
   # Reader - Manga
   extended_image: ^8.2.4

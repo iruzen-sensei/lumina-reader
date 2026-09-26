@@ -54,10 +54,14 @@ class LuminaApp extends ConsumerWidget {
         final mediaQuery = MediaQuery.of(context);
         final settings = ref.watch(appSettingsProvider);
         Widget app = MediaQuery(
+          // COMPOUND the in-app font slider with the SYSTEM text scale —
+          // the previous override REPLACED the system scaler, so a user
+          // with Android "Largest" fonts (2.0x) got 1.0x text whenever the
+          // in-app slider was off-neutral (an accessibility regression).
           data: mediaQuery.copyWith(
             textScaler: textScale == 1.0
                 ? mediaQuery.textScaler
-                : TextScaler.linear(textScale),
+                : _CompoundScaler(mediaQuery.textScaler, textScale),
           ),
           child: child ?? const SizedBox.shrink(),
         );
@@ -101,4 +105,21 @@ class LuminaApp extends ConsumerWidget {
       },
     );
   }
+}
+
+/// Multiplies a (possibly non-linear, platform) [TextScaler] by a linear
+/// in-app factor — keeps Android's per-size accessibility curve intact.
+class _CompoundScaler extends TextScaler {
+  const _CompoundScaler(this._inner, this._factor);
+
+  final TextScaler _inner;
+  final double _factor;
+
+  @override
+  double scale(double fontSize) => _inner.scale(fontSize) * _factor;
+
+  // Canonical nonlinear derivation (the deprecated base getter is linear
+  // only for LinearScaler); 14 = the platform's reference font size.
+  @override
+  double get textScaleFactor => scale(14) / 14;
 }

@@ -43,11 +43,37 @@
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart' show SpringDescription, SpringSimulation;
 import 'package:flutter/services.dart';
 
 /// Global switch for golden tests: disables infinite animations (shimmer)
 /// so pumpAndSettle terminates.
 bool heroAnimationsEnabled = true;
+
+/// Apple's standard system spring as a [Curve] — samples a critically
+/// damped [SpringSimulation] built from the exact CASpringAnimation constants
+/// documented in flutter/cupertino's route.dart (mass 1, stiffness 522.35,
+/// damping 45.71; the Xcode default spring, settling in ~404 ms).
+///
+/// Critically damped ⇒ monotonic ⇒ a valid animation curve (no overshoot,
+/// exactly like the iOS system animations users perceive as "native").
+class _IOSpringCurve extends Curve {
+  const _IOSpringCurve();
+
+  static final SpringSimulation _sim = SpringSimulation(
+    const SpringDescription(mass: 1, stiffness: 522.35, damping: 45.71),
+    0.0,
+    1.0,
+    0.0,
+    // The simulation must not declare "done" early — the animation drives t.
+  );
+
+  @override
+  double transformInternal(double t) {
+    final v = _sim.x(t);
+    return v < 0 ? 0 : (v > 1 ? 1 : v);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // TOKENS
@@ -102,7 +128,10 @@ class HeroTokens {
   static const Color lightSurface3 = Color(0xFFEFEFF1); // soft fills
   static const Color lightSurfaceHover = Color(0xFFF0F0F2);
   static const Color lightForeground = Color(0xFF0A0A0A); // near-black ink
-  static const Color lightMuted = Color(0xFF6E6E76);
+  // Muted step darkened one notch: the old #6E6E76 on #F5F5F5 sat at ~4.6:1
+  // — right at the WCAG AA edge for small text (VLM flagged secondary grey
+  // on 5 of 6 screens). #616169 clears 5.5:1.
+  static const Color lightMuted = Color(0xFF616169);
   static const Color lightDefault = Color(0xFFE8E8EB);
   static const Color lightDefaultHover = Color(0xFFDCDCDF);
   static const Color lightBorder = Color(0xFFE4E4E8); // hairline
@@ -115,7 +144,10 @@ class HeroTokens {
   static const Color darkSurface3 = Color(0xFF262628); // strong wells
   static const Color darkSurfaceHover = Color(0xFF1F1F21);
   static const Color darkForeground = Color(0xFFFFFFFF);
-  static const Color darkMuted = Color(0xFFA1A1A8); // secondary copy
+  // Muted step raised one notch: the VLM review flagged secondary grey as
+  // dim on 5 of 6 dark screens; #ADADBD keeps the muted feel while clearly
+  // clearing AA on both canvas and cards.
+  static const Color darkMuted = Color(0xFFADADBD);
   static const Color darkDefault = Color(0xFF1E1E21); // control fills
   static const Color darkDefaultHover = Color(0xFF2A2A2E);
   static const Color darkBorder = Color(0xFF26262B); // hairline
@@ -181,14 +213,21 @@ class HeroTokens {
   /// Smooth settle curve (fast-out, long soft landing).
   static const Curve easeSmooth = Curves.easeOutCubic;
 
-  /// The iOS bounce — overshoot-and-settle for releases and entrances.
-  static const Curve spring = Cubic(0.34, 1.56, 0.64, 1.0);
+  /// Apple's ACTUAL system spring, sampled from the exact CASpringAnimation
+  /// constants Cupertino reverse-engineered in flutter/cupertino route.dart:
+  /// mass 1, stiffness 522.35, damping 45.71 → critically damped
+  /// (ratio ≈ 1.0), settling in ~404ms with NO overshoot. The previous
+  /// Cubic(0.34,1.56,0.64,1) bounce curve is the "playful Android" feel —
+  /// Apple's standard interactions settle, they don't bounce.
+  static const Curve spring = _IOSpringCurve();
 
-  /// Gentle spring — big elements (sheets, cards, cursors).
+  /// Gentle spring — big elements (sheets, cards, cursors). This IS the
+  /// Apple "smooth settle" cubic used across HIG motion specs.
   static const Curve springSoft = Cubic(0.22, 1, 0.36, 1);
 
-  /// Transform duration (spring releases, presses).
-  static const Duration motionTransform = Duration(milliseconds: 380);
+  /// Transform duration (spring releases, presses) — sized so the 522.35/
+  /// 45.71 spring completes its settle inside the animation window.
+  static const Duration motionTransform = Duration(milliseconds: 420);
 
   /// Colour/fade duration.
   static const Duration motionColor = Duration(milliseconds: 180);
@@ -205,60 +244,63 @@ class HeroTokens {
   static const double space6 = 24;
   static const double space8 = 32;
 
-  // -- Typography (grotesk 400 display / Inter body / mono eyebrows) ----------
-  /// Display headline — Inter 400, tight tracking, never bold (the
-  /// x.ai/Warp weight-400 display dialect; Söhne-class).
+  // -- Typography (Apple HIG tracking curve on Inter — the sanctioned
+  //    open SF Pro substitute; weights 400/500/600 per SF, never 700) ------
+  /// Display headline — Inter 400, largeTitle-class tracking. Apple's SF
+  /// curve OPENS above 24pt (+0.40 at 34): flat negative tracking at
+  /// display sizes is the #1 tell of a non-native app.
   static const TextStyle display = TextStyle(
     fontFamily: fontSans,
     fontSize: 30,
     height: 1.2,
     fontWeight: FontWeight.w400,
-    letterSpacing: -0.5,
+    letterSpacing: 0.37,
   );
 
-  /// Large screen titles / section heads — Inter 500 (ElevenLabs title-md).
+  /// Large screen titles / section heads — Inter 600 (SF headline is
+  /// SEMIBOLD, never bold; title3-class tracking −0.45 at 20pt).
   static const TextStyle titleLarge = TextStyle(
     fontFamily: fontSans,
     fontSize: 20,
     height: 1.3,
-    fontWeight: FontWeight.w500,
-    letterSpacing: -0.2,
+    fontWeight: FontWeight.w600,
+    letterSpacing: -0.45,
   );
 
-  /// Component titles — Inter 500 (ElevenLabs title-sm, mobile-scaled).
+  /// Component titles — Inter 500, callout-class tracking (−0.31 at 16pt).
   static const TextStyle title = TextStyle(
     fontFamily: fontSans,
     fontSize: 16,
     height: 1.4,
     fontWeight: FontWeight.w500,
-    letterSpacing: -0.1,
+    letterSpacing: -0.31,
   );
 
-  /// Body copy — Inter 400 with the editorial +0.15px tracking.
+  /// Body copy — Inter 400, subheadline-class tracking (−0.23 at 15pt).
   static const TextStyle body = TextStyle(
     fontFamily: fontSans,
     fontSize: 15,
-    height: 1.5,
+    height: 1.45,
     fontWeight: FontWeight.w400,
-    letterSpacing: 0.15,
+    letterSpacing: -0.23,
   );
 
-  /// Secondary body — Inter 400 (ElevenLabs body-sm).
+  /// Secondary body — Inter 400 (footnote-class tracking −0.15 at 14pt).
   static const TextStyle bodySmall = TextStyle(
     fontFamily: fontSans,
     fontSize: 14,
-    height: 1.45,
+    height: 1.4,
     fontWeight: FontWeight.w400,
-    letterSpacing: 0.14,
+    letterSpacing: -0.15,
   );
 
-  /// Captions — Inter 400.
+  /// Captions — Inter 400, footnote-class tracking (−0.08 at 13pt).
   static const TextStyle caption = TextStyle(
     fontFamily: fontSans,
     fontSize: 13,
     height: 1.4,
     fontWeight: FontWeight.w400,
-    letterSpacing: 0.1,
+    letterSpacing: -0.08,
   );
 
   /// Section labels & badges — ElevenLabs caption-uppercase:
@@ -958,10 +1000,31 @@ class _HeroButtonState extends State<HeroButton> {
   static const _sizes = {
     // Compact production sizing (ElevenLabs pill CTAs top out at 40px;
     // x.ai/Warp buttons run 32-40). Inter 500 labels, zero tracking.
+    // `h` is the BASE height at 1.0x text scale — the built capsule grows
+    // with the text scaler (see _scaledHeight) so large-font users get a
+    // bigger pill, never text bursting out of it.
     HeroButtonSize.sm: (h: 28.0, px: 12.0, font: 13.0, icon: 15.0),
     HeroButtonSize.md: (h: 34.0, px: 16.0, font: 14.0, icon: 17.0),
     HeroButtonSize.lg: (h: 40.0, px: 20.0, font: 15.0, icon: 19.0),
   };
+
+  /// Apple HIG: controls clamp Dynamic Type (iOS caps most controls near
+  /// 1.35x accessibility sizes while keeping the layout intact).
+  static const _kMaxControlScale = 1.35;
+
+  /// Capsule height for the current text scale: the base height, or the
+  /// scaled text line box + vertical padding — whichever is taller.
+  ///
+  /// The previous fixed height (with `height: 1` line boxes) let painted
+  /// glyphs physically exceed the pill from ~1.3x scale up — the "button
+  /// text bigger than the capsule that encapsulates it" report. Inter's
+  /// painted extent is ≈1.21 em, so the line box uses 1.21.
+  double _scaledHeight(BuildContext context, double base, double font) {
+    final scale = MediaQuery.textScalerOf(context)
+        .clamp(minScaleFactor: 0.9, maxScaleFactor: _kMaxControlScale)
+        .scale(font);
+    return base < scale * 1.21 + 12 ? scale * 1.21 + 12 : base;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -969,6 +1032,10 @@ class _HeroButtonState extends State<HeroButton> {
     final colors = _role(h, widget.color);
     final s = _sizes[widget.size]!;
     final enabled = widget.onPressed != null && !widget.loading;
+    final scaler = MediaQuery.textScalerOf(context)
+        .clamp(minScaleFactor: 0.9, maxScaleFactor: _kMaxControlScale);
+    final iconSize = scaler.scale(s.icon);
+    final capsuleHeight = _scaledHeight(context, s.h, s.font);
 
     Color bg;
     Color fg;
@@ -1017,8 +1084,8 @@ class _HeroButtonState extends State<HeroButton> {
         children: [
           if (widget.loading)
             SizedBox(
-              width: s.icon,
-              height: s.icon,
+              width: iconSize,
+              height: iconSize,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
                 strokeCap: StrokeCap.round,
@@ -1026,25 +1093,33 @@ class _HeroButtonState extends State<HeroButton> {
               ),
             )
           else if (widget.icon != null) ...[
-            Icon(widget.icon, size: s.icon, color: fg),
+            Icon(widget.icon, size: iconSize, color: fg),
             const SizedBox(width: 8),
           ],
           Text(
             widget.label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
+            // TextScaler clamped at the widget level (see [scaler]) so the
+            // capsule grows with the user's font choice instead of the
+            // label escaping the pill.
+            textScaler: scaler,
             style: TextStyle(
               fontFamily: HeroTokens.fontSans,
               fontSize: s.font,
               fontWeight: FontWeight.w500,
               color: fg,
-              height: 1,
+              // 1.21 = Inter's real ascent+descent — the previous 1.0 made
+              // the LAYOUT box smaller than the painted glyphs, so the
+              // FittedBox guard could mathematically never engage before
+              // text burst the capsule.
+              height: 1.21,
               letterSpacing: 0,
             ),
           ),
           if (widget.trailingIcon != null) ...[
             const SizedBox(width: 8),
-            Icon(widget.trailingIcon, size: s.icon, color: fg),
+            Icon(widget.trailingIcon, size: iconSize, color: fg),
           ],
         ],
       ),
@@ -1078,7 +1153,7 @@ class _HeroButtonState extends State<HeroButton> {
                     ? HeroTokens.motionColor
                     : Duration.zero,
                 curve: Curves.easeOut,
-                height: s.h,
+                height: capsuleHeight,
                 padding: EdgeInsets.symmetric(horizontal: s.px),
                 decoration: BoxDecoration(
                   color: enabled ? bg : h.dflt.withValues(alpha: 0.55),
@@ -1281,15 +1356,28 @@ class HeroChip extends StatelessWidget {
             Icon(icon, size: 14, color: fg),
             const SizedBox(width: 4),
           ],
-          Text(
-            label,
-            style: TextStyle(
-              fontFamily: HeroTokens.fontSans,
-              fontSize: small ? 12 : 13,
-              height: 1.3,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-              letterSpacing: 0.1,
-              color: fg,
+          // Long dynamic labels (genre names, '${n} unread', note titles)
+          // previously WRAPPED the pill into a lozenge or overflowed their
+          // host row — capped width + one line + ellipsis, like every
+          // native chip. (No Flexible: chips live in unbounded horizontal
+          // ListViews where flex children are illegal.)
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 280),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              softWrap: false,
+              textScaler: MediaQuery.textScalerOf(context)
+                  .clamp(minScaleFactor: 0.9, maxScaleFactor: 1.35),
+              style: TextStyle(
+                fontFamily: HeroTokens.fontSans,
+                fontSize: small ? 12 : 13,
+                height: 1.3,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                letterSpacing: 0.1,
+                color: fg,
+              ),
             ),
           ),
           if (onDeleted != null) ...[
@@ -2070,36 +2158,60 @@ Future<T?> showHeroSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
   String? title,
-  bool isScrollControlled = false,
+  @Deprecated('Sheets are ALWAYS scroll-capped now (landscape safety); the '
+      'flag no longer changes behaviour and will be removed')
+      bool isScrollControlled = false,
 }) {
   final h = HeroScope.of(context);
+  // ignore: deprecated_parameter_use
   return showModalBottomSheet<T>(
     context: context,
-    isScrollControlled: isScrollControlled,
+    // LANDSCAPE-SAFE BY DEFAULT: a non-scroll-controlled bottom sheet is
+    // capped at 9/16 of the (short) landscape height, and any body taller
+    // than that overflows with clipped content — the app-lock keypad,
+    // library filter sheet, player selectors and settings option sheets
+    // all broke this way when the phone was tilted. Scroll-controlled +
+    // an 85% height cap + an inner scroll view keeps every sheet usable
+    // in any orientation.
+    isScrollControlled: true,
+    constraints: BoxConstraints(
+      maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+    ),
     backgroundColor: h.surface,
     barrierColor: h.backdrop,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
     showDragHandle: true,
-    builder: (ctx) => Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (title != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(HeroTokens.space4, 0, HeroTokens.space4, HeroTokens.space4),
-            child: Text(
-              title,
-              style: HeroTokens.title.copyWith(
-                color: h.foreground,
-                fontSize: 17,
-                fontWeight: FontWeight.w600,
+    builder: (ctx) => Padding(
+      // Keyboard inset: scroll-controlled sheets do NOT auto-avoid the
+      // IME (the framework only insets the non-scroll-controlled variant),
+      // and notes/editor sheets host TextFields — without this the keyboard
+      // covers the active field in landscape.
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (title != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(HeroTokens.space4, 0, HeroTokens.space4, HeroTokens.space4),
+              child: Text(
+                title,
+                style: HeroTokens.title.copyWith(
+                  color: h.foreground,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
+          Flexible(
+            // Flexible + SingleChildScrollView: the body scrolls instead of
+            // clipping, whatever its natural height.
+            child: SingleChildScrollView(child: builder(ctx)),
           ),
-        Flexible(child: builder(ctx)),
-      ],
+        ],
+      ),
     ),
   );
 }

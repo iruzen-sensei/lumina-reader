@@ -82,7 +82,13 @@ class StatsRepository {
     final pagesByDay = <DateTime, int>{};
     for (final s in sessions) {
       final day = DateTime(s.date.year, s.date.month, s.date.day);
-      pagesByDay[day] = (pagesByDay[day] ?? 0) + s.pagesRead;
+      // Pages-only counting made ANIME and short text sessions invisible on
+      // the heatmap (0 pages = no cell painted) — to a user checking the
+      // heatmap after watching anime, stats looked frozen. A session with
+      // time but no pages paints intensity 1 (reading happened, just not
+      // image pages).
+      final contribution = s.pagesRead > 0 ? s.pagesRead : 1;
+      pagesByDay[day] = (pagesByDay[day] ?? 0) + contribution;
     }
 
     final days = <dto.StatDay>[];

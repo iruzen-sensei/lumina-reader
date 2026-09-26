@@ -169,9 +169,18 @@ class _InstalledTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // Installed tab ALSO shows the seeded builtins (MangaDex etc.) — they
     // are the sources Browse actually serves content from. The catalog
-    // provider only carries repo rows; builtins come from sourcesProvider.
+    // provider only carries repo rows; builtins come from sourcesProvider,
+    // FILTERED to non-repo rows — sourcesProvider returns repo rows too,
+    // so without the filter every installed repo extension was rendered
+    // TWICE (once from each list).
     final allSources = ref.watch(sourcesProvider);
-    final builtin = allSources.where((s) => s.isInstalled).toList();
+    // ALL builtins (enabled AND disabled) — a disabled builtin must stay
+    // visible here or it could never be re-enabled (the old dead-end).
+    // Repo rows are excluded: they'd render twice (the catalog list already
+    // carries them).
+    final builtin = allSources
+        .where((s) => (s.idString ?? '').startsWith('builtin.'))
+        .toList();
     final merged = <Source>[...builtin, ...installed];
     final q = query.toLowerCase();
     final rows = q.isEmpty
@@ -433,6 +442,34 @@ class _ExtensionTile extends ConsumerWidget {
     final idString = entry.idString;
     if (idString == null) return const SizedBox.shrink();
     if (entry.isInstalled) {
+      // BUILT-IN sources get an enable/disable toggle, NOT Uninstall:
+      // uninstalling a builtin removed it from every list with no catalog
+      // row to reinstall from (builtins have no repo entry) — an
+      // unrecoverable dead-end unless the user wiped app data.
+      if (isBuiltin) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const HeroChip(
+              label: 'Built-in',
+              variant: HeroChipVariant.soft,
+              small: true,
+            ),
+            const SizedBox(width: 4),
+            HeroIconButton(
+              tooltip: 'Disable source',
+              icon: Icons.toggle_on_outlined,
+              size: 32,
+              iconSize: 18,
+              onPressed: () async {
+                await ref
+                    .read(sourcesProvider.notifier)
+                    .toggle(entry.id);
+              },
+            ),
+          ],
+        );
+      }
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -457,6 +494,32 @@ class _ExtensionTile extends ConsumerWidget {
         ],
       );
     }
+    // DISABLED builtin: re-enable (the repo Install path below cannot
+    // handle builtin rows — wrong service, and the row would be gone
+    // forever if it ever vanished from this list).
+    if (isBuiltin) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const HeroChip(
+            label: 'Disabled',
+            variant: HeroChipVariant.bordered,
+            color: HeroColorRole.neutral,
+            small: true,
+          ),
+          const SizedBox(width: 4),
+          HeroButton(
+            label: 'Enable',
+            size: HeroButtonSize.sm,
+            onPressed: () async {
+              await ref.read(sourcesProvider.notifier).toggle(entry.id);
+            },
+          ),
+        ],
+      );
+    }
+    // Repo extension that was uninstalled/disabled — reinstall stays
+    // available from its catalog row (builtins never reach this branch).
     return HeroButton(
       label: 'Install',
       size: HeroButtonSize.sm,

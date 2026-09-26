@@ -140,11 +140,27 @@ class ExtensionCoordinator {
     }
     try {
       final info = await service.getMangaDetail(url);
-      final chapters = await service.getChapterList(url);
+      // Chapters are a SEPARATE failure domain: for anime sources the
+      // metadata (AniList) and the episode scrape (AniZone) hit different
+      // hosts — a dead provider must not kill the whole detail screen
+      // when the catalog metadata loaded fine. The DTO carries the error
+      // so the screen can show an inline retry block.
+      List<m.MChapter> chapters = const [];
+      Object? chapterError;
+      try {
+        chapters = await service.getChapterList(url);
+      } catch (e) {
+        chapterError = e;
+        debugPrint(
+            'ExtensionCoordinator.detail chapters($sourceId, $url): $e');
+      }
       final result = _mangaToDto(info, sourceId);
       result.chapters = _chaptersToDto(chapters);
       result.totalChapters = result.chapters.length;
       result.unreadCount = result.chapters.length;
+      result.sourceError = chapterError == null
+          ? null
+          : 'Episode provider unreachable. Check your connection and retry.';
       return result;
     } catch (e) {
       debugPrint('ExtensionCoordinator.detail($sourceId, $url): $e');
@@ -271,9 +287,14 @@ class ExtensionCoordinator {
         for (final v in videos)
           dto.VideoQuality(
             v.quality ?? v.title ?? 'Stream',
-            v.originalUrl ?? v.url,
+            // v.url is the PLAYABLE stream (HLS master.m3u8); v.originalUrl
+            // is the human watch page — the old `originalUrl ?? url` handed
+            // the HTML page to the player and every stream was a dead
+            // black screen.
+            v.url,
             _heightFromLabel(v.quality),
             subtitles: _subtitlesFrom(v),
+            headers: v.headers,
           ),
       ].where((q) => q.url.isNotEmpty).toList();
     } catch (e) {
@@ -319,13 +340,25 @@ class ExtensionCoordinator {
   }
 
   List<dto.Chapter> _chaptersToDto(List<m.MChapter> chapters) {
-    return [
-      for (final c in chapters)
+    // STABLE ordering: templates that don't set chapterNumber (Madara,
+    // MangaReader) used to yield all-zero numbers, and Dart's quicksort is
+    // NOT stable past 32 elements — the chapter list was scrambled
+    // arbitrarily and "Continue" opened a random chapter. Numbers are now
+    // recovered from the NAME ("Ch. 12.5", "Capítulo 3"…), and the original
+    // index is the deterministic tiebreaker.
+    final indexed = <(int, dto.Chapter)>[];
+    for (var i = 0; i < chapters.length; i++) {
+      final c = chapters[i];
+      final name = c.name ?? 'Chapter ${c.chapterNumber ?? ''}';
+      final parsed =
+          double.tryParse(c.chapterNumber ?? '') ?? _chapterNumberFrom(name);
+      indexed.add((
+        i,
         dto.Chapter(
           id: 0, // assigned on persist
           url: c.url ?? '',
-          name: c.name ?? 'Chapter ${c.chapterNumber ?? ''}',
-          number: double.tryParse(c.chapterNumber ?? '') ?? 0,
+          name: name,
+          number: parsed,
           scanlator: (c.scanlator == null || c.scanlator!.isEmpty)
               ? null
               : c.scanlator,
@@ -334,8 +367,34 @@ class ExtensionCoordinator {
               : DateTime.tryParse(c.dateUpload!) ??
                   DateTime.fromMillisecondsSinceEpoch(
                       int.tryParse(c.dateUpload!) ?? 0),
-        ),
-    ]..sort((a, b) => b.number.compareTo(a.number)); // newest first
+        )
+      ));
+    }
+    indexed.sort((a, b) {
+      final byNumber = b.$2.number.compareTo(a.$2.number); // newest first
+      if (byNumber != 0) return byNumber;
+      return b.$1.compareTo(a.$1); // stable: later index = newer fallback
+    });
+    return [for (final e in indexed) e.$2];
+  }
+
+  /// Last resort number recovery from a chapter NAME. Anchored on a chapter
+  /// keyword first ("Ch. 12.5", "Chapter 5", "Capítulo 3", "Ep 8") so
+  /// volume-prefixed names ("Vol. 2 Chapter 5") and dates ("2024-01-15
+  /// Extra") don't hijack the sort; falls back to the LAST decimal group
+  /// (titles usually end with the chapter number when no keyword exists).
+  static final RegExp _chapterKeywordRe = RegExp(
+      r'(?:ch(?:apter)?|cap(?:itulo|ítulo)?|ep(?:isode)?)\.?\s*(\d+(?:\.\d+)?)',
+      caseSensitive: false);
+  static final RegExp _chapterNumRe = RegExp(r'(\d+(?:\.\d+)?)');
+  static double _chapterNumberFrom(String name) {
+    final match = _chapterKeywordRe.firstMatch(name) ??
+        _chapterNumRe.allMatches(name).lastOrNull;
+    if (match == null) return 0;
+    final parsed = double.tryParse(match.group(1)!) ?? 0;
+    // A 4-digit "chapter" from a bare date/year is never a real chapter —
+    // zero it so it sorts by the index tiebreak instead of to the top.
+    return parsed >= 1900 ? 0 : parsed;
   }
 
   dto.ItemStatus _statusFromCode(String? code) {

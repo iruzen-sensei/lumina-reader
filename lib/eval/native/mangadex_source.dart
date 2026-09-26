@@ -322,11 +322,56 @@ class MangaDexSource extends BaseExtensionService {
     return match?.group(1) ?? url.replaceAll(RegExp(r'[^0-9a-f-]'), '');
   }
 
+  // ---- Rate limiting ---------------------------------------------------------
+  // MangaDex's API is throttled (~5 req/s per client) and the app's bulk
+  // flows (library update workers × per-title chapter feeds × EN-then-all
+  // language fallback) used to fire well past it — every 429 then hit the
+  // CF-aware retry policy, burning MORE quota until bulk updates failed en
+  // masse. A process-wide token bucket throttles every MangaDex request
+  // and 429s now back off instead of retrying immediately.
+  static final _RateLimiter _mangadexLimiter = _RateLimiter(
+    requestsPerSecond: 4,
+  );
+  static DateTime? _mangadexBackoffUntil;
+
   Future<Map<String, dynamic>> _getJson(String url) async {
+    await _mangadexLimiter.take();
+    // Honor a server-signalled backoff before spending another token.
+    final backoff = _mangadexBackoffUntil;
+    if (backoff != null && DateTime.now().isBefore(backoff)) {
+      await Future<void>.delayed(backoff.difference(DateTime.now()));
+    }
     final res = await _http.get(Uri.parse(url), headers: await getHeaders());
+    if (res.statusCode == 429) {
+      _mangadexBackoffUntil =
+          DateTime.now().add(const Duration(seconds: 5));
+      throw StateError('MangaDex rate limit hit — backing off 5 s');
+    }
     if (res.statusCode != 200) {
       throw StateError('MangaDex API $url → HTTP ${res.statusCode}');
     }
     return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+}
+
+/// Minimal async token bucket: [requestsPerSecond] evenly spaced — cheap,
+/// process-wide, no timers (pure await, first request never waits).
+class _RateLimiter {
+  _RateLimiter({required this.requestsPerSecond});
+
+  final double requestsPerSecond;
+  DateTime _nextSlot = DateTime.now();
+
+  Future<void> take() async {
+    final now = DateTime.now();
+    if (_nextSlot.isBefore(now)) {
+      // Free slot: schedule the next one an interval out.
+      _nextSlot = now;
+    }
+    final wait = _nextSlot.difference(now);
+    _nextSlot = _nextSlot.add(
+        Duration(microseconds: (1000000 / requestsPerSecond).round()));
+    if (wait.isNegative) return;
+    await Future<void>.delayed(wait);
   }
 }

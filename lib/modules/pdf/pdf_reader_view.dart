@@ -146,6 +146,9 @@ class _PdfReaderViewState extends ConsumerState<PdfReaderView> {
   bool _thumbnailSidebarOpen = false;
   bool _landscape = false;
   final List<PdfBookmark> _bookmarks = [];
+
+  /// Session clock for stats (duration-only sessions for text documents).
+  final DateTime _sessionStart = DateTime.now();
   final GlobalKey _viewerKey = GlobalKey();
 
   /// Drives the actual document scroll (pdfrx). Previously absent — every
@@ -178,7 +181,11 @@ class _PdfReaderViewState extends ConsumerState<PdfReaderView> {
     unawaited(_flushProgress(isFinal: true));
     WakelockPlus.disable();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    // Restore EVERY orientation — the previous portrait-only lock here
+    // leaked into the whole app after leaving one PDF (nothing ever
+    // re-enabled landscape, so rotation app-wide appeared broken until
+    // restart: the "landscape bugs out" report).
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
   }
 
@@ -220,9 +227,19 @@ class _PdfReaderViewState extends ConsumerState<PdfReaderView> {
                 totalPages: _totalPages,
               );
         }
+        // Stats: PDF reading previously never reached the stats pipeline.
+        final seconds = DateTime.now().difference(_sessionStart).inSeconds;
+        if (seconds >= 10) {
+          await ref.read(data.statsRepositoryProvider).recordSession(
+            mangaId: id,
+            pagesRead: 0,
+            durationSeconds: seconds.clamp(1, 60 * 60 * 6),
+          );
+        }
       }
-    } catch (_) {
+    } catch (e) {
       // Persistence must never break reading.
+      debugPrint('PDF reader flush failed: $e');
     }
   }
 

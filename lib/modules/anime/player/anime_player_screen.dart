@@ -67,6 +67,16 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
   SkipRange? _activeSkip;
   StreamSubscription<Duration>? _positionSub;
 
+  // ---- Playback failure state (surfaced as an in-player retry card) ----
+  /// Last fatal player error (open failure / mpv stream error). Non-null
+  /// swaps the infinite spinner for an error card with a Retry button —
+  /// previously a dead stream left the spinner forever.
+  String? _playerError;
+
+  /// One-shot resume target: applied when the duration stream first reports
+  /// a real duration (seeking before mpv knows the duration is a no-op).
+  int? _pendingResumeSeconds;
+
   // ---- Watch-progress persistence (mirrors the manga reader's _flush) ----
   DateTime _sessionStart = DateTime.now();
   Timer? _progressSaver;
@@ -103,9 +113,12 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
       }),
       _player.stream.duration.listen((d) {
         if (mounted) setState(() => _duration = d);
+        _applyPendingResume(d);
       }),
       _player.stream.buffering.listen((b) {
-        if (mounted) setState(() => _isLoading = b);
+        // Buffering must never clear the error card — a failed open sets
+        // _playerError and the spinner would otherwise fight the card.
+        if (mounted && _playerError == null) setState(() => _isLoading = b);
       }),
       _player.stream.buffer.listen((d) {
         if (mounted) setState(() => _buffered = d);
@@ -122,6 +135,18 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
           // come from actually watching an episode).
           _handleEpisodeComplete();
         }
+      }),
+      // mpv-level failures (dead URL, 403 from the CDN, unsupported
+      // format): previously NOTHING subscribed to these, so a failed open
+      // left the buffering spinner on screen forever with no explanation.
+      _player.stream.error.listen((e) {
+        debugPrint('media_kit error: $e');
+        if (!mounted) return;
+        setState(() {
+          _playerError = 'Playback failed. The stream may be offline or '
+              'blocked — check your connection and retry.';
+          _isLoading = false;
+        });
       }),
     ];
     _scheduleHide();
@@ -207,23 +232,63 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
   }
 
   /// Called from build when sources are available (and not yet opened).
-  void _tryOpenVideo(List<VideoQuality> sources) {
-    if (_notFound || sources.isEmpty) return;
+  void _tryOpenVideo(EpisodeMediaState media) {
+    if (_notFound || media.sources.isEmpty) return;
     if (_openedEpisodeId == _currentEpisodeId) return;
     _openedEpisodeId = _currentEpisodeId;
     _openVideo();
   }
 
+  /// Applies the saved watch position once the player reports a real
+  /// duration — seeking before mpv knows the media length silently does
+  /// nothing (the old code seeked immediately after open, when the
+  /// duration was still 0, so resume NEVER worked).
+  void _applyPendingResume(Duration duration) {
+    final target = _pendingResumeSeconds;
+    if (target == null || duration.inSeconds <= 0) return;
+    _pendingResumeSeconds = null;
+    // Skip when the position is within the last 30 s (episode effectively
+    // finished — restart from the top instead of resuming the credits).
+    if (target <= 10 || target >= duration.inSeconds - 30) return;
+    unawaited(_player.seek(Duration(seconds: target)));
+  }
+
   Future<void> _openVideo() async {
-    final sources = ref.read(videoSourcesProvider(_currentEpisodeId));
-    final url = sources.isNotEmpty ? sources.first.url : '';
-    if (url.isEmpty) return;
-    await _player.open(Media(url));
+    final media = ref.read(videoSourcesProvider(_currentEpisodeId));
+    if (media.sources.isEmpty) return;
+    final quality = media.sources.first;
+    try {
+      _playerError = null;
+      await _player.open(Media(quality.url, httpHeaders: quality.headers));
+    } catch (e) {
+      debugPrint('player open failed: $e');
+      if (mounted) {
+        setState(() {
+          _playerError = 'Could not open the stream. Retry in a moment.';
+          _isLoading = false;
+        });
+      }
+      return;
+    }
     await _player.setRate(_speed);
     await _player.setVolume(_volume);
-    await _resumeFromSavedPosition();
+    _queueResumeFromSavedPosition();
     _applyDefaultSubtitle();
     _maybeStartAniSkipWatch();
+  }
+
+  /// Retry after a playback failure — reloads the episode's sources from
+  /// the provider (a fresh signed URL / a different edge) and re-opens.
+  Future<void> _retryOpen() async {
+    setState(() {
+      _playerError = null;
+      _isLoading = true;
+    });
+    final notifier = ref.read(videoSourcesProvider(_currentEpisodeId).notifier);
+    await notifier.reload();
+    if (!mounted) return;
+    _openedEpisodeId = null;
+    _tryOpenVideo(ref.read(videoSourcesProvider(_currentEpisodeId)));
   }
 
   /// Applies the persisted "Default subtitle" preference (Settings →
@@ -245,18 +310,16 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     }
   }
 
-  /// REAL resume: jump to the saved watch position when it is meaningful
-  /// (previously every open restarted at 0:00 even mid-episode).
-  Future<void> _resumeFromSavedPosition() async {
+  /// Queues the REAL resume: jump to the saved watch position when it is
+  /// meaningful (previously every open restarted at 0:00 even mid-episode).
+  void _queueResumeFromSavedPosition() {
     final episode = _episode;
     if (episode == null) return;
     final saved = episode.lastPageRead; // seconds watched
-    // Only resume when at least 10 s were watched and 30 s remain.
     if (saved <= 10) return;
-    if (_duration.inSeconds > 0 && saved >= _duration.inSeconds - 30) return;
-    try {
-      await _player.seek(Duration(seconds: saved));
-    } catch (_) {}
+    _pendingResumeSeconds = saved;
+    // Duration may already be known (quality switch / re-open).
+    _applyPendingResume(_duration);
   }
 
   @override
@@ -266,13 +329,41 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     _progressSaver?.cancel();
     // Flush the final watch position so Continue-watching resumes here.
     unawaited(_flushProgress());
+    _recordPartialWatchSession();
     for (final s in _subs) {
       s.cancel();
     }
     _player.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    // NOTE: no portrait lock here — a lock in dispose() previously froze
+    // the WHOLE app in portrait after leaving the player (nothing ever
+    // restored all orientations), which users read as "rotation is broken".
     super.dispose();
+  }
+
+  /// Records a stats session for a PARTIAL watch on exit (the previous
+  /// behaviour only recorded a session when the video played to the very
+  /// end — closing the player 90% through three episodes moved NOTHING in
+  /// the stats). Duration-only, clamped, never for incognito sessions.
+  void _recordPartialWatchSession() {
+    if (_incognito || _completedHandled) return;
+    final manga = _manga;
+    final episode = _episode;
+    if (manga == null || episode == null) return;
+    final watched = DateTime.now().difference(_sessionStart).inSeconds;
+    if (watched < 30) return;
+    unawaited(() async {
+      try {
+        await ref.read(data.statsRepositoryProvider).recordSession(
+              mangaId: manga.id,
+              chapterId: episode.id,
+              pagesRead: 0,
+              durationSeconds: watched.clamp(1, 60 * 60 * 3),
+            );
+      } catch (_) {
+        // Best-effort stats — never block teardown.
+      }
+    }());
   }
 
   void _toggleControls() {
@@ -327,15 +418,28 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
   }
 
   Future<void> _setQuality(int index) async {
-    final sources = ref.read(videoSourcesProvider(widget.episodeId));
+    final sources = ref.read(videoSourcesProvider(widget.episodeId)).sources;
     if (index < 0 || index >= sources.length) return;
     final wasPlaying = _player.state.playing;
     final pos = _position;
     setState(() {
       _qualityIndex = index;
       _isLoading = true;
+      _playerError = null;
     });
-    await _player.open(Media(sources[index].url));
+    try {
+      await _player.open(Media(sources[index].url,
+          httpHeaders: sources[index].headers));
+    } catch (e) {
+      debugPrint('quality switch open failed: $e');
+      if (mounted) {
+        setState(() {
+          _playerError = 'Could not switch quality. Retry?';
+          _isLoading = false;
+        });
+      }
+      return;
+    }
     await _player.seek(pos);
     if (wasPlaying) await _player.play();
   }
@@ -430,28 +534,53 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     showSnack(ref, context, 'Loading ${target.name}…');
     final notifier = ref.read(videoSourcesProvider(target.id).notifier);
     await notifier.reload();
-    final sources = ref.read(videoSourcesProvider(target.id));
     if (!mounted) return;
-    if (sources.isEmpty) {
-      showSnack(ref, context, 'No stream available for this episode');
+    var media = ref.read(videoSourcesProvider(target.id));
+    if (media.loading) {
+      // Reload resets to the loading phase; wait for the notifier to
+      // settle so we do not bind against a stale/empty list.
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      if (!mounted) return;
+    }
+    media = ref.read(videoSourcesProvider(target.id));
+    if (media.sources.isEmpty) {
+      if (!mounted) return;
+      showSnack(
+          ref,
+          context,
+          media.error ??
+              'No stream available for this episode yet');
       return;
     }
     setState(() {
       _episode = target;
       _currentEpisodeId = target.id;
       _isLoading = true;
+      _playerError = null;
       // First open honours the persisted default quality (Settings ->
       // Player); episode switches keep the user's in-session choice.
       if (_qualityIndex == 0) {
-        _qualityIndex = _defaultQualityIndex(sources);
+        _qualityIndex = _defaultQualityIndex(media.sources);
       }
-      _qualityIndex = _qualityIndex.clamp(0, sources.length - 1);
+      _qualityIndex = _qualityIndex.clamp(0, media.sources.length - 1);
     });
     _openedEpisodeId = target.id;
     _completedHandled = false;
     _sessionStart = DateTime.now();
-    await _player.open(Media(sources[_qualityIndex].url));
-    await _resumeFromSavedPosition();
+    try {
+      await _player.open(Media(media.sources[_qualityIndex].url,
+          httpHeaders: media.sources[_qualityIndex].headers));
+    } catch (e) {
+      debugPrint('episode switch open failed: $e');
+      if (mounted) {
+        setState(() {
+          _playerError = 'Could not open ${target.name}. Retry?';
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+    _queueResumeFromSavedPosition();
     _maybeStartAniSkipWatch();
   }
 
@@ -472,10 +601,10 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
 
     // Open the video as soon as the (auto-loaded) sources arrive for the
     // episode the player is currently bound to.
-    final sources = ref.watch(videoSourcesProvider(_currentEpisodeId));
-    if (sources.isNotEmpty) {
+    final media = ref.watch(videoSourcesProvider(_currentEpisodeId));
+    if (media.sources.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _tryOpenVideo(sources);
+        if (mounted) _tryOpenVideo(media);
       });
     }
 
@@ -505,7 +634,16 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
                   ),
                 ),
               ),
-              if (_isLoading) const Center(child: CircularProgressIndicator()),
+              if (_isLoading && _playerError == null)
+                const Center(child: CircularProgressIndicator()),
+              if (_playerError != null ||
+                  (!media.loading && media.sources.isEmpty))
+                _PlayerErrorCard(
+                  message: _playerError ??
+                      media.error ??
+                      'No stream available for this episode.',
+                  onRetry: _retryOpen,
+                ),
               if (_activeSkip != null)
                 _SkipButton(range: _activeSkip!, onSkip: _skipCurrent),
               if (_controlsVisible) _buildOverlay(),
@@ -568,6 +706,7 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
               title: 'Quality',
               items: ref
                   .read(videoSourcesProvider(widget.episodeId))
+                  .sources
                   .map((q) => q.label)
                   .toList(),
               selectedIndex: _qualityIndex,
@@ -597,7 +736,7 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
   }
 
   String _qualityLabel() {
-    final sources = ref.read(videoSourcesProvider(widget.episodeId));
+    final sources = ref.read(videoSourcesProvider(widget.episodeId)).sources;
     if (sources.isEmpty || _qualityIndex >= sources.length) return 'Auto';
     return sources[_qualityIndex].label;
   }
@@ -618,6 +757,13 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
       context: context,
       backgroundColor: Colors.black87,
       showDragHandle: true,
+      // Landscape-safe: bottom sheets cap at 9/16 of screen height; a bare
+      // Column of RadioListTiles overflows that cap when the phone is
+      // tilted (viewport height ~360dp). Scroll + hard cap fixes it.
+      isScrollControlled: true,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
+      ),
       builder: (context) {
         return SafeArea(
           // Flutter 3.32+: group value / change handling moved from each
@@ -625,26 +771,28 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
           child: RadioGroup<int>(
             groupValue: selectedIndex,
             onChanged: (v) => onSelect(v ?? 0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(title,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold)),
-                ),
-                ...items.asMap().entries.map((e) {
-                  return RadioListTile<int>(
-                    value: e.key,
-                    activeColor: Colors.white,
-                    title: Text(e.value,
-                        style: const TextStyle(color: Colors.white)),
-                  );
-                }),
-              ],
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(title,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold)),
+                  ),
+                  ...items.asMap().entries.map((e) {
+                    return RadioListTile<int>(
+                      value: e.key,
+                      activeColor: Colors.white,
+                      title: Text(e.value,
+                          style: const TextStyle(color: Colors.white)),
+                    );
+                  }),
+                ],
+              ),
             ),
           ),
         );
@@ -1011,6 +1159,52 @@ class _PillButton extends StatelessWidget {
       onPressed: onPressed,
       icon: Icon(icon, size: 16),
       label: Text(label, style: const TextStyle(fontSize: 12)),
+    );
+  }
+}
+
+/// Playback-failure card: replaces the eternal buffering spinner with the
+/// actual reason + a Retry action. (Before this, a dead stream showed a
+/// spinner forever and the only hint was `adb logcat`.)
+class _PlayerErrorCard extends StatelessWidget {
+  const _PlayerErrorCard({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.72),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.wifi_off_rounded,
+                  color: Colors.white70, size: 36),
+              const SizedBox(height: 12),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

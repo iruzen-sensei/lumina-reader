@@ -130,7 +130,15 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (context) => const _CreateNoteSheet(),
+      // Landscape + IME: the note editor's natural height (~330dp) exceeds
+      // the visible area with the keyboard up in landscape (~180dp) —
+      // capped + scrollable instead of clipped.
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+      ),
+      builder: (context) => const SingleChildScrollView(
+        child: _CreateNoteSheet(),
+      ),
     );
   }
 }
@@ -388,7 +396,12 @@ class _NoteCard extends ConsumerWidget {
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (_) => _EditNoteSheet(note: note),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+      ),
+      builder: (_) => SingleChildScrollView(
+        child: _EditNoteSheet(note: note),
+      ),
     );
   }
 

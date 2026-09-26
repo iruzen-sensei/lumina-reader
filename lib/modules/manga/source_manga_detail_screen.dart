@@ -95,6 +95,8 @@ class _SourceMangaDetailScreenState
             data: (manga) => _ChaptersSection(
               manga: manga,
               onOpen: (chapter) => _openChapter(manga, chapter),
+              onRetry: () => ref.invalidate(
+                  sourceMangaDetailProvider((seed.sourceId, seed.url))),
             ),
             loading: () => const SliverFillRemaining(
               child: Center(child: CircularProgressIndicator()),
@@ -525,15 +527,41 @@ class _Description extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _ChaptersSection extends StatelessWidget {
-  const _ChaptersSection({required this.manga, required this.onOpen});
+  const _ChaptersSection({
+    required this.manga,
+    required this.onOpen,
+    this.onRetry,
+  });
 
   final Manga manga;
   final void Function(Chapter chapter) onOpen;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     if (manga.chapters.isEmpty) {
+      // Distinguish "provider failed" (metadata loaded but the episode
+      // scrape died — show the retry affordance) from a genuinely empty
+      // list. Previously a dead provider produced an identical "no
+      // chapters" brick with no way forward.
+      if (manga.sourceError != null) {
+        return SliverToBoxAdapter(
+          child: emptyState(
+            context: context,
+            icon: Icons.cloud_off,
+            title: 'Episode provider unreachable',
+            subtitle: manga.sourceError!,
+            action: onRetry != null
+                ? FilledButton.tonalIcon(
+                    onPressed: onRetry,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                  )
+                : null,
+          ),
+        );
+      }
       return SliverToBoxAdapter(
         child: emptyState(
           context: context,

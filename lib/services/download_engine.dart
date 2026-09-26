@@ -240,6 +240,9 @@ class DownloadEngine {
         final savedPath = await downloader.downloadAnimeEpisode(
           m3u8Url: best.url,
           outputPath: outPath,
+          // Stream-level headers (browser UA + Referer) — the m3u8/segment
+          // CDN 403s requests without them.
+          extraHeaders: best.headers,
           onProgress: (p) {
             final now = DateTime.now();
             if (now.difference(lastWrite) < const Duration(seconds: 1)) return;

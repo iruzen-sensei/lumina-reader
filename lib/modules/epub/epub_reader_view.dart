@@ -256,6 +256,9 @@ class _EpubReaderViewState extends ConsumerState<EpubReaderView> {
   EpubBook? _book;
   List<EpubChapterView> _chapters = const [];
   int _currentChapterIndex = 0;
+
+  /// Session clock for stats (duration-only sessions for text documents).
+  final DateTime _sessionStart = DateTime.now();
   bool _controlsVisible = true;
   bool _chapterListOpen = false;
   final ScrollController _scrollController = ScrollController();
@@ -331,9 +334,19 @@ class _EpubReaderViewState extends ConsumerState<EpubReaderView> {
                 progress: progress,
               );
         }
+        // Stats: EPUB reading previously never reached the stats pipeline.
+        final seconds = DateTime.now().difference(_sessionStart).inSeconds;
+        if (seconds >= 10) {
+          await ref.read(data.statsRepositoryProvider).recordSession(
+            mangaId: id,
+            pagesRead: 0,
+            durationSeconds: seconds.clamp(1, 60 * 60 * 6),
+          );
+        }
       }
-    } catch (_) {
+    } catch (e) {
       // Persistence must never break reading.
+      debugPrint('EPUB reader flush failed: $e');
     }
   }
 

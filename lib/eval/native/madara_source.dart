@@ -39,6 +39,23 @@ class MadaraSource extends BaseExtensionService {
         timeout: const Duration(seconds: 20),
       );
 
+  /// Guard: non-200 responses (Cloudflare 403/503 interstitials after the
+  /// retry budget, dead mirrors) used to be parsed as CONTENT — zero
+  /// selectors matched and the coordinator reported an empty catalog
+  /// ("Nothing here yet") instead of an honest failure.
+  void _ensureOk(http.Response res, String what) {
+    if (res.statusCode != 200) {
+      throw StateError(
+          'Madara $what failed: HTTP ${res.statusCode} — site may be '
+          'blocked or down');
+    }
+  }
+
+  /// Always decode as UTF-8 from the raw BYTES: package:http's `.body`
+  /// silently falls back to latin-1 when the response omits a charset —
+  /// mojibake titles/descriptions on French/Turkish/Spanish mirrors.
+  String _decode(http.Response res) => utf8.decode(res.bodyBytes);
+
   @override
   Future<Map<String, String>> getHeaders() async => {
         'User-Agent':
@@ -82,7 +99,8 @@ class MadaraSource extends BaseExtensionService {
           '${getBaseUrl()}/${getMangaSubString()}/page/$page/?m_orderby=$orderBy'),
       headers: await getHeaders(),
     );
-    final doc = html_parser.parse(res.body);
+    _ensureOk(res, 'browse');
+    final doc = html_parser.parse(_decode(res));
     return _mangaFromElements([
       ...doc.querySelectorAll('div.page-item-detail'),
       ...doc.querySelectorAll('div.manga__item'),
@@ -98,7 +116,8 @@ class MadaraSource extends BaseExtensionService {
     final url =
         '${getBaseUrl()}/?s=${Uri.encodeQueryComponent(query)}&post_type=wp-manga';
     final res = await _http.get(Uri.parse(url), headers: await getHeaders());
-    final doc = html_parser.parse(res.body);
+    _ensureOk(res, 'search');
+    final doc = html_parser.parse(_decode(res));
     return _mangaFromElements(doc.querySelectorAll('div.c-tabs-item__content'));
   }
 
@@ -135,7 +154,12 @@ class MadaraSource extends BaseExtensionService {
     if (href.startsWith('http://') || href.startsWith('https://')) {
       return href;
     }
-    return '$getBaseUrl()${href.startsWith('/') ? '' : '/'}$href';
+    // CRITICAL FIX: the previous '$getBaseUrl()...' was NOT a method call —
+    // `$getBaseUrl` is a method TEAR-OFF inside string interpolation, so
+    // every relative href (half the Madara mirrors) became
+    // "Closure: () => String ...()/manga/foo" — a dead URL for detail,
+    // library adds and the reader.
+    return '${getBaseUrl()}${href.startsWith('/') ? '' : '/'}$href';
   }
 
   // -----------------------------------------------------------------------
@@ -145,7 +169,8 @@ class MadaraSource extends BaseExtensionService {
   @override
   Future<MManga> getMangaDetail(String url) async {
     final res = await _http.get(Uri.parse(url), headers: await getHeaders());
-    final document = html_parser.parse(res.body);
+    _ensureOk(res, 'detail');
+    final document = html_parser.parse(_decode(res));
 
     final manga = MManga(
       name: _parseDetailTitle(document),
@@ -230,8 +255,11 @@ class MadaraSource extends BaseExtensionService {
     );
     if (ajax.statusCode == 400) {
       chaptersHtml = await _postChapterAjax(url, headers);
+    } else if (ajax.statusCode != 200) {
+      throw StateError(
+          'Madara chapters ajax failed: HTTP ${ajax.statusCode}');
     } else {
-      chaptersHtml = ajax.body;
+      chaptersHtml = _decode(ajax);
     }
     var chapters = _parseChapters(chaptersHtml);
     if (chapters.isEmpty) {
@@ -274,7 +302,10 @@ class MadaraSource extends BaseExtensionService {
       String url, Map<String, String> headers) async {
     final target = url.endsWith('/') ? '${url}ajax/chapters' : '$url/ajax/chapters';
     final res = await _http.post(Uri.parse(target), headers: headers);
-    return res.body;
+    if (res.statusCode != 200) {
+      throw StateError('Madara chapter list failed: HTTP ${res.statusCode}');
+    }
+    return utf8.decode(res.bodyBytes);
   }
 
   List<MChapter> _parseChapters(String html) {
@@ -312,7 +343,8 @@ class MadaraSource extends BaseExtensionService {
   @override
   Future<List<String>> getPageList(String url) async {
     final res = await _http.get(Uri.parse(url), headers: await getHeaders());
-    final document = html_parser.parse(res.body);
+    _ensureOk(res, 'page list');
+    final document = html_parser.parse(_decode(res));
 
     var images = _imagesFromPage(document);
     if (images.length == 1) {
@@ -330,7 +362,12 @@ class MadaraSource extends BaseExtensionService {
   @override
   Future<String?> getChapterContent(String url) async {
     final res = await _http.get(Uri.parse(url), headers: await getHeaders());
-    final document = html_parser.parse(res.body);
+    // TOLERANT BY CONTRACT (see madara_fixture_test): a missing/renamed
+    // text chapter degrades to null so the novel reader can fall back to
+    // its "no text" state — only the catalog/detail/page paths throw on
+    // non-200 (empty results there were silently misleading).
+    if (res.statusCode != 200) return null;
+    final document = html_parser.parse(_decode(res));
     final container = document.querySelector('div.reading-content') ??
         document.querySelector('div.entry-content') ??
         document.querySelector('article .entry-content');
@@ -387,20 +424,25 @@ class MadaraSource extends BaseExtensionService {
   }
 
   /// Sites that only embed page 1 with a <select id="single-pager"> pager:
-  /// generate the remaining URLs by replacing the 01 index.
+  /// generate the remaining URLs by replacing the page-index segment.
   List<String> _buildPageUrls(List<String> imgs, dom.Document document) {
     final options = document.querySelectorAll('#single-pager option');
     if (options.isEmpty) return imgs;
     final pages = options.length;
     final imgUrl = imgs.first;
-    final pageUrls = <String>[];
-    for (var i = 0; i < pages; i++) {
-      final val = i + 1;
-      pageUrls.add(i.toString().length == 1
-          ? imgUrl.replaceAll('01', '0$val')
-          : imgUrl.replaceAll('01', '$val'));
-    }
-    return pageUrls;
+    // TWO previous bugs: (a) the zero-pad test used the 0-based LOOP index
+    // instead of the page VALUE (page 10 became '010'); (b) replaceAll('01')
+    // rewrote EVERY '01' in the URL — dates, slugs, ids — corrupting the
+    // address. Replace exactly ONE occurrence: the LAST '01' token (the
+    // page index), zero-padded to the original width.
+    final lastIdx = imgUrl.lastIndexOf('01');
+    if (lastIdx < 0) return imgs;
+    final prefix = imgUrl.substring(0, lastIdx);
+    final suffix = imgUrl.substring(lastIdx + 2);
+    return [
+      for (var p = 1; p <= pages; p++)
+        '$prefix${p.toString().padLeft(2, '0')}$suffix',
+    ];
   }
 
   /// "wpmangaprotector" — AES-encrypted image list embedded in the page.

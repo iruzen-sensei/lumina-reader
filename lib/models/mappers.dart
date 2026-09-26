@@ -421,6 +421,7 @@ db.Settings mergeSettings(db.Settings base, db.Settings? o) {
     // Reader
     readerDefaultMode: o.readerDefaultMode ?? b.readerDefaultMode,
     readerDirection: o.readerDirection ?? b.readerDirection,
+    readerFit: o.readerFit ?? b.readerFit,
     readerBackgroundColor: o.readerBackgroundColor ?? b.readerBackgroundColor,
     readerTapToTurnPage: o.readerTapToTurnPage ?? b.readerTapToTurnPage,
     readerShowPageNumber: o.readerShowPageNumber ?? b.readerShowPageNumber,

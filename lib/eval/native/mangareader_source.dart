@@ -68,7 +68,8 @@ class MangaReaderSource extends BaseExtensionService {
           '${getBaseUrl()}$_mangaDirectory/?page=$page&order=$order'),
       headers: await getHeaders(),
     );
-    return _mangaRes(res.body);
+    _ensureOk(res, 'browse');
+    return _mangaRes(_decode(res));
   }
 
   @override
@@ -82,7 +83,8 @@ class MangaReaderSource extends BaseExtensionService {
         : '/?s=${Uri.encodeQueryComponent(query)}&page=$page';
     final res = await _http.get(Uri.parse('${getBaseUrl()}$path'),
         headers: await getHeaders());
-    return _mangaRes(res.body);
+    _ensureOk(res, 'search');
+    return _mangaRes(_decode(res));
   }
 
   List<MManga> _mangaRes(String body) {
@@ -130,7 +132,8 @@ class MangaReaderSource extends BaseExtensionService {
     final withoutDomain = _stripDomain(url);
     final res = await _http.get(Uri.parse('${getBaseUrl()}$withoutDomain'),
         headers: await getHeaders());
-    final document = html_parser.parse(res.body);
+    _ensureOk(res, 'detail');
+    final document = html_parser.parse(_decode(res));
 
     final seriesDetails = document.querySelector('div.bigcontent') ??
         document.querySelector('div.animefull') ??
@@ -258,16 +261,21 @@ class MangaReaderSource extends BaseExtensionService {
     final withoutDomain = _stripDomain(url);
     final res = await _http.get(Uri.parse('${getBaseUrl()}$withoutDomain'),
         headers: await getHeaders());
-    final body = res.body;
+    _ensureOk(res, 'page list');
+    // EFFICIENCY + correctness: decode once (UTF-8, not latin-1 `.body`)
+    // and parse the document ONCE — each _readerAreaImages call used to
+    // re-parse the whole megabyte-scale body (up to 3 parses per chapter).
+    final body = _decode(res);
+    final doc = html_parser.parse(body);
 
     // readerarea images — <p><img> first (upstream order), then bare <img>,
     // then data-src when the src set is a placeholder.
-    var pages = _readerAreaImages(body, 'src', wrapInP: true);
+    var pages = _readerAreaImagesFrom(doc, 'src', wrapInP: true);
     if (pages.length <= 1) {
-      pages = _readerAreaImages(body, 'src', wrapInP: false);
+      pages = _readerAreaImagesFrom(doc, 'src', wrapInP: false);
     }
     if (pages.any((p) => p.contains('data:image'))) {
-      pages = _readerAreaImages(body, 'data-src', wrapInP: false);
+      pages = _readerAreaImagesFrom(doc, 'data-src', wrapInP: false);
     }
     if (pages.length > 1) return pages;
 
@@ -282,9 +290,21 @@ class MangaReaderSource extends BaseExtensionService {
     return pages;
   }
 
-  List<String> _readerAreaImages(String body, String attr,
+  /// Guard: non-200 responses were parsed as content (CF interstitials
+  /// yielded a silently empty catalog instead of an honest error).
+  void _ensureOk(http.Response res, String what) {
+    if (res.statusCode != 200) {
+      throw StateError('MangaReader $what failed: HTTP ${res.statusCode} '
+          '— site may be blocked or down');
+    }
+  }
+
+  /// UTF-8 from raw bytes — `.body` falls back to latin-1 when the response
+  /// has no charset header (mojibake on non-English mirrors).
+  String _decode(http.Response res) => utf8.decode(res.bodyBytes);
+
+  List<String> _readerAreaImagesFrom(dom.Document doc, String attr,
       {required bool wrapInP}) {
-    final doc = html_parser.parse(body);
     final area = doc.querySelector('#readerarea');
     if (area == null) return const [];
     final imgs = wrapInP
@@ -303,7 +323,10 @@ class MangaReaderSource extends BaseExtensionService {
     final withoutDomain = _stripDomain(url);
     final res = await _http.get(Uri.parse('${getBaseUrl()}$withoutDomain'),
         headers: await getHeaders());
-    final doc = html_parser.parse(res.body);
+    // Tolerant by contract (mirrors MadaraSource.getChapterContent): a
+    // missing text chapter degrades to null instead of throwing.
+    if (res.statusCode != 200) return null;
+    final doc = html_parser.parse(_decode(res));
     final area = doc.querySelector('#readerarea') ??
         doc.querySelector('div.reading-content');
     if (area == null) return null;

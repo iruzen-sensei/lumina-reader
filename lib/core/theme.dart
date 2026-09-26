@@ -469,36 +469,39 @@ class LuminaTheme {
     const sans = TextStyle(fontFamily: HeroTokens.fontSans);
 
     return TextTheme(
+      // Apple HIG SF tracking curve on Inter: tightest at 17-20pt (−0.43
+      // headline / −0.45 title3), opens positive above 24pt (+0.40 at 34,
+      // the largeTitle cadence), ~0 at 12pt, slightly positive below.
       displayLarge: sans.copyWith(
-          color: fg, fontSize: 34, height: 1.15, fontWeight: FontWeight.w400, letterSpacing: -0.6),
+          color: fg, fontSize: 34, height: 1.21, fontWeight: FontWeight.w400, letterSpacing: 0.4),
       displayMedium: sans.copyWith(
-          color: fg, fontSize: 30, height: 1.2, fontWeight: FontWeight.w400, letterSpacing: -0.5),
+          color: fg, fontSize: 30, height: 1.2, fontWeight: FontWeight.w400, letterSpacing: 0.37),
       displaySmall: sans.copyWith(
-          color: fg, fontSize: 26, height: 1.2, fontWeight: FontWeight.w400, letterSpacing: -0.4),
+          color: fg, fontSize: 26, height: 1.2, fontWeight: FontWeight.w400, letterSpacing: 0.19),
       headlineLarge: sans.copyWith(
-          color: fg, fontSize: 24, height: 1.25, fontWeight: FontWeight.w400, letterSpacing: -0.35),
+          color: fg, fontSize: 24, height: 1.25, fontWeight: FontWeight.w400, letterSpacing: 0.01),
       headlineMedium: sans.copyWith(
-          color: fg, fontSize: 20, height: 1.3, fontWeight: FontWeight.w500, letterSpacing: -0.2),
+          color: fg, fontSize: 20, height: 1.25, fontWeight: FontWeight.w600, letterSpacing: -0.45),
       headlineSmall: sans.copyWith(
-          color: fg, fontSize: 18, height: 1.3, fontWeight: FontWeight.w500, letterSpacing: -0.15),
+          color: fg, fontSize: 18, height: 1.3, fontWeight: FontWeight.w600, letterSpacing: -0.35),
       titleLarge: sans.copyWith(
-          color: fg, fontSize: 17, height: 1.35, fontWeight: FontWeight.w500, letterSpacing: -0.1),
+          color: fg, fontSize: 17, height: 1.35, fontWeight: FontWeight.w600, letterSpacing: -0.43),
       titleMedium: sans.copyWith(
-          color: fg, fontSize: 15, height: 1.4, fontWeight: FontWeight.w500, letterSpacing: -0.05),
+          color: fg, fontSize: 15, height: 1.4, fontWeight: FontWeight.w500, letterSpacing: -0.23),
       titleSmall: sans.copyWith(
-          color: fg, fontSize: 13.5, height: 1.4, fontWeight: FontWeight.w500),
+          color: fg, fontSize: 13.5, height: 1.4, fontWeight: FontWeight.w500, letterSpacing: -0.1),
       bodyLarge: sans.copyWith(
-          color: fg, fontSize: 15.5, height: 1.5, letterSpacing: 0.15),
+          color: fg, fontSize: 15.5, height: 1.45, letterSpacing: -0.2),
       bodyMedium: sans.copyWith(
-          color: fg, fontSize: 15, height: 1.5, letterSpacing: 0.15),
+          color: fg, fontSize: 15, height: 1.45, letterSpacing: -0.23),
       bodySmall: sans.copyWith(
-          color: muted, fontSize: 13, height: 1.45, letterSpacing: 0.1),
+          color: muted, fontSize: 13, height: 1.4, letterSpacing: -0.08),
       labelLarge: sans.copyWith(
-          color: fg, fontSize: 14, height: 1.2, fontWeight: FontWeight.w500),
+          color: fg, fontSize: 14, height: 1.2, fontWeight: FontWeight.w500, letterSpacing: -0.15),
       labelMedium: sans.copyWith(
-          color: muted, fontSize: 12.5, height: 1.3, fontWeight: FontWeight.w500),
+          color: muted, fontSize: 12.5, height: 1.3, fontWeight: FontWeight.w500, letterSpacing: -0.05),
       labelSmall: sans.copyWith(
-          color: muted, fontSize: 11.5, height: 1.3, letterSpacing: 0.1),
+          color: muted, fontSize: 11.5, height: 1.3, letterSpacing: 0.06),
     );
   }
 }

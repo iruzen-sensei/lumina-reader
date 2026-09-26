@@ -236,6 +236,11 @@ class Settings {
   /// `2` = top-to-bottom, `3` = bottom-to-top.
   int? readerDirection;
 
+  /// Default page fit. `0` = contain (fit screen), `1` = cover,
+  /// `2` = fill (stretch), `3` = original, `4` = fit width (default),
+  /// `5` = fit height.
+  int? readerFit;
+
   /// Default reader orientation. `0` = free, `1` = portrait,
   /// `2` = landscape, `3` = locked portrait, `4` = locked landscape.
   int? readerOrientation;
@@ -1625,6 +1630,7 @@ class Settings {
     // Reader
     this.readerDefaultMode,
     this.readerDirection,
+    this.readerFit,
     this.readerOrientation,
     this.readerFullscreen,
     this.readerKeepScreenOn,
@@ -2123,6 +2129,7 @@ class Settings {
         // Reader
         readerDefaultMode: 0,
         readerDirection: 1,
+        readerFit: 4,
         readerOrientation: 0,
         readerFullscreen: true,
         readerKeepScreenOn: true,

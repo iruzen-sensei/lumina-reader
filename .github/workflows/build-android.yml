@@ -119,7 +119,11 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.LUMINA_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.LUMINA_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.LUMINA_KEY_PASSWORD }}
-        run: flutter build apk --release
+        # cronetHttpNoPlay=true bundles the embedded Cronet (Chrome TLS
+        # stack) instead of relying on the Google-Play-Services provider —
+        # sideloaded APKs must reach CF-fronted sources (AniZone, Madara
+        # mirrors) on devices without GMS too.
+        run: flutter build apk --release --dart-define=cronetHttpNoPlay=true
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

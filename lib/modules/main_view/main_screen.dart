@@ -69,7 +69,14 @@ class MainScreen extends StatelessWidget {
       selectedIndex = 4;
     }
 
-    final isWide = MediaQuery.of(context).size.width >= 800;
+    // Wide OR LANDSCAPE phones get the navigation rail. Width alone missed
+    // every phone in landscape (~700-780 logical width but only ~360 dp of
+    // height): they kept the 58pt bottom bar eating 20% of the short axis —
+    // the "landscape UI bugs out / components cut off" report. shortestSide
+    // < 600 keeps small portrait phones on the bottom bar.
+    final size = MediaQuery.sizeOf(context);
+    final isWide =
+        size.width >= 800 || size.shortestSide < 600 && size.width > size.height;
 
     if (isWide) {
       return Scaffold(

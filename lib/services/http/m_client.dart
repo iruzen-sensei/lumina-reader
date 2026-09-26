@@ -16,6 +16,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cronet_http/cronet_http.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_interceptor/http_interceptor.dart';
 import 'package:path/path.dart' as p;
@@ -436,8 +438,11 @@ class ResolveCloudFlareChallenge implements RetryPolicy {
   @override
   FutureOr<bool> shouldAttemptRetryOnResponse(BaseResponse response) async {
     final int code = response.statusCode;
+    // 429 is EXCLUDED: it is rate limiting, not a challenge — retrying a
+    // 429 burns more quota (MangaDex's limiter answered every retry with
+    // another 429 during bulk library updates). Rate-limited APIs get their
+    // own backoff at the source layer (see MangaDexSource._getJson).
     final bool suspicious = code == 403 ||
-        code == 429 ||
         code == 503 ||
         (code >= 521 && code <= 523);
     if (!suspicious) return false;
@@ -490,6 +495,45 @@ class MClient {
   static final MCookieManager _cookieManager = MCookieManager();
   static final LoggerInterceptor _logger = LoggerInterceptor();
 
+  // -------------------------------------------------------------------------
+  // Transport (Cronet on Android, dart:io elsewhere)
+  // -------------------------------------------------------------------------
+
+  /// Shared Cronet engine. WHY: Cloudflare fronts (AniZone, many Madara
+  /// mirrors) fingerprint dart:io HttpClient's TLS ClientHello (JA3) and
+  /// answer it with a challenge page from ANY IP — verified from the same
+  /// host where curl and Cronet (Chrome's network stack) get straight 200s.
+  /// Cronet therefore unblocks real-device access to those sources. The
+  /// engine is shared (per-client `closeEngine: false`) and lives for the
+  /// process lifetime.
+  static CronetEngine? _cronetEngine;
+  static bool _cronetFailed = false;
+
+  /// Best available `package:http` transport for the current platform.
+  static http.Client _transportClient() {
+    if (!kIsWeb && Platform.isAndroid && !_cronetFailed) {
+      try {
+        return CronetClient.fromCronetEngine(_ensureCronetEngine(),
+            closeEngine: false);
+      } catch (e) {
+        _cronetFailed = true;
+        debugPrint('MClient: Cronet unavailable ($e) — dart:io fallback. '
+            'CF-gated sources may be blocked on this device.');
+      }
+    }
+    return http.Client();
+  }
+
+  static CronetEngine _ensureCronetEngine() {
+    return _cronetEngine ??= CronetEngine.build(
+          cacheMode: CacheMode.memory,
+          cacheMaxSize: 4 * 1024 * 1024,
+          enableBrotli: true,
+          enableHttp2: true,
+          enableQuic: true,
+        );
+  }
+
   /// Build a fully wired [InterceptedClient].
   ///
   /// * [useCookies] — toggle cookie jar (default `true`).
@@ -517,7 +561,7 @@ class MClient {
     ];
 
     return InterceptedClient.build(
-      client: http.Client(),
+      client: _transportClient(),
       interceptors: interceptors,
       retryPolicy: retryPolicies.first,
       requestTimeout: timeout,

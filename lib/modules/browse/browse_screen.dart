@@ -951,19 +951,21 @@ class _SourceGrid extends ConsumerWidget {
     }
 
     // ERROR: an explicit failure card with the reason + retry. Previously
-    // failures were indistinguishable from empty results.
+    // failures were indistinguishable from empty results. Copy is friendly
+    // (no raw source names / exception strings in the headline) and the
+    // retry is a FILLED capsule so it reads as the primary action.
     if (feed.hasError && feed.items.isEmpty) {
       return emptyState(
         context: context,
         icon: Icons.wifi_off_rounded,
-        title: 'Could not load ${source.name}',
-        subtitle: feed.error,
+        title: 'This source is unreachable',
+        subtitle: '${source.name} did not respond — the site may be down, '
+            'blocked or slow. Check your connection and try again.',
         // Invalidating the family member rebuilds its BrowseGridNotifier,
         // whose constructor kicks off a fresh load for this source.
         action: HeroButton(
-          label: 'Retry',
+          label: 'Try again',
           icon: Icons.refresh_rounded,
-          variant: HeroButtonVariant.bordered,
           onPressed: () =>
               ref.invalidate(browseFeedProvider((sourceId, latest))),
         ),
@@ -975,11 +977,10 @@ class _SourceGrid extends ConsumerWidget {
         context: context,
         icon: Icons.inbox_outlined,
         title: 'Nothing here yet',
-        subtitle: '$label returned no items from ${source.name}.',
+        subtitle: 'No $label items came back from ${source.name}.',
         action: HeroButton(
-          label: 'Retry',
+          label: 'Try again',
           icon: Icons.refresh_rounded,
-          variant: HeroButtonVariant.bordered,
           onPressed: () =>
               ref.invalidate(browseFeedProvider((sourceId, latest))),
         ),

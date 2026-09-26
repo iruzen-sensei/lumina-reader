@@ -230,10 +230,20 @@ class ExtensionRepoService {
     Map<String, dynamic>? meta;
     String? workingUrl;
     for (final url in urls) {
+      // Scheme allowlist: an http:// (cleartext) or non-HTTP scheme here
+      // is either a typo or a hostile repo — reject before fetching.
+      if (!url.startsWith('https://') && !url.startsWith('http://')) {
+        continue;
+      }
       try {
         final res = await _http.get(Uri.parse(url));
         if (res.statusCode != 200) continue;
-        final decoded = jsonDecode(res.body);
+        if (res.bodyBytes.length > 5 * 1024 * 1024) {
+          // Unbounded index = OOM vector; a legit Mangayomi index is
+          // well under 1 MB.
+          continue;
+        }
+        final decoded = jsonDecode(utf8.decode(res.bodyBytes));
         if (decoded is List && decoded.isNotEmpty && decoded.first is Map) {
           final first = decoded.first as Map;
           if (first['name'] != null && first['baseUrl'] != null) {
@@ -255,6 +265,25 @@ class ExtensionRepoService {
           '${urls.first})');
     }
 
+    // SYNC FIRST, PERSIST SECOND: the old order registered the repo even
+    // when the sync then failed — the user saw "Could not add repository"
+    // but the broken repo appeared (and kept re-syncing) anyway.
+    if (sync) {
+      final count = await syncRepo(workingUrl);
+      if (count == 0) {
+        throw Exception('No compatible extensions were found in the '
+            'repository index.');
+      }
+      var repos = await getRepos();
+      repos = repos.where((r) => r.url != workingUrl).toList()
+        ..add(ExtensionRepo(
+          url: workingUrl,
+          name: meta!['name'] as String,
+          addedAt: DateTime.now(),
+        ));
+      await _saveRepos(repos);
+      return count;
+    }
     var repos = await getRepos();
     repos = repos.where((r) => r.url != workingUrl).toList()
       ..add(ExtensionRepo(
@@ -263,30 +292,22 @@ class ExtensionRepoService {
         addedAt: DateTime.now(),
       ));
     await _saveRepos(repos);
-
-    if (sync) {
-      final count = await syncRepo(workingUrl);
-      if (count == 0) {
-        throw Exception('Repository added, but no compatible extensions '
-            'were found in its index.');
-      }
-      return count;
-    }
     return 0;
   }
 
   Future<void> removeRepo(String url) async {
     final repos = await getRepos();
     await _saveRepos(repos.where((r) => r.url != url).toList());
-    // Uninstall every catalog row that came from this repo.
+    // Uninstall every catalog row that came from THIS repo — the old
+    // `url.startsWith(_repoKeyBase(r))` prefix-match also caught sibling
+    // repos (…/repo vs …/repo2) and matched EVERYTHING when a row's repo
+    // URL was empty.
     await _isar.writeTxn(() async {
       final rows = await _isar.sources
           .filter()
           .idStringContains('repo-')
           .findAll();
-      final fromRepo = rows
-          .where((r) => url.startsWith(_repoKeyBase(r)))
-          .toList();
+      final fromRepo = rows.where((r) => r.repo?.sourceUrl == url).toList();
       for (final r in fromRepo) {
         if (r.isEnabled == true) {
           r.isEnabled = false;
@@ -295,8 +316,6 @@ class ExtensionRepoService {
       }
     });
   }
-
-  String _repoKeyBase(db.Source s) => s.repo?.sourceUrl ?? '';
 
   // -----------------------------------------------------------------------
   // Sync + install
@@ -315,7 +334,10 @@ class ExtensionRepoService {
     if (res.statusCode != 200) {
       throw Exception('Repository returned HTTP ${res.statusCode}');
     }
-    final decoded = jsonDecode(res.body);
+    if (res.bodyBytes.length > 5 * 1024 * 1024) {
+      throw Exception('Repository index too large (>5 MB) — refusing.');
+    }
+    final decoded = jsonDecode(utf8.decode(res.bodyBytes));
     if (decoded is! List) {
       throw Exception('Unexpected repository index format');
     }
@@ -335,52 +357,65 @@ class ExtensionRepoService {
     }
 
     final batch = <db.Source>[];
+    var malformed = 0;
     for (final e in entries) {
-      final id = e['id'];
-      final name = e['name'];
-      if (id is! int || name is! String) continue;
+      try {
+        final id = e['id'];
+        final name = e['name'];
+        if (id is! int || name is! String) continue;
 
-      final idString = 'repo-$repoName-$id';
-      final existing = existingByld[idString];
-      final row = existing ?? db.Source();
-      row.idString = idString;
-      row.name = name;
-      row.customName = null;
-      row.lang = (e['lang'] as String?) ?? 'en';
-      row.baseUrl = (e['baseUrl'] as String?) ?? '';
-      row.iconUrl = e['iconUrl'] as String?;
-      row.version = existing?.version ?? (e['version'] as String? ?? '0.0.1');
-      row.versionLast = e['version'] as String? ?? row.version;
-      row.typeSource = e['typeSource'] as String? ?? '';
-      row.dateFormat = e['dateFormat'] as String?;
-      row.dateFormatLocale = e['dateFormatLocale'] as String?;
-      row.additionalParams = e['additionalParams'] as String?;
-      row.sourceCodeUrl = e['sourceCodeUrl'] as String?;
-      row.appMinVerReq = e['appMinVerReq'] as String?;
-      row.isNsfw = e['isNsfw'] as bool? ?? false;
-      row.hasCloudflare = e['hasCloudflare'] as bool? ?? false;
-      row.isManga = e['isManga'] as bool? ?? true;
-      row.isAnime = false;
-      // Newly discovered rows start NOT installed; existing rows keep their
-      // install state.
-      row.isEnabled = existing?.isEnabled ?? false;
-      row.isLocal = false;
-      row.repo = db.Repo(
-        name: repoName,
-        sourceUrl: url,
-        typeSource: row.typeSource,
-        iconUrl: row.iconUrl,
-        lang: row.lang,
-        isManga: row.isManga,
-        isNsfw: row.isNsfw,
-        hasCloudflare: row.hasCloudflare,
-      );
-      row.lastUpdateAt = DateTime.now().millisecondsSinceEpoch;
-      batch.add(row);
+        final idString = 'repo-$repoName-$id';
+        final existing = existingByld[idString];
+        final row = existing ?? db.Source();
+        row.idString = idString;
+        row.name = name;
+        row.customName = null;
+        row.lang = (e['lang'] as String?) ?? 'en';
+        row.baseUrl = (e['baseUrl'] as String?) ?? '';
+        row.iconUrl = e['iconUrl'] as String?;
+        row.version =
+            existing?.version ?? (e['version'] as String? ?? '0.0.1');
+        row.versionLast = e['version'] as String? ?? row.version;
+        row.typeSource = e['typeSource'] as String? ?? '';
+        row.dateFormat = e['dateFormat'] as String?;
+        row.dateFormatLocale = e['dateFormatLocale'] as String?;
+        row.additionalParams = e['additionalParams'] as String?;
+        row.sourceCodeUrl = e['sourceCodeUrl'] as String?;
+        row.appMinVerReq = e['appMinVerReq'] as String?;
+        row.isNsfw = e['isNsfw'] as bool? ?? false;
+        row.hasCloudflare = e['hasCloudflare'] as bool? ?? false;
+        row.isManga = e['isManga'] as bool? ?? true;
+        row.isAnime = false;
+        // Newly discovered rows start NOT installed; existing rows keep their
+        // install state.
+        row.isEnabled = existing?.isEnabled ?? false;
+        row.isLocal = false;
+        row.repo = db.Repo(
+          name: repoName,
+          sourceUrl: url,
+          typeSource: row.typeSource,
+          iconUrl: row.iconUrl,
+          lang: row.lang,
+          isManga: row.isManga,
+          isNsfw: row.isNsfw,
+          hasCloudflare: row.hasCloudflare,
+        );
+        row.lastUpdateAt = DateTime.now().millisecondsSinceEpoch;
+        batch.add(row);
+      } catch (_) {
+        // ONE malformed entry (type-mismatched field, weird nesting) used
+        // to abort the ENTIRE sync — skip the entry, keep the rest.
+        malformed++;
+        continue;
+      }
     }
 
     // ONE transaction for the whole batch — one watcher fire, one fsync.
     await _isar.writeTxn(() async => _isar.sources.putAll(batch));
+    if (malformed > 0) {
+      debugPrint('ExtensionRepoService.syncRepo: skipped $malformed '
+          'malformed entries in $url');
+    }
 
     // Update repo stats.
     final repos = await getRepos();

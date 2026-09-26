@@ -50,6 +50,20 @@ class AniZoneSource extends BaseExtensionService {
   /// slug resolution cache: anilist id → AniZone slug.
   final Map<int, String> _slugCache = {};
 
+  /// AniList detail cache (id → entry). The coordinator calls
+  /// getMangaDetail + getChapterList back-to-back and BOTH used to hit the
+  /// rate-limited (~30/min) AniList API for the same id — every anime open
+  /// spent TWO requests where ONE suffices.
+  final Map<int, AniListAnime> _detailCache = {};
+
+  Future<AniListAnime> _detail(int id) async {
+    final cached = _detailCache[id];
+    if (cached != null) return cached;
+    final entry = await _aniList.detail(id);
+    _detailCache[id] = entry;
+    return entry;
+  }
+
   @override
   Future<Map<String, String>> getHeaders() async => const {
         'User-Agent': _ua,
@@ -125,7 +139,7 @@ class AniZoneSource extends BaseExtensionService {
   @override
   Future<MManga> getMangaDetail(String url) async {
     final id = _anilistId(url);
-    final a = await _aniList.detail(id);
+    final a = await _detail(id);
     final manga = _toEntry(a);
     // The English title leads; keep romaji visible for matching + users
     // who prefer it.
@@ -147,7 +161,16 @@ class AniZoneSource extends BaseExtensionService {
     final id = _anilistId(url);
     final slug = await _resolveSlug(id);
     if (slug == null) return const [];
-    final episodes = await _scrapeEpisodes(slug, maxPages: 8);
+    // Page budget scaled to the show: 24 items/page means 8 pages ≈ 192
+    // episodes — a hard cap that made One Piece-style shows permanently
+    // truncate. The expected episode count sizes the budget (with slack
+    // for episode-0/recaps), still bounded to protect against runaway
+    // pagination.
+    final expected = _detailCache[id]?.episodes ?? 0;
+    final maxPages = expected > 0
+        ? ((expected / 24).ceil() + 2).clamp(4, 20)
+        : 8;
+    final episodes = await _scrapeEpisodes(slug, maxPages: maxPages);
     final out = <MChapter>[];
     for (final e in episodes) {
       final number = e['number'] as int;
@@ -167,7 +190,7 @@ class AniZoneSource extends BaseExtensionService {
     final cached = _slugCache[anilistId];
     if (cached != null) return cached;
 
-    final a = await _aniList.detail(anilistId);
+    final a = await _detail(anilistId);
     final expected = a.episodes ?? 0;
     final candidates = <_AniZoneCandidate>[];
     for (final q in _searchQueries(a.titles)) {
@@ -197,10 +220,12 @@ class AniZoneSource extends BaseExtensionService {
       c.score = score;
       if (best == null || score > best.score) best = c;
     }
-    // 0.5 ≈ same words different order / partial match — below that the
-    // entry simply is not on AniZone.
+    // 0.62: below the old 0.5 threshold, near-misses ("Naruto" vs "Naruto
+    // Shippuden" scores exactly 0.5 on Dice bigrams) resolved to the WRONG
+    // SHOW and streamed its episodes. 0.62 keeps genuine matches (title
+    // variants, punctuation drift) while rejecting sequel near-misses.
     final resolved = best;
-    if (resolved == null || resolved.score < 0.5) return null;
+    if (resolved == null || resolved.score < 0.62) return null;
     _slugCache[anilistId] = resolved.slug;
     return resolved.slug;
   }
@@ -301,8 +326,20 @@ class AniZoneSource extends BaseExtensionService {
         cursor != null &&
         episodes.length < limit &&
         pages < maxPages) {
-      final page = await _livewireLoadPage(
+      var page = await _livewireLoadPage(
           snapshot: snapshot, csrf: csrf, cursor: cursor, cookies: cookies);
+      // ONE retry: a single transient Livewire failure used to break the
+      // loop and silently truncate the episode list (user sees "no episode
+      // 25" with no error anywhere). A direct try/catch (not a closure) so
+      // the loop-guard null promotion still applies to `cursor`.
+      if (page == null) {
+        try {
+          page = await _livewireLoadPage(
+              snapshot: snapshot, csrf: csrf, cursor: cursor, cookies: cookies);
+        } catch (_) {
+          page = null;
+        }
+      }
       if (page == null) break;
       episodes.addAll(page.items);
       snapshot = page.snapshot;

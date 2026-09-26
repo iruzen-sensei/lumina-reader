@@ -399,6 +399,9 @@ class _HeroHeader extends StatelessWidget {
   });
 
   /// Backdrop height excluding the status bar (~200-230 total on device).
+  /// In LANDSCAPE the viewport height is ~360dp — a fixed 182 backdrop plus
+  /// the overlap consumed over half the screen (the "landscape components
+  /// get cut off" report), so it becomes a fraction of the SHORT axis.
   static const double _backdropHeight = 182;
 
   /// How far the info row climbs into the backdrop.
@@ -413,7 +416,12 @@ class _HeroHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
     final statusTop = MediaQuery.paddingOf(context).top;
-    final backdropHeight = statusTop + _backdropHeight;
+    final size = MediaQuery.sizeOf(context);
+    final landscape = size.width > size.height;
+    final backdropHeight = statusTop +
+        (landscape
+            ? (size.height * 0.42).clamp(96.0, _backdropHeight)
+            : _backdropHeight);
 
     return Stack(
       clipBehavior: Clip.none,

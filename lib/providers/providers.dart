@@ -693,13 +693,17 @@ enum ReaderMode { paged, continuous, webtoon }
 
 enum ReaderDirection { leftToRight, rightToLeft, vertical }
 
-enum ReaderFit { contain, cover, fill, original }
+enum ReaderFit { contain, cover, fill, original, width, height }
 
 class ReaderSettings {
   ReaderSettings({
     this.mode = ReaderMode.paged,
     this.direction = ReaderDirection.leftToRight,
-    this.fit = ReaderFit.contain,
+    // Fit-width is the manga-reader industry default (Tachiyomi/Mihon
+    // lineage): the page fills the full screen width and pans vertically —
+    // `contain` on tall phones letterboxes hundreds of dp away and reads as
+    // "pages are too small".
+    this.fit = ReaderFit.width,
     this.tapToNavigate = true,
     this.showPageNumber = true,
     this.keepScreenOn = true,
@@ -775,7 +779,7 @@ class ReaderSettingsNotifier extends StateNotifier<ReaderSettings> {
     final mapped = ReaderSettings(
       mode: s.defaultReaderMode,
       direction: s.defaultReaderDirection,
-      fit: state.fit,
+      fit: s.defaultReaderFit,
       tapToNavigate: s.tapToNavigate,
       showPageNumber: s.showPageNumber,
       keepScreenOn: s.keepScreenOn,
@@ -796,7 +800,13 @@ class ReaderSettingsNotifier extends StateNotifier<ReaderSettings> {
     _ref.read(appSettingsProvider.notifier).setReaderDirection(d);
   }
 
-  void setFit(ReaderFit f) => state = state.copyWith(fit: f);
+  /// Fit is written THROUGH to the persisted defaults — the old setter
+  /// only mutated session state, so the chosen fit silently reset to
+  /// `contain` on every app relaunch.
+  void setFit(ReaderFit f) {
+    state = state.copyWith(fit: f);
+    _ref.read(appSettingsProvider.notifier).setReaderFit(f);
+  }
 
   void setBackgroundColor(Color c) {
     state = state.copyWith(backgroundColor: c);
@@ -874,9 +884,24 @@ final readerPagesProvider =
 
 /// Video streams for an episode. Empty until loaded / when no anime source
 /// provides streams — the player shows its empty state instead of a crash.
-class EpisodeMediaNotifier extends StateNotifier<List<VideoQuality>> {
+/// Immutable view-state for an episode's stream list: sources + a real
+/// loading/error phase. (Previously a bare List that stayed empty forever
+/// on failure — the player showed an infinite spinner with no retry.)
+class EpisodeMediaState {
+  const EpisodeMediaState({
+    this.sources = const [],
+    this.loading = true,
+    this.error,
+  });
+
+  final List<VideoQuality> sources;
+  final bool loading;
+  final String? error;
+}
+
+class EpisodeMediaNotifier extends StateNotifier<EpisodeMediaState> {
   EpisodeMediaNotifier(this._episodeId, this._coordinator)
-      : super(const []) {
+      : super(const EpisodeMediaState()) {
     _load();
   }
 
@@ -885,18 +910,30 @@ class EpisodeMediaNotifier extends StateNotifier<List<VideoQuality>> {
 
   Future<void> _load() async {
     try {
-      state = await _coordinator.videoList(_episodeId);
+      final sources = await _coordinator.videoList(_episodeId);
+      if (!mounted) return;
+      state = EpisodeMediaState(sources: sources, loading: false);
     } catch (e) {
       debugPrint('EpisodeMediaNotifier($_episodeId) load failed: $e');
+      if (!mounted) return;
+      state = const EpisodeMediaState(
+        loading: false,
+        error: 'Could not load streams for this episode.',
+      );
     }
   }
 
-  Future<void> reload() => _load();
+  Future<void> reload() async {
+    // Reset to the loading phase so the player shows a spinner and guards
+    // against re-opening the previous episode's stream mid-reload.
+    state = const EpisodeMediaState();
+    await _load();
+  }
 }
 
 final videoSourcesProvider =
     StateNotifierProvider.autoDispose.family<EpisodeMediaNotifier,
-        List<VideoQuality>, int>(
+        EpisodeMediaState, int>(
   (ref, episodeId) => EpisodeMediaNotifier(
       episodeId, ref.watch(extensionCoordinatorProvider)),
 );
@@ -910,7 +947,7 @@ final videoSourcesProvider =
 /// the player's subtitle selector was permanently dead with only "Off".)
 final subtitleTracksProvider =
     Provider.family<List<SubtitleTrack>, int>((ref, episodeId) {
-  final videos = ref.watch(videoSourcesProvider(episodeId));
+  final videos = ref.watch(videoSourcesProvider(episodeId)).sources;
   final tracks = <SubtitleTrack>[const SubtitleTrack('Off', '')];
   final seen = <String>{};
   for (final v in videos) {
@@ -1771,6 +1808,7 @@ class SettingsState {
     this.useDynamicColor = false,
     this.defaultReaderMode = ReaderMode.paged,
     this.defaultReaderDirection = ReaderDirection.leftToRight,
+    this.defaultReaderFit = ReaderFit.width,
     this.readerBgColor = ReaderBgColor.black,
     this.keepScreenOn = true,
     this.showPageNumber = true,
@@ -1801,6 +1839,7 @@ class SettingsState {
 
   final ReaderMode defaultReaderMode;
   final ReaderDirection defaultReaderDirection;
+  final ReaderFit defaultReaderFit;
   final ReaderBgColor readerBgColor;
   final bool keepScreenOn;
   final bool showPageNumber;
@@ -1898,6 +1937,8 @@ class AppSettingsNotifier extends StateNotifier<SettingsState> {
       defaultReaderDirection: ReaderDirection
           .values[(s.readerDirection ?? 0)
               .clamp(0, ReaderDirection.values.length - 1)],
+      defaultReaderFit: ReaderFit.values[(s.readerFit ?? ReaderFit.width.index)
+          .clamp(0, ReaderFit.values.length - 1)],
       readerBgColor: bg(ReaderBgColor.black),
       keepScreenOn: s.readerKeepScreenOn ?? true,
       showPageNumber: s.readerShowPageNumber ?? true,
@@ -1968,6 +2009,7 @@ class AppSettingsNotifier extends StateNotifier<SettingsState> {
       customThemeFontFamily: null,
       readerDefaultMode: s.defaultReaderMode.index,
       readerDirection: s.defaultReaderDirection.index,
+      readerFit: s.defaultReaderFit.index,
       readerBackgroundColor: s.readerBgColor.color.toARGB32(),
       readerTapToTurnPage: s.tapToNavigate,
       readerShowPageNumber: s.showPageNumber,
@@ -2003,6 +2045,7 @@ class AppSettingsNotifier extends StateNotifier<SettingsState> {
       _mutate((s) => s..defaultReaderMode = m);
   void setReaderDirection(ReaderDirection d) =>
       _mutate((s) => s..defaultReaderDirection = d);
+  void setReaderFit(ReaderFit f) => _mutate((s) => s..defaultReaderFit = f);
   void setReaderBg(ReaderBgColor c) =>
       _mutate((s) => s..readerBgColor = c);
   void toggleKeepScreenOn() => _mutate((s) => s..keepScreenOn = !s.keepScreenOn);
@@ -2062,6 +2105,7 @@ class _SettingsBuilder {
         useDynamicColor = s.useDynamicColor,
         defaultReaderMode = s.defaultReaderMode,
         defaultReaderDirection = s.defaultReaderDirection,
+        defaultReaderFit = s.defaultReaderFit,
         readerBgColor = s.readerBgColor,
         keepScreenOn = s.keepScreenOn,
         showPageNumber = s.showPageNumber,
@@ -2091,6 +2135,7 @@ class _SettingsBuilder {
 
   ReaderMode defaultReaderMode;
   ReaderDirection defaultReaderDirection;
+  ReaderFit defaultReaderFit;
   ReaderBgColor readerBgColor;
   bool keepScreenOn;
   bool showPageNumber;
@@ -2125,6 +2170,7 @@ class _SettingsBuilder {
         useDynamicColor: useDynamicColor,
         defaultReaderMode: defaultReaderMode,
         defaultReaderDirection: defaultReaderDirection,
+        defaultReaderFit: defaultReaderFit,
         readerBgColor: readerBgColor,
         keepScreenOn: keepScreenOn,
         showPageNumber: showPageNumber,

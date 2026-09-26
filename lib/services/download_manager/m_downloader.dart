@@ -374,17 +374,27 @@ class MDownloader {
 
   /// Download every segment of an m3u8 playlist and concatenate them into a
   /// single `.ts` file at [outputPath].
+  ///
+  /// [extraHeaders] carries the STREAM-level headers (User-Agent / Referer
+  /// from the provider's MVideo) — the playlist host commonly 403s requests
+  /// that lack a browser UA, and the previous bare fetch failed every
+  /// AniZone episode download at the very first request.
   Future<String> downloadAnimeEpisode({
     required String m3u8Url,
     required String outputPath,
+    Map<String, String>? extraHeaders,
     ProgressCallback? onProgress,
   }) async {
     _cancelled = false;
     _running = true;
+    final fetchHeaders = <String, String>{
+      ...headers,
+      ...?extraHeaders,
+    };
     try {
       final Uri baseUri = Uri.parse(m3u8Url);
-      final http.Response res =
-          await MClient.httpClient().get(baseUri);
+      final http.Response res = await MClient.httpClient()
+          .get(baseUri, headers: fetchHeaders);
       if (res.statusCode != 200) {
         throw HttpException('m3u8 fetch failed: ${res.statusCode}');
       }
@@ -417,7 +427,7 @@ class MDownloader {
         try {
           final Uint8List bytes = await _fetchWithRetry(
             seg.url,
-            headers: headers,
+            headers: fetchHeaders,
           );
           if (_cancelled) return;
           ordered[i] = bytes;

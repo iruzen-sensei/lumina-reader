@@ -48,7 +48,7 @@ class ReaderScreen extends ConsumerStatefulWidget {
 }
 
 class _ReaderScreenState extends ConsumerState<ReaderScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final PageController _pageController;
   final ItemScrollController _itemScrollController = ItemScrollController();
   final ItemPositionsListener _itemPositionsListener =
@@ -94,6 +94,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pageController = PageController();
     _itemPositionsListener.itemPositions.addListener(_onListPositionsChanged);
     _sessionStart = DateTime.now();
@@ -105,8 +106,26 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
   }
 
+  /// Lifecycle flush: swiping the app away from Recents does NOT run
+  /// dispose() — the reading session (and its stats/heatmap contribution)
+  /// was silently lost. `inactive` (notification shade, dialogs, app-switch
+  /// peek) only flushes PROGRESS; `hidden`/`paused` (actual backgrounding)
+  /// also record the session — otherwise every shade pull fragmented a
+  /// separate noisy session row.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused) {
+      _flushProgress();
+      _recordSession();
+    } else if (state == AppLifecycleState.inactive) {
+      _flushProgress();
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _flushProgress();
     _recordSession();
     _progressSaveDebounce?.cancel();
@@ -233,8 +252,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         chapter.isRead = true;
         await ref.read(data.statsRepositoryProvider).maybeMarkFinished(_manga!.id);
       }
-    } catch (_) {
-      // Progress persistence is best-effort; never crash the reader.
+    } catch (e) {
+      // Progress persistence is best-effort; never crash the reader — but
+      // STOP swallowing failures silently: a broken write pipeline is how
+      // "stats never update" bugs hide for months.
+      debugPrint('Reader._flushProgress failed: $e');
+    }
+    // Incremental session flush: stats now move WHILE reading (every 2 min
+    // of active reading) instead of only when the reader closes — the
+    // "stats still not updating even after reading something" report.
+    if (DateTime.now().difference(_sessionStart).inSeconds >= 120) {
+      await _recordSession();
     }
     unawaited(_recordHistoryRead(completed ? 1 : 0));
   }
@@ -282,7 +310,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         pagesRead: pagesThisSession.clamp(0, 10000),
         durationSeconds: seconds,
       );
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Reader._recordSession failed: $e');
+    }
   }
 
   void _toggleControls() {
@@ -437,6 +467,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               _itemScrollController.jumpTo(index: target);
             }
             setState(() => _currentPage = target);
+            // Re-baseline page accounting AFTER the resume jump: the jump
+            // lands after _resetPageAccounting() ran at chapter open, so
+            // without this, resuming on page 30 of 40 counted the 30
+            // already-read pages as freshly read (inflated stats) — or a
+            // resume followed by re-reading yielded max − start = 0.
+            _resetPageAccounting();
           } else if (next.isNotEmpty) {
             _resumeApplied = true;
           }
@@ -660,7 +696,7 @@ class _PagedBodyState extends State<_PagedBody> {
   }
 }
 
-class _ContinuousBody extends StatelessWidget {
+class _ContinuousBody extends StatefulWidget {
   const _ContinuousBody({
     required this.settings,
     required this.pages,
@@ -680,20 +716,102 @@ class _ContinuousBody extends StatelessWidget {
   final Map<String, String>? headers;
 
   @override
+  State<_ContinuousBody> createState() => _ContinuousBodyState();
+}
+
+class _ContinuousBodyState extends State<_ContinuousBody> {
+  @override
   Widget build(BuildContext context) {
     return ScrollablePositionedList.builder(
-      initialScrollIndex: initialPage,
-      itemScrollController: itemScrollController,
-      itemPositionsListener: itemPositionsListener,
-      padding: EdgeInsets.symmetric(vertical: isWebtoon ? 24 : 0),
-      itemCount: pages.length,
-      itemBuilder: (context, index) => Padding(
-        padding: const EdgeInsets.only(bottom: 12),
+      initialScrollIndex: widget.initialPage,
+      itemScrollController: widget.itemScrollController,
+      itemPositionsListener: widget.itemPositionsListener,
+      padding: EdgeInsets.symmetric(vertical: widget.isWebtoon ? 24 : 0),
+      itemCount: widget.pages.length,
+      itemBuilder: (context, index) => _ContinuousPage(
+        url: widget.pages[index],
+        fit: widget.isWebtoon
+            ? ReaderFit.contain
+            // "Original" inside an unbounded-height list would bleed over
+            // neighbouring items — continuous modes normalise it to fit-width
+            // (the same normalisation Tachiyomi-family readers use).
+            : widget.settings.fit == ReaderFit.original
+                ? ReaderFit.width
+                : widget.settings.fit,
+        headers: widget.headers,
+        isWebtoon: widget.isWebtoon,
+      ),
+    );
+  }
+}
+
+/// One item of a continuous list: reserves its space from a cached (or
+/// estimated) aspect ratio BEFORE the bitmap decodes, so scroll extents,
+/// resume jumps and the page slider map to stable positions — the previous
+/// zero-height placeholder made every undecoded page invisible to the
+/// scroll maths.
+class _ContinuousPage extends StatefulWidget {
+  const _ContinuousPage({
+    required this.url,
+    required this.fit,
+    required this.isWebtoon,
+    this.headers,
+  });
+
+  final String url;
+  final ReaderFit fit;
+  final bool isWebtoon;
+  final Map<String, String>? headers;
+
+  @override
+  State<_ContinuousPage> createState() => _ContinuousPageState();
+}
+
+class _ContinuousPageState extends State<_ContinuousPage> {
+  /// Session-wide url → aspect (height/width) cache. Shared so returning to
+  /// a previously decoded page never re-flashes to the estimated height.
+  /// Capped: a long reading session must not grow it unboundedly.
+  static final Map<String, double> _aspectCache = <String, double>{};
+  static const int _aspectCacheMax = 600;
+
+  /// Estimate until decoded: manga/manwha pages ≈ 2:3, webtoon slices are
+  /// taller. Close enough to keep jump targets stable.
+  double get _aspect => _aspectCache[widget.url] ?? (widget.isWebtoon ? 1.5 : 1.45);
+
+  void _onDecoded(Size imageSize) {
+    final ar = imageSize.height / imageSize.width;
+    if (!ar.isFinite || ar <= 0 || ar == _aspect) return;
+    if (_aspectCache.length >= _aspectCacheMax) {
+      _aspectCache.remove(_aspectCache.keys.first);
+    }
+    _aspectCache[widget.url] = ar;
+    // DEFERRED rebuild: loadStateChanged fires synchronously inside
+    // ExtendedImage.build — calling setState() here synchronously throws
+    // "setState() called during build" (a guaranteed exception storm in
+    // continuous mode, where nearly every decoded page differs from its
+    // estimate). Schedule the rebuild for the END of the current frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      // BOUNDED height is the whole point: the previous implementation
+      // placed an unbounded-height item with StackFit.expand inside, which
+      // either crashed with an infinite-constraint error or collapsed.
+      child: SizedBox(
+        width: width,
+        height: width * _aspect,
         child: _ReaderPage(
-          url: pages[index],
-          fit: isWebtoon ? ReaderFit.contain : settings.fit,
-          headers: headers,
-          isWebtoon: isWebtoon,
+          url: widget.url,
+          fit: widget.fit,
+          headers: widget.headers,
+          isWebtoon: widget.isWebtoon,
+          onDecoded: _onDecoded,
         ),
       ),
     );
@@ -711,6 +829,7 @@ class _ReaderPage extends StatelessWidget {
     this.onTapRight,
     this.onTapCenter,
     this.isWebtoon = false,
+    this.onDecoded,
   });
 
   final String url;
@@ -725,57 +844,89 @@ class _ReaderPage extends StatelessWidget {
   final VoidCallback? onTapCenter;
   final bool isWebtoon;
 
+  /// Notified with the decoded bitmap size (continuous lists use it to
+  /// replace their aspect-ratio estimate with the real one).
+  final ValueChanged<Size>? onDecoded;
+
   @override
   Widget build(BuildContext context) {
+    // Fit-width is the manga-industry baseline: full-width pages that pan
+    // vertically; fit-height is its landscape counterpart. BoxFit.fitWidth/
+    // fitHeight inside a full-viewport cell overflow one axis — the
+    // ExtendedImage gesture layer pans along it (inPageView keeps the other
+    // axis for page swipes).
     final boxFit = switch (fit) {
       ReaderFit.contain => BoxFit.contain,
       ReaderFit.cover => BoxFit.cover,
       ReaderFit.fill => BoxFit.fill,
-      ReaderFit.original => BoxFit.none,
+      ReaderFit.original => BoxFit.contain, // DPR-aware scale below
+      ReaderFit.width => BoxFit.fitWidth,
+      ReaderFit.height => BoxFit.fitHeight,
     };
-    return Stack(
-      fit: isWebtoon ? StackFit.loose : StackFit.expand,
-      children: [
-        // Offline-first: downloaded chapters resolve to local file paths
-        // (written by the DownloadEngine); remote chapters stay network.
-        url.startsWith('file://')
-            ? ExtendedImage.file(
-                File.fromUri(Uri.parse(url)),
-                fit: boxFit,
-                mode: ExtendedImageMode.gesture,
-                enableSlideOutPage: true,
-                loadStateChanged: _pageLoadState,
-                initGestureConfigHandler: _gestureConfig,
-              )
-            : ExtendedImage.network(
-                url,
-                fit: boxFit,
-                mode: ExtendedImageMode.gesture,
-                enableSlideOutPage: true,
-                cache: true,
-                headers: headers,
-                loadStateChanged: _pageLoadState,
-                initGestureConfigHandler: _gestureConfig,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Stack(
+          fit: isWebtoon ? StackFit.loose : StackFit.expand,
+          children: [
+            // Offline-first: downloaded chapters resolve to local file paths
+            // (written by the DownloadEngine); remote chapters stay network.
+            // onDoubleTap lives on the WIDGET (not GestureConfig): toggle
+            // 1x ⇄ 2.2x zoom at the tapped point — a standard reader
+            // affordance the app never had.
+            url.startsWith('file://')
+                ? ExtendedImage.file(
+                    File.fromUri(Uri.parse(url)),
+                    fit: boxFit,
+                    mode: ExtendedImageMode.gesture,
+                    enableSlideOutPage: true,
+                    loadStateChanged: _pageLoadState,
+                    onDoubleTap: _onDoubleTap,
+                    initGestureConfigHandler: (state) =>
+                        _gestureConfig(context, state, constraints.biggest),
+                  )
+                : ExtendedImage.network(
+                    url,
+                    fit: boxFit,
+                    mode: ExtendedImageMode.gesture,
+                    enableSlideOutPage: true,
+                    cache: true,
+                    headers: headers,
+                    loadStateChanged: _pageLoadState,
+                    onDoubleTap: _onDoubleTap,
+                    initGestureConfigHandler: (state) =>
+                        _gestureConfig(context, state, constraints.biggest),
+                  ),
+            if (onTapLeft != null)
+              Row(
+                children: [
+                  Expanded(flex: 1, child: GestureDetector(onTap: onTapLeft)),
+                  Expanded(
+                    flex: 2,
+                    child: GestureDetector(onTap: onTapCenter),
+                  ),
+                  Expanded(flex: 1, child: GestureDetector(onTap: onTapRight)),
+                ],
               ),
-        if (onTapLeft != null)
-          Row(
-            children: [
-              Expanded(flex: 1, child: GestureDetector(onTap: onTapLeft)),
-              Expanded(
-                flex: 2,
-                child: GestureDetector(onTap: onTapCenter),
-              ),
-              Expanded(flex: 1, child: GestureDetector(onTap: onTapRight)),
-            ],
-          ),
-      ],
+          ],
+        );
+      },
     );
   }
 
   Widget _pageLoadState(ExtendedImageState state) {
     if (state.extendedImageLoadState == LoadState.loading) {
       return const _PagePlaceholder(
-        child: SizedBox.shrink(),
+        child: Center(
+          child: SizedBox(
+            width: 36,
+            height: 36,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.4,
+              valueColor:
+                  AlwaysStoppedAnimation<Color>(Color(0x73FFFFFF)),
+            ),
+          ),
+        ),
       );
     }
     if (state.extendedImageLoadState == LoadState.failed) {
@@ -796,18 +947,55 @@ class _ReaderPage extends StatelessWidget {
         ),
       );
     }
+    // Decoded: report the real bitmap size so continuous lists can swap
+    // their aspect estimate for the exact one (fires once per url).
+    final info = state.extendedImageInfo;
+    if (info != null) {
+      onDecoded?.call(Size(
+          info.image.width.toDouble(), info.image.height.toDouble()));
+    }
     return state.completedWidget;
   }
 
-  GestureConfig _gestureConfig(ExtendedImageState state) {
+  /// Double-tap zoom toggle (1x ⇄ 2.2x at the tapped point).
+  void _onDoubleTap(ExtendedImageGestureState state) {
+    final Offset? pos = state.pointerDownPosition;
+    final double begin = state.gestureDetails?.totalScale ?? 1.0;
+    state.handleDoubleTap(
+      scale: begin == 1.0 ? 2.2 : 1.0,
+      doubleTapPosition: pos,
+    );
+  }
+
+  GestureConfig _gestureConfig(
+      BuildContext context, ExtendedImageState state, Size cell) {
+    // "Original size" done right: raw BoxFit.none paints 1 bitmap pixel as
+    // 1 LOGICAL dp — on a 420dpi phone that is a permanent ~2.6x zoom
+    // ("pages too zoomed in"). Instead keep the contain baseline and set the
+    // initial gesture scale so the bitmap renders 1 device pixel per bitmap
+    // pixel (imageWidth/dpr logical dp wide).
+    var initialScale = 1.0;
+    if (fit == ReaderFit.original) {
+      final info = state.extendedImageInfo;
+      if (info != null && cell.width > 0 && cell.height > 0) {
+        final dpr = MediaQuery.devicePixelRatioOf(context);
+        final ar = info.image.width / info.image.height;
+        final containWidth =
+            cell.width < cell.height * ar ? cell.width : cell.height * ar;
+        if (containWidth > 0) {
+          initialScale =
+              (info.image.width / dpr / containWidth).clamp(0.5, 6.0);
+        }
+      }
+    }
     return GestureConfig(
-      minScale: 0.9,
+      minScale: initialScale < 0.9 ? initialScale : 0.9,
       animationMinScale: 0.7,
-      maxScale: 4.0,
-      animationMaxScale: 4.5,
+      maxScale: 6.0,
+      animationMaxScale: 6.5,
       speed: 1.0,
       inertialSpeed: 100.0,
-      initialScale: 1.0,
+      initialScale: initialScale,
       inPageView: !isWebtoon,
     );
   }
@@ -1130,13 +1318,17 @@ class _ReaderSettingsSheet extends ConsumerWidget {
   String _fitLabel(ReaderFit f) {
     switch (f) {
       case ReaderFit.contain:
-        return 'Fit';
+        return 'Fit Screen';
       case ReaderFit.cover:
         return 'Cover';
       case ReaderFit.fill:
         return 'Stretch';
       case ReaderFit.original:
         return 'Original';
+      case ReaderFit.width:
+        return 'Fit Width';
+      case ReaderFit.height:
+        return 'Fit Height';
     }
   }
 }

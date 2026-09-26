@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import 'dart:async' show unawaited;
 import 'dart:collection';
 import 'dart:io';
 import 'dart:math' as math;
@@ -504,6 +505,10 @@ class _NovelReaderViewState extends ConsumerState<NovelReaderView> {
   bool _fileLoadAttempted = false;
   String? _fileLoadError;
 
+  /// Session clock for stats — novel reading previously never reached the
+  /// stats pipeline at all (no session, no heatmap cell, no minutes).
+  final DateTime _sessionStart = DateTime.now();
+
   // ---- Read-aloud (TTS) state -------------------------------------------
   // The reader was originally shipped TTS-READY (ttsWords/ttsWordIndex
   // plumbing + stripHtml) but no engine was ever attached — the buttons
@@ -693,8 +698,28 @@ class _NovelReaderViewState extends ConsumerState<NovelReaderView> {
   void dispose() {
     _stopSpeaking();
     _tts?.stop();
+    _recordStatsSession();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  /// Duration-only stats session (novels have no bitmap pages; the heatmap
+  /// paints intensity for time-only sessions since the stats rework).
+  void _recordStatsSession() {
+    if (ref.read(incognitoModeProvider)) return;
+    final seconds = DateTime.now().difference(_sessionStart).inSeconds;
+    if (seconds < 10) return;
+    unawaited(() async {
+      try {
+        await ref.read(data.statsRepositoryProvider).recordSession(
+          mangaId: widget.novelId,
+          pagesRead: 0,
+          durationSeconds: seconds.clamp(1, 60 * 60 * 6),
+        );
+      } catch (e) {
+        debugPrint('Novel reader stats session failed: $e');
+      }
+    }());
   }
 
   // ---- Read-aloud ---------------------------------------------------------

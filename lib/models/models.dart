@@ -145,6 +145,7 @@ class Manga {
     this.unreadCount = 0,
     this.totalChapters = 0,
     this.lastChapterRead = 0,
+    this.sourceError,
   });
 
   final int id;
@@ -167,6 +168,11 @@ class Manga {
   int unreadCount;
   int totalChapters;
   double lastChapterRead;
+
+  /// When the metadata loaded but the chapter/episode list failed (e.g.
+  /// provider unreachable), the partial error text — the detail screen
+  /// shows an inline retry block instead of dying with a blank screen.
+  String? sourceError;
 
   bool get isAnime => itemType == ItemType.anime;
 
@@ -201,6 +207,7 @@ class Manga {
         unreadCount: unreadCount,
         totalChapters: totalChapters,
         lastChapterRead: lastChapterRead,
+        sourceError: sourceError,
       );
 
   int get readCount => totalChapters - unreadCount;
@@ -509,11 +516,18 @@ class StatDay {
 
 /// One selectable video stream quality for an anime episode.
 class VideoQuality {
-  VideoQuality(this.label, this.url, this.height, {this.subtitles = const []});
+  VideoQuality(this.label, this.url, this.height,
+      {this.subtitles = const [], this.headers});
 
   final String label;
   final String url;
   final int height;
+
+  /// HTTP headers (User-Agent, Referer, …) the stream CDN requires.
+  /// Video CDNs (AniZone's vid-cdn edge, Cloudflare-fronted hosts) commonly
+  /// 403 hotlinked .m3u8/.ts requests that lack a browser UA — the player
+  /// and downloader MUST forward these.
+  final Map<String, String>? headers;
 
   /// External subtitle tracks bundled with this stream (AniZone and other
   /// anime providers attach ASS/VTT tracks to their HLS entries).
