@@ -17,7 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/ui/lumina_ui.dart';
 import '../../data/providers.dart' as data;
-import '../../eval/lib.dart' show kSupportedTemplates;
+import '../../eval/lib.dart' as eval_lib;
 import 'browse_screen.dart' show showAddRepoSheet;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -110,7 +110,7 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
           HeroIconButton(
             tooltip: 'Add repository',
             icon: Icons.add_link,
-            onPressed: () => showAddRepoSheet(context, ref),
+            onPressed: () => showAddRepoSheet(context),
           ),
           const SizedBox(width: 8),
         ],
@@ -310,7 +310,7 @@ class _ReposTab extends ConsumerWidget {
               HeroButton(
                 label: 'Add repository',
                 icon: Icons.add_link,
-                onPressed: () => showAddRepoSheet(context, ref),
+                onPressed: () => showAddRepoSheet(context),
               ),
             ],
           ),
@@ -367,39 +367,56 @@ class _ReposTab extends ConsumerWidget {
 // Shared extension row
 // ---------------------------------------------------------------------------
 
-class _ExtensionTile extends ConsumerWidget {
+class _ExtensionTile extends ConsumerStatefulWidget {
   const _ExtensionTile({required this.entry, required this.isBuiltin});
 
   final Source entry;
   final bool isBuiltin;
 
+  @override
+  ConsumerState<_ExtensionTile> createState() => _ExtensionTileState();
+}
+
+class _ExtensionTileState extends ConsumerState<_ExtensionTile> {
+  bool _busy = false;
+  String? _error;
+
   bool get _supported =>
-      kSupportedTemplates.contains((entry.typeSource ?? '').toLowerCase()) ||
-      isBuiltin ||
-      // MangaDex language variants arrive as typeSource "single" with the
-      // mangadex.org base URL — the native MangaDex template handles them.
-      ((entry.typeSource ?? '').toLowerCase() == 'single' &&
-          (entry.baseUrl.contains('mangadex.org')));
+      widget.isBuiltin ||
+      // Central truth: templates, MangaDex variants, JS extensions and
+      // Aniyomi/Mihon APK extensions.
+      eval_lib.isRepoDtoSupported(
+        typeSource: widget.entry.typeSource,
+        baseUrl: widget.entry.baseUrl,
+        sourceCodeLanguage: widget.entry.sourceCodeLanguage,
+      );
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final h = HeroScope.of(context);
+    final entry = widget.entry;
     final hasUpdate =
         entry.versionLast != null && entry.versionLast != entry.version;
-    final template = (entry.typeSource ?? 'unknown').toLowerCase();
-    final subtitle = isBuiltin
+    final kind = entry.isApk
+        ? 'APK'
+        : (entry.sourceCodeLanguage == 1
+            ? 'JS'
+            : (entry.typeSource ?? 'unknown').toLowerCase());
+    final subtitle = widget.isBuiltin
         ? '${entry.lang} • v${entry.version} • built-in'
-        : '$template • v${entry.version}'
-            '${hasUpdate ? ' • v${entry.versionLast} available' : ''}';
+        : '$kind • ${entry.lang} • v${entry.version}'
+            '${hasUpdate ? ' • v${entry.versionLast} available' : ''}'
+            '${_error != null ? ' • $_error' : ''}';
     return HeroListTile(
       leading: _iconTile(h),
       title: entry.name,
       subtitle: subtitle,
-      trailing: _trailing(ref, h),
+      trailing: _trailing(h),
     );
   }
 
   Widget _iconTile(HeroThemeData h) {
+    final entry = widget.entry;
     if (entry.iconUrl != null) {
       return Container(
         width: 42,
@@ -426,7 +443,23 @@ class _ExtensionTile extends ConsumerWidget {
         child: Icon(Icons.extension_rounded, size: 20, color: h.accentSoftFg),
       );
 
-  Widget _trailing(WidgetRef ref, HeroThemeData h) {
+  Widget _trailing(HeroThemeData h) {
+    final entry = widget.entry;
+    final hasUpdate =
+        entry.versionLast != null && entry.versionLast != entry.version;
+    if (_busy) {
+      return const SizedBox(
+        width: 32,
+        height: 32,
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
     if (!_supported) {
       return const Tooltip(
         message: 'This extension needs the code interpreter, which is not '
@@ -446,7 +479,7 @@ class _ExtensionTile extends ConsumerWidget {
       // uninstalling a builtin removed it from every list with no catalog
       // row to reinstall from (builtins have no repo entry) — an
       // unrecoverable dead-end unless the user wiped app data.
-      if (isBuiltin) {
+      if (widget.isBuiltin) {
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -497,7 +530,7 @@ class _ExtensionTile extends ConsumerWidget {
     // DISABLED builtin: re-enable (the repo Install path below cannot
     // handle builtin rows — wrong service, and the row would be gone
     // forever if it ever vanished from this list).
-    if (isBuiltin) {
+    if (widget.isBuiltin) {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -521,10 +554,27 @@ class _ExtensionTile extends ConsumerWidget {
     // Repo extension that was uninstalled/disabled — reinstall stays
     // available from its catalog row (builtins never reach this branch).
     return HeroButton(
-      label: 'Install',
+      label: hasUpdate ? 'Update' : 'Install',
       size: HeroButtonSize.sm,
       onPressed: () async {
-        await ref.read(data.extensionRepoServiceProvider).install(idString);
+        setState(() {
+          _busy = true;
+          _error = null;
+        });
+        try {
+          await ref
+              .read(data.extensionRepoServiceProvider)
+              .install(idString);
+        } catch (e) {
+          if (mounted) {
+            setState(() {
+              _busy = false;
+              _error = e.toString().replaceFirst('Exception: ', '');
+            });
+          }
+          return;
+        }
+        if (mounted) setState(() => _busy = false);
       },
     );
   }

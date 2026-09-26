@@ -36,6 +36,11 @@ enum SourceCodeLanguage {
 
   /// Lua source (planned — currently unsupported).
   lua,
+
+  /// Aniyomi/Mihon APK extension — runs through the on-device Dex class
+  /// loader bridge (eval/mihon/), NOT through an interpreter. The APK bytes
+  /// (base64) live in [Source.sourceCode], exactly like upstream Mangayomi.
+  mihon,
 }
 
 /// Strategy used by the source to expose its catalog.
@@ -195,6 +200,10 @@ class Source {
 
   /// Default HTTP headers, stored as a JSON-encoded string.
   String? headersJson;
+
+  /// Per-source preference VALUES, JSON-encoded `{key: value}` map.
+  /// Written by the extension-preferences UI / JS `SharedPreferences` glue.
+  String? sourcePreferencesJson;
 
   /// Tags describing the source (e.g. `multi`, `nsfw`).
   List<String>? tags;
@@ -360,6 +369,7 @@ class Source {
     this.hasCloudflare,
     this.isFullData,
     this.headersJson,
+    this.sourcePreferencesJson,
     this.tags,
     this.sourceCode,
     this.sourceCodeLanguage,

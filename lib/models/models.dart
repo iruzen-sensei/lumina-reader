@@ -237,6 +237,8 @@ class Source {
     this.additionalParams,
     this.sourceCodeUrl,
     this.versionLast,
+    this.sourceCodeLanguage,
+    this.isApk = false,
   });
 
   final int id;
@@ -271,6 +273,12 @@ class Source {
 
   /// Latest version in the repo (update available when > [version]).
   final String? versionLast;
+
+  /// 0 dart, 1 javascript, 3 mihon (APK) — mirrors the Isar enum values.
+  final int? sourceCodeLanguage;
+
+  /// APK-backed (Aniyomi/Mihon) extension.
+  final bool isApk;
 }
 
 /// A user created shelf such as "Reading" or "Watch list".

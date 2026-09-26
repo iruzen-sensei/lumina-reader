@@ -1,0 +1,23 @@
+# Ported VERBATIM from upstream Mangayomi (Apache-2.0, same fork lineage).
+# The corpus relies on implicit dynamic downcasts and upstream's lint style;
+# runtime behaviour is identical, so the repo's strict gates are relaxed for
+# this directory only.
+analyzer:
+  language:
+    strict-casts: false
+    strict-raw-types: false
+  errors:
+    dead_null_aware_expression: ignore
+    unnecessary_import: ignore
+    unused_import: ignore
+    unused_local_variable: ignore
+    avoid_print: ignore
+    unnecessary_cast: ignore
+    unnecessary_non_null_assertion: ignore
+    unnecessary_string_interpolations: ignore
+    prefer_const_declarations: ignore
+    prefer_final_locals: ignore
+    prefer_single_quotes: ignore
+    unawaited_futures: ignore
+linter:
+  rules: false

@@ -99,7 +99,23 @@ dependencies:
   # NOTE: d4rt (Dart interpreter) REMOVED — every published version conflicts
   # with isar_generator's analyzer/source_gen constraints, and the backend was
   # parked as experimental anyway. The supported extension path is native
-  # Dart sources (eval/native/) + QuickJS (flutter_qjs).
+  # -- Extension runtimes ---------------------------------------------------
+  # QuickJS engine (kodjodevf fork, Android 16KB-page-size ready) powering the
+  # Mangayomi JS extension host in eval/javascript/.
+  flutter_qjs:
+    git:
+      url: https://github.com/kodjodevf/flutter_qjs.git
+      ref: main
+  # Aniyomi/Mihon APK extension bridge: local NanoHTTPD server + Dex class
+  # loader speaking the /dalvik JSON protocol (eval/mihon/).
+  m_extension_server:
+    git:
+      url: https://github.com/kodjodevf/m_extension_server.git
+  # CSS selector engine with :has()/:contains() for the JS DOM bridge.
+  pseudom: ^1.0.1
+  # P.A.C.K.E.R. unpacker for JS video-host extractors.
+  js_packer: ^0.0.6
+
 
   # Localization & Deep links
   app_links: ^6.4.0

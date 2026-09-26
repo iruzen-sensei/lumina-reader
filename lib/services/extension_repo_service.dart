@@ -1,20 +1,35 @@
 // Copyright 2024 Lumina Reader Contributors
-// Licensed under the Apache License, Version 2.0
 //
-// EXTENSION REPO SERVICE — makes "Add repository" real.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// Speaks the Mangayomi extension-repo format (github.com/kodjodevf/
-// mangayomi-extensions): a JSON array index (`index.json`) of source
-// descriptors:
-//   { name, id, baseUrl, lang, typeSource, iconUrl, dateFormat,
-//     dateFormatLocale, isNsfw, hasCloudflare, sourceCodeUrl, version,
-//     isManga, appMinVerReq, additionalParams, sourceCodeLanguage }
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// Installing an extension does NOT download or interpret code: multisrc
-// entries (typeSource madara / mangareader, 238 of the 363 official
-// extensions) map to the NATIVE templates in eval/native/ — a Source row
-// with the site's config is all that's needed. Non-template entries are
-// listed but marked unsupported (honest "Not supported in this build").
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// EXTENSION REPO SERVICE — repository registration, sync and install for
+// EVERY index format in the Tachiyomi / Aniyomi / Mihon / Mangayomi
+// ecosystem (see repo_index_parser.dart):
+//
+//   * Mangayomi JSON array      (index.json)
+//   * Tachiyomi/Aniyomi legacy  (index.min.json — pkg/apk/sources[])
+//   * v2 JSON store             ({"name":…, "extensions":[…]})
+//   * repo.json redirect        ({"index_v2": <url>})
+//   * index.pb protobuf         (gzip'd, manga AND anime schema variants)
+//
+// Installing:
+//   * multisrc template rows (madara / mangareader / …) — flag flip; the
+//     native template in eval/native/ runs them;
+//   * JS extensions — the .js from sourceCodeUrl is fetched into
+//     Source.sourceCode and executed by the QuickJS host (eval/javascript/);
+//   * APK extensions (Aniyomi/Mihon) — the APK is downloaded, base64-stored
+//     in Source.sourceCode and executed by the on-device Dex bridge
+//     (eval/mihon/ + services/extension_server.dart).
 //
 // ignore_for_file: avoid_dynamic_calls
 
@@ -27,9 +42,10 @@ import 'package:isar/isar.dart';
 import '../models/settings.dart' as db;
 import '../models/source.dart' as db;
 import '../services/http/m_client.dart';
+import 'repo_index_parser.dart';
 
-/// A repository the user added (or the default seed), persisted in the
-/// Settings row as JSON.
+/// A repository the user added (or one of the default seeds), persisted in
+/// the Settings row as JSON.
 class ExtensionRepo {
   ExtensionRepo({
     required this.url,
@@ -40,10 +56,10 @@ class ExtensionRepo {
     this.lastError,
   });
 
-  /// Index URL (normalized to end with a JSON file name).
+  /// Index URL (normalized to point at a real index file).
   final String url;
 
-  /// Display name (inferred from the URL when the repo has no meta).
+  /// Display name (inferred from the URL or the store's own name).
   final String name;
 
   final DateTime? addedAt;
@@ -74,7 +90,7 @@ class ExtensionRepo {
       );
 }
 
-/// One parsed index entry (Mangayomi format).
+/// One parsed index entry (Mangayomi format — kept for the tile DTO).
 class RepoExtension {
   RepoExtension({
     required this.repoId,
@@ -112,23 +128,36 @@ class RepoExtension {
   final String? additionalParams;
   final int sourceCodeLanguage;
 
-  /// Mirrors the corresponding Source row's install state.
   bool installed;
-
-  /// A newer version exists in the repo than the installed one.
   bool updatable;
 
   /// Whether this build can run the extension natively.
   bool get isSupported =>
       const {'madara', 'mangareader', 'mangadex', 'mangabox', 'mmrcms'}
           .contains(typeSource.toLowerCase()) ||
-      // 45 repo entries are MangaDex language variants disguised as
-      // `single` sources (baseUrl = mangadex.org) — natively supported.
-      (typeSource.toLowerCase() == 'single' && baseUrl.contains('mangadex.org'));
+      (typeSource.toLowerCase() == 'single' &&
+          (sourceCodeLanguage == 1 || baseUrl.contains('mangadex.org')));
 }
 
-/// Default repository seeded on first launch — the official Mangayomi
-/// extension index (363 extensions, 68% of them native-template compatible).
+/// Default repositories seeded on first launch. Together they cover the
+/// whole ecosystem: Mangayomi manga JS + templates, the anime/novel JS
+/// corpus (eJ fork), the Mihon manga-APK universe (keiyoushi, 1.3k+
+/// extensions via index.pb) and the official Aniyomi anime-APK repo.
+const List<String> kDefaultRepoUrls = [
+  // Mangayomi official manga index (363 entries; madara/mangareader
+  // multisrc + JS singles incl. the 45 MangaDex language variants).
+  'https://raw.githubusercontent.com/kodjodevf/mangayomi-extensions/main/index.json',
+  // Anime JS corpus (61 entries — AllAnime, AnimeWorld, …; 22 are JS).
+  'https://raw.githubusercontent.com/entityJY/mangayomi-extensions-eJ/main/anime_index.json',
+  // Novel JS corpus (5 entries).
+  'https://raw.githubusercontent.com/entityJY/mangayomi-extensions-eJ/main/novel_index.json',
+  // Mihon/keiyoushi manga APK universe (1.3k+ extensions; index.pb).
+  'https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.pb',
+  // Official Aniyomi anime APK repo (legacy index.min.json).
+  'https://raw.githubusercontent.com/aniyomiorg/aniyomi-extensions/repo/index.min.json',
+];
+
+/// Kept for backwards compatibility with existing settings rows.
 const String kDefaultRepoUrl =
     'https://raw.githubusercontent.com/kodjodevf/mangayomi-extensions/main/index.json';
 
@@ -140,7 +169,7 @@ class ExtensionRepoService {
   http.Client? _client;
   http.Client get _http => _client ??= MClient.httpClient(
         useLogger: false,
-        timeout: const Duration(seconds: 25),
+        timeout: const Duration(seconds: 15),
       );
 
   // -----------------------------------------------------------------------
@@ -154,8 +183,7 @@ class ExtensionRepoService {
     try {
       final list = jsonDecode(raw) as List;
       return list
-          .map((e) =>
-              ExtensionRepo.fromJson(e as Map<String, dynamic>))
+          .map((e) => ExtensionRepo.fromJson(e as Map<String, dynamic>))
           .toList();
     } catch (_) {
       return const [];
@@ -171,30 +199,39 @@ class ExtensionRepoService {
     });
   }
 
-  /// Seeds the default repository on first run. Idempotent.
+  /// Seeds the default repositories on first run. Idempotent.
   Future<void> ensureDefaultRepo() async {
     final repos = await getRepos();
-    if (repos.any((r) => r.url == kDefaultRepoUrl)) return;
-    await addRepo(kDefaultRepoUrl, sync: false);
+    var changed = false;
+    for (final url in kDefaultRepoUrls) {
+      if (repos.any((r) => r.url == url)) continue;
+      await _addRepoRow(url, sync: false);
+      changed = true;
+    }
+    if (changed) debugPrint('ExtensionRepoService: seeded default repos');
   }
 
   // -----------------------------------------------------------------------
   // URL normalization
   // -----------------------------------------------------------------------
 
-  /// Mangayomi-compatible URL normalization: a bare repo URL gets
-  /// /index.min.json, /repo.json, /index.json appended candidates.
+  /// Candidate index URLs for a raw user-supplied URL. Tries the URL as
+  /// given (when it already points at an index file) plus the standard
+  /// index file names.
   List<String> candidateUrls(String rawUrl) {
     final clean = rawUrl.trim();
     final urls = <String>[clean];
-    if (!clean.endsWith('.json') && !clean.endsWith('.pb')) {
+    final lower = clean.toLowerCase();
+    if (!lower.endsWith('.json') &&
+        !lower.endsWith('.pb') &&
+        !lower.endsWith('.pb.gz')) {
       final normalized =
           clean.endsWith('/') ? clean.substring(0, clean.length - 1) : clean;
       urls.addAll([
         '$normalized/index.min.json',
-        '$normalized/repo.json',
         '$normalized/index.json',
-        '$normalized/index_v2.json',
+        '$normalized/index.pb',
+        '$normalized/repo.json',
       ]);
     }
     return urls.toSet().toList();
@@ -211,74 +248,96 @@ class ExtensionRepoService {
         .where((s) =>
             s.isNotEmpty &&
             !s.endsWith('.json') &&
+            !s.endsWith('.pb') &&
             s != '.dist' &&
             s != 'dist' &&
             s != 'build' &&
             s != '.build')
         .toList();
-    return segments.isNotEmpty ? segments.last : uri.host;
+    return segments.isNotEmpty ? segments.first : uri.host;
+  }
+
+  // -----------------------------------------------------------------------
+  // Fetch + parse (with redirect following)
+  // -----------------------------------------------------------------------
+
+  /// Fetches [url], gunzips/decodes and parses it. Follows repo.json /
+  /// extensionListUrl redirects (depth 2) like Aniyomi/Mihon themselves do.
+  Future<ParsedRepoIndex> _fetchAndParse(String url, {int depth = 0}) async {
+    final res = await _http.get(Uri.parse(url));
+    if (res.statusCode != 200) {
+      throw Exception('Repository returned HTTP ${res.statusCode}');
+    }
+    if (res.bodyBytes.length > 8 * 1024 * 1024) {
+      throw Exception('Repository index too large (>8 MB) — refusing.');
+    }
+    final result = parseRepoIndex(res.bodyBytes, url);
+    if (result.isRedirect) {
+      if (depth >= 2) {
+        throw Exception('Repository redirect chain too deep.');
+      }
+      return _fetchAndParse(result.redirectUrl!, depth: depth + 1);
+    }
+    return result.index!;
   }
 
   // -----------------------------------------------------------------------
   // Add / remove repos
   // -----------------------------------------------------------------------
 
-  /// Validates + persists a repository. Returns the parsed extension count,
-  /// or throws with a human-readable reason. Also upserts the catalog rows.
+  /// Validates + persists a repository. Returns the parsed extension count.
+  /// ALL candidates are fetched in PARALLEL (a dead repo answers with
+  /// timeouts — sequential probing took minutes); the parse with the most
+  /// extensions wins, which also defeats keiyoushi's index.min.json stub
+  /// ("Outdated App" — 2 entries) whose real catalog lives in index.pb.
   Future<int> addRepo(String rawUrl, {bool sync = true}) async {
-    final urls = candidateUrls(rawUrl);
-    Map<String, dynamic>? meta;
-    String? workingUrl;
-    for (final url in urls) {
-      // Scheme allowlist: an http:// (cleartext) or non-HTTP scheme here
-      // is either a typo or a hostile repo — reject before fetching.
-      if (!url.startsWith('https://') && !url.startsWith('http://')) {
-        continue;
-      }
+    final urls = candidateUrls(rawUrl)
+        .where((u) => u.startsWith('https://') || u.startsWith('http://'))
+        .toList();
+    if (urls.isEmpty) {
+      throw Exception('Repository URL must start with http:// or https://');
+    }
+
+    // Fetch ALL candidates in parallel; each failure degrades to null and
+    // the survivor with the most extensions wins.
+    final results = <(String, ParsedRepoIndex)>[];
+    await Future.wait(urls.map((u) async {
       try {
-        final res = await _http.get(Uri.parse(url));
-        if (res.statusCode != 200) continue;
-        if (res.bodyBytes.length > 5 * 1024 * 1024) {
-          // Unbounded index = OOM vector; a legit Mangayomi index is
-          // well under 1 MB.
-          continue;
-        }
-        final decoded = jsonDecode(utf8.decode(res.bodyBytes));
-        if (decoded is List && decoded.isNotEmpty && decoded.first is Map) {
-          final first = decoded.first as Map;
-          if (first['name'] != null && first['baseUrl'] != null) {
-            meta = {
-              'url': url,
-              'name': inferRepoName(url),
-            };
-            workingUrl = url;
-            break;
-          }
-        }
+        results.add((u, await _fetchAndParse(u)));
       } catch (_) {
-        continue;
+        // Candidate failed — other candidates may still work.
       }
-    }
-    if (workingUrl == null) {
+    }));
+
+    if (results.isEmpty) {
       throw Exception(
-          'Not a Mangayomi extension repository (no JSON index found at '
-          '${urls.first})');
+          'No readable index found (tried ${urls.length} candidate URLs '
+          'at ${urls.first}). Supported: index.json, index.min.json, '
+          'index.pb, repo.json.');
     }
+
+    // Most extensions wins (ties → first in candidate order).
+    results.sort((a, b) => b.$2.extensions.length.compareTo(
+          a.$2.extensions.length,
+        ));
+    final (workingUrl, index) = results.first;
+    if (index.extensions.isEmpty) {
+      throw Exception('Repository index contains no extensions.');
+    }
+
+    final name =
+        index.storeName?.isNotEmpty == true ? index.storeName! : inferRepoName(workingUrl);
 
     // SYNC FIRST, PERSIST SECOND: the old order registered the repo even
     // when the sync then failed — the user saw "Could not add repository"
     // but the broken repo appeared (and kept re-syncing) anyway.
     if (sync) {
       final count = await syncRepo(workingUrl);
-      if (count == 0) {
-        throw Exception('No compatible extensions were found in the '
-            'repository index.');
-      }
       var repos = await getRepos();
       repos = repos.where((r) => r.url != workingUrl).toList()
         ..add(ExtensionRepo(
           url: workingUrl,
-          name: meta!['name'] as String,
+          name: name,
           addedAt: DateTime.now(),
         ));
       await _saveRepos(repos);
@@ -288,20 +347,26 @@ class ExtensionRepoService {
     repos = repos.where((r) => r.url != workingUrl).toList()
       ..add(ExtensionRepo(
         url: workingUrl,
-        name: meta!['name'] as String,
+        name: name,
         addedAt: DateTime.now(),
       ));
     await _saveRepos(repos);
-    return 0;
+    return index.extensions.length;
+  }
+
+  Future<void> _addRepoRow(String url, {required bool sync}) async {
+    var repos = await getRepos();
+    repos = repos.where((r) => r.url != url).toList()
+      ..add(ExtensionRepo(url: url, name: inferRepoName(url), addedAt: DateTime.now()));
+    await _saveRepos(repos);
   }
 
   Future<void> removeRepo(String url) async {
     final repos = await getRepos();
     await _saveRepos(repos.where((r) => r.url != url).toList());
     // Uninstall every catalog row that came from THIS repo — the old
-    // `url.startsWith(_repoKeyBase(r))` prefix-match also caught sibling
-    // repos (…/repo vs …/repo2) and matched EVERYTHING when a row's repo
-    // URL was empty.
+    // prefix-match also caught sibling repos (…/repo vs …/repo2) and
+    // matched EVERYTHING when a row's repo URL was empty.
     await _isar.writeTxn(() async {
       final rows = await _isar.sources
           .filter()
@@ -322,73 +387,112 @@ class ExtensionRepoService {
   // -----------------------------------------------------------------------
 
   /// Fetches the repo index and upserts the catalog Source rows (NOT
-  /// installed). Existing installs keep their enabled state; versionLast is
-  /// refreshed. Returns the number of extensions in the index.
+  /// installed). Existing installs keep their enabled state and downloaded
+  /// code; versionLast is refreshed. Returns the number of SOURCE rows
+  /// (an APK with 3 sources becomes 3 rows, like Aniyomi itself presents
+  /// them).
   ///
-  /// All rows are persisted in ONE write transaction — 361 individual
-  /// writeTxns fired the sources watcher 361 times, which rebuilt the
-  /// extensions sheet in a jank storm on every sync ("the whole app bugs
-  /// out" — live-reproduced).
+  /// All rows are persisted in ONE write transaction — hundreds of
+  /// individual writeTxns fired the sources watcher hundreds of times,
+  /// which rebuilt the extensions sheet in a jank storm on every sync.
   Future<int> syncRepo(String url) async {
-    final res = await _http.get(Uri.parse(url));
-    if (res.statusCode != 200) {
-      throw Exception('Repository returned HTTP ${res.statusCode}');
-    }
-    if (res.bodyBytes.length > 5 * 1024 * 1024) {
-      throw Exception('Repository index too large (>5 MB) — refusing.');
-    }
-    final decoded = jsonDecode(utf8.decode(res.bodyBytes));
-    if (decoded is! List) {
-      throw Exception('Unexpected repository index format');
-    }
-
-    final repoName = inferRepoName(url);
-    final entries = decoded.whereType<Map<dynamic, dynamic>>().toList();
+    final index = await _fetchAndParse(url);
+    final repoName =
+        index.storeName?.isNotEmpty == true ? index.storeName! : inferRepoName(url);
 
     // Resolve existing rows (read-only pass) so install state survives.
-    final existingByld = <String, db.Source>{};
+    final existingById = <String, db.Source>{};
     final existingRows = await _isar.sources
         .filter()
         .idStringContains('repo-')
         .findAll();
     for (final r in existingRows) {
       final key = r.idString;
-      if (key != null) existingByld[key] = r;
+      if (key != null) existingById[key] = r;
     }
 
     final batch = <db.Source>[];
+    var skipped = 0;
+    switch (index.format) {
+      case RepoFormat.mangayomiJson:
+        skipped = _syncMangayomi(index, repoName, url, existingById, batch);
+      case RepoFormat.tachiyomiLegacyJson:
+      case RepoFormat.protobuf:
+      case RepoFormat.v2Json:
+        skipped = _syncApkIndex(index, repoName, url, existingById, batch);
+    }
+
+    await _isar.writeTxn(() async => _isar.sources.putAll(batch));
+    if (skipped > 0) {
+      debugPrint('ExtensionRepoService.syncRepo: skipped $skipped malformed '
+          'entries in $url');
+    }
+
+    // Update repo stats.
+    final repos = await getRepos();
+    for (var i = 0; i < repos.length; i++) {
+      if (repos[i].url == url) {
+        repos[i] = ExtensionRepo(
+          url: repos[i].url,
+          name: repoName,
+          addedAt: repos[i].addedAt,
+          lastSyncAt: DateTime.now(),
+          extensionCount: batch.length,
+        );
+      }
+    }
+    await _saveRepos(repos);
+    return batch.length;
+  }
+
+  /// Mangayomi-format entries: template rows + JS rows (sourceCodeUrl).
+  int _syncMangayomi(ParsedRepoIndex index, String repoName, String url,
+      Map<String, db.Source> existingById, List<db.Source> batch) {
     var malformed = 0;
-    for (final e in entries) {
+    for (final ext in index.extensions) {
+      final e = ext.mangayomiEntry;
+      if (e == null) {
+        malformed++;
+        continue;
+      }
       try {
         final id = e['id'];
-        final name = e['name'];
-        if (id is! int || name is! String) continue;
-
+        if (id is! int) {
+          malformed++;
+          continue;
+        }
         final idString = 'repo-$repoName-$id';
-        final existing = existingByld[idString];
+        final existing = existingById[idString];
         final row = existing ?? db.Source();
         row.idString = idString;
-        row.name = name;
+        row.name = ext.name;
         row.customName = null;
-        row.lang = (e['lang'] as String?) ?? 'en';
-        row.baseUrl = (e['baseUrl'] as String?) ?? '';
-        row.iconUrl = e['iconUrl'] as String?;
+        row.lang = ext.lang;
+        row.baseUrl = ext.mangayomiEntry?['baseUrl'] as String? ?? '';
+        row.apiUrl = e['apiUrl'] as String?;
+        row.iconUrl = ext.iconUrl;
         row.version =
-            existing?.version ?? (e['version'] as String? ?? '0.0.1');
-        row.versionLast = e['version'] as String? ?? row.version;
+            existing?.version ?? (ext.versionName ?? '0.0.1');
+        row.versionLast = ext.versionName ?? row.version;
         row.typeSource = e['typeSource'] as String? ?? '';
         row.dateFormat = e['dateFormat'] as String?;
         row.dateFormatLocale = e['dateFormatLocale'] as String?;
         row.additionalParams = e['additionalParams'] as String?;
         row.sourceCodeUrl = e['sourceCodeUrl'] as String?;
         row.appMinVerReq = e['appMinVerReq'] as String?;
-        row.isNsfw = e['isNsfw'] as bool? ?? false;
+        row.isNsfw = ext.isNsfw;
         row.hasCloudflare = e['hasCloudflare'] as bool? ?? false;
-        row.isManga = e['isManga'] as bool? ?? true;
-        row.isAnime = false;
-        // Newly discovered rows start NOT installed; existing rows keep their
-        // install state.
+        row.isManga = !ext.isAnime && !ext.isNovel;
+        row.isAnime = ext.isAnime;
+        // Novels browse through the manga pipeline (text chapters).
+        row.sourceCodeLanguage = switch (e['sourceCodeLanguage']) {
+          1 => db.SourceCodeLanguage.javascript,
+          _ => null,
+        };
+        // Newly discovered rows start NOT installed; existing rows keep
+        // their install state AND downloaded code.
         row.isEnabled = existing?.isEnabled ?? false;
+        if (existing?.sourceCode != null) row.sourceCode = existing!.sourceCode;
         row.isLocal = false;
         row.repo = db.Repo(
           name: repoName,
@@ -403,35 +507,81 @@ class ExtensionRepoService {
         row.lastUpdateAt = DateTime.now().millisecondsSinceEpoch;
         batch.add(row);
       } catch (_) {
-        // ONE malformed entry (type-mismatched field, weird nesting) used
-        // to abort the ENTIRE sync — skip the entry, keep the rest.
         malformed++;
-        continue;
       }
     }
+    return malformed;
+  }
 
-    // ONE transaction for the whole batch — one watcher fire, one fsync.
-    await _isar.writeTxn(() async => _isar.sources.putAll(batch));
-    if (malformed > 0) {
-      debugPrint('ExtensionRepoService.syncRepo: skipped $malformed '
-          'malformed entries in $url');
-    }
+  /// APK formats (legacy JSON / protobuf / v2 JSON): one Source row per
+  /// SOURCE inside each extension APK (Aniyomi's own presentation), all
+  /// sharing the APK URL.
+  int _syncApkIndex(ParsedRepoIndex index, String repoName, String url,
+      Map<String, db.Source> existingById, List<db.Source> batch) {
+    var skipped = 0;
+    for (final ext in index.extensions) {
+      try {
+        final resolvedApkUrl = ext.apkUrl ?? '';
+        final resolvedIcon = ext.iconUrl;
+        if (resolvedApkUrl.isEmpty) {
+          skipped++;
+          continue;
+        }
 
-    // Update repo stats.
-    final repos = await getRepos();
-    for (var i = 0; i < repos.length; i++) {
-      if (repos[i].url == url) {
-        repos[i] = ExtensionRepo(
-          url: repos[i].url,
-          name: repos[i].name,
-          addedAt: repos[i].addedAt,
-          lastSyncAt: DateTime.now(),
-          extensionCount: entries.length,
-        );
+        final sources = ext.sources.isNotEmpty
+            ? ext.sources
+            : [
+                ParsedRepoSource(
+                    id: 0, name: ext.name, lang: ext.lang, baseUrl: '')
+              ];
+        for (final src in sources) {
+          final idString = 'repo-$repoName-${ext.pkg}#${src.id}';
+          final existing = existingById[idString];
+          final row = existing ?? db.Source();
+          row.idString = idString;
+          row.name = src.name.isNotEmpty ? src.name : ext.name;
+          row.customName = null;
+          row.lang = src.lang.isNotEmpty ? src.lang : ext.lang;
+          row.baseUrl = src.baseUrl;
+          row.iconUrl = resolvedIcon ?? ext.iconUrl;
+          row.version = existing?.version ?? (ext.versionName ?? '0');
+          row.versionLast = ext.versionName ?? row.version;
+          row.typeSource = ext.isAnime ? 'apk-anime' : 'apk-manga';
+          row.isNsfw = ext.isNsfw;
+          row.hasCloudflare = false;
+          row.isManga = !ext.isAnime;
+          row.isAnime = ext.isAnime;
+          row.apiUrl = resolvedApkUrl; // APK download URL
+          row.sourceCodeLanguage = db.SourceCodeLanguage.mihon;
+          row.tags = [
+            'apk',
+            if (ext.pkg != null) 'pkg:${ext.pkg}',
+            if (ext.versionCode != null) 'code:${ext.versionCode}',
+            if (ext.isTorrent) 'torrent',
+          ];
+          row.isEnabled = existing?.isEnabled ?? false;
+          if (existing?.sourceCode != null) {
+            row.sourceCode = existing!.sourceCode;
+          }
+          row.isLocal = false;
+          row.repo = db.Repo(
+            name: repoName,
+            sourceUrl: url,
+            typeSource: row.typeSource,
+            iconUrl: row.iconUrl,
+            lang: row.lang,
+            isManga: row.isManga,
+            isNsfw: row.isNsfw,
+            hasCloudflare: false,
+          );
+          row.lastUpdateAt = DateTime.now().millisecondsSinceEpoch;
+          batch.add(row);
+        }
+      } catch (_) {
+        skipped++;
       }
     }
-    await _saveRepos(repos);
-    return entries.length;
+    return skipped;
   }
 
   /// Syncs every registered repo. Errors per repo are captured on the repo
@@ -468,15 +618,58 @@ class ExtensionRepoService {
     }
   }
 
-  /// Marks a catalog row installed (enabled). Only template-compatible
-  /// extensions can be installed — see [RepoExtension.isSupported].
+  // -----------------------------------------------------------------------
+  // Install / uninstall (the real deal: APK download + JS fetch)
+  // -----------------------------------------------------------------------
+
+  /// Installs an extension. For template rows this is a flag flip; for JS
+  /// extensions the source code is fetched; for APK extensions the APK is
+  /// downloaded (base64 into the row, exactly like upstream Mangayomi).
   Future<void> install(String idString) async {
+    final row = await _isar.sources
+        .filter()
+        .idStringEqualTo(idString)
+        .findFirst();
+    if (row == null) return;
+
+    // JS extension: fetch the source code.
+    if (row.sourceCodeLanguage == db.SourceCodeLanguage.javascript) {
+      final codeUrl = row.sourceCodeUrl;
+      if ((row.sourceCode == null || row.sourceCode!.isEmpty) &&
+          codeUrl != null &&
+          codeUrl.isNotEmpty) {
+        final res = await _http.get(Uri.parse(codeUrl));
+        if (res.statusCode != 200) {
+          throw Exception('Could not download extension code '
+              '(HTTP ${res.statusCode}).');
+        }
+        row.sourceCode = utf8.decode(res.bodyBytes);
+      }
+    }
+
+    // APK extension: download the APK (stored base64 — the /dalvik bridge
+    // receives it per call and caches the loaded Dex by content hash).
+    if (row.sourceCodeLanguage == db.SourceCodeLanguage.mihon) {
+      final apkUrl = row.apiUrl;
+      final hasUpdate =
+          row.versionLast != null && row.versionLast != row.version;
+      if ((row.sourceCode == null || row.sourceCode!.isEmpty || hasUpdate) &&
+          apkUrl != null &&
+          apkUrl.isNotEmpty) {
+        final res = await _http.get(Uri.parse(apkUrl));
+        if (res.statusCode != 200) {
+          throw Exception('Could not download extension APK '
+              '(HTTP ${res.statusCode}).');
+        }
+        if (res.bodyBytes.length > 80 * 1024 * 1024) {
+          throw Exception('Extension APK is larger than 80 MB — refusing.');
+        }
+        row.sourceCode = base64Encode(res.bodyBytes);
+        row.version = row.versionLast ?? row.version;
+      }
+    }
+
     await _isar.writeTxn(() async {
-      final row = await _isar.sources
-          .filter()
-          .idStringEqualTo(idString)
-          .findFirst();
-      if (row == null) return;
       row.isEnabled = true;
       row.added = true;
       await _isar.sources.put(row);
@@ -492,13 +685,14 @@ class ExtensionRepoService {
       if (row == null) return;
       row.isEnabled = false;
       row.added = false;
+      // Drop the downloaded payload (APK base64 can be tens of MB).
+      row.sourceCode = null;
       await _isar.sources.put(row);
     });
   }
 
   /// Every catalog row (installed + available) from every registered repo.
-  /// Installed entries sort first (they are the ones users act on), then
-  /// alphabetically.
+  /// Installed entries sort first, then alphabetically.
   Future<List<db.Source>> catalog() async {
     final rows = await _isar.sources
         .filter()

@@ -568,7 +568,35 @@ class MClient {
     );
   }
 
-  /// Convenience singleton cookie manager (useful for clearing cookies etc.).
+    // -- Ported-extractor compatibility surface --------------------------------
+  //
+  // Upstream Mangayomi's newer MClient exposes these statics; the ported
+  // anime_extractors/ corpus calls them. Kept as thin aliases so the
+  // extractors stay byte-close to upstream.
+
+  /// Sets a raw "k=v; k2=v2" cookie string for [url]'s host.
+  static Future<void> setCookieCompat(
+      String url, String? userAgent, Map<String, String>? headers,
+      {String? cookie}) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null || cookie == null || cookie.isEmpty) return;
+    final jar = <String, String>{};
+    for (final part in cookie.split(';')) {
+      final eq = part.indexOf('=');
+      if (eq <= 0) continue;
+      jar[part.substring(0, eq).trim()] = part.substring(eq + 1).trim();
+    }
+    if (jar.isNotEmpty) await cookieManager.setCookiesFor(uri, jar);
+  }
+
+  /// Cookies for [url]'s host as a plain map.
+  static Map<String, String> getCookiesPrefCompat(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return const {};
+    return MCookieManager().getCookiesFor(uri);
+  }
+
+/// Convenience singleton cookie manager (useful for clearing cookies etc.).
   static MCookieManager get cookieManager => _cookieManager;
 
   /// Per-source client cache. Extensions call this with their numeric source

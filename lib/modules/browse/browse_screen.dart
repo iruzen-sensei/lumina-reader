@@ -20,6 +20,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/ui/lumina_ui.dart';
 import '../../data/providers.dart' as data;
+import '../../eval/lib.dart' as eval_lib;
+
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../shared/widgets.dart';
@@ -260,7 +262,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
   // Add repository sheet — see the top-level showAddRepoSheet() below.
   // --------------------------------------------------------------------------
   void _showAddRepoSheet(BuildContext context) {
-    showAddRepoSheet(context, ref);
+    showAddRepoSheet(context);
   }
 
   void _showGlobalSearch(BuildContext context) {
@@ -339,96 +341,141 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
 }
 
 // ----------------------------------------------------------------------------
-// Top-level add-repo sheet — callable from both the app bar and the
-// extensions catalog sheet (previously the catalog sheet's "Add repo"
-// button only dismissed the sheet).
+// Top-level add-repo sheet — callable from anywhere (app bar, extensions
+// screen, extensions catalog sheet).
 //
-// REAL repository registration — fetches the index (with Mangayomi URL
-// normalization), persists the repo and upserts its extension catalog.
-// Surfaces validation errors inline via snack bars.
+// SELF-CONTAINED BY DESIGN: the sheet owns its own [WidgetRef] (it is a
+// ConsumerStatefulWidget, so `ref` lives exactly as long as the sheet
+// route) and the submit path captures the ROOT scaffold messenger before
+// its first await. The previous version accepted the CALLER's `ref` and
+// held it across the network await — when the caller was the extensions
+// catalog sheet (which pops itself right before opening this sheet), that
+// ref was already disposed and every add attempt died with
+// "Bad state: cannot use ref after widget was disposed", masking the real
+// (often just "unsupported format") repository error.
 // ----------------------------------------------------------------------------
-void showAddRepoSheet(BuildContext context, WidgetRef ref) {
-  final controller = TextEditingController();
+void showAddRepoSheet(BuildContext context) {
   showHeroSheet<void>(
     context: context,
     isScrollControlled: true,
     title: 'Add extension repository',
-    builder: (sheetContext) {
-      final h = HeroScope.of(sheetContext);
-      return Padding(
-        padding: EdgeInsets.fromLTRB(
-            20, 0, 20, MediaQuery.of(sheetContext).viewInsets.bottom + 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Paste the URL of a Lumina / Tachiyomi / Aniyomi compatible '
-              'extension repository to make its extensions available.',
-              style: HeroTokens.bodySmall.copyWith(color: h.muted),
-            ),
-            const SizedBox(height: 16),
-            HeroInput(
-              controller: controller,
-              autofocus: true,
-              hint: 'https://raw.githubusercontent.com/…/…',
-              prefixIcon: Icons.link_rounded,
-            ),
-            const SizedBox(height: 8),
-            _ExistingReposList(),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                HeroButton(
-                  label: 'Cancel',
-                  variant: HeroButtonVariant.light,
-                  color: HeroColorRole.neutral,
-                  onPressed: () => Navigator.pop(sheetContext),
-                ),
-                const SizedBox(width: 12),
-                HeroButton(
-                  label: 'Add',
-                  icon: Icons.add_rounded,
-                  onPressed: () =>
-                      _submitRepoUrl(sheetContext, ref, controller.text.trim()),
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
-    },
+    builder: (sheetContext) => const _AddRepoSheet(),
   );
 }
 
-Future<void> _submitRepoUrl(
-    BuildContext sheetContext, WidgetRef ref, String url) async {
-  if (url.isEmpty) return;
-  Navigator.pop(sheetContext);
-  final context = sheetContext;
-  showSnack(ref, context, 'Fetching repository…');
-  {
+class _AddRepoSheet extends ConsumerStatefulWidget {
+  const _AddRepoSheet();
+
+  @override
+  ConsumerState<_AddRepoSheet> createState() => _AddRepoSheetState();
+}
+
+class _AddRepoSheetState extends ConsumerState<_AddRepoSheet> {
+  final _controller = TextEditingController();
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final url = _controller.text.trim();
+    if (url.isEmpty || _submitting) return;
+
+    // Capture everything that must OUTLIVE this sheet BEFORE the await:
+    // the service (sync read on a still-mounted ref) and the ROOT scaffold
+    // messenger (owned by MaterialApp, survives any route pops). After the
+    // await we touch NOTHING but locals — no `ref`, no `context`.
+    final service = ref.read(data.extensionRepoServiceProvider);
+    final messenger = ScaffoldMessenger.maybeOf(context);
+
+    setState(() => _submitting = true);
+    messenger?.hideCurrentSnackBar();
+    messenger?.showSnackBar(const SnackBar(
+      content: Text('Fetching repository…'),
+      behavior: SnackBarBehavior.floating,
+      duration: Duration(seconds: 8),
+    ));
+
     try {
-      final service = ref.read(data.extensionRepoServiceProvider);
       final count = await service.addRepo(url);
-      if (!context.mounted) return;
-      showSnack(
-        ref,
-        context,
-        count > 0
+      messenger?.hideCurrentSnackBar();
+      messenger?.showSnackBar(SnackBar(
+        content: Text(count > 0
             ? 'Added repository with $count extensions'
-            : 'Repository added — no compatible extensions found',
-      );
+            : 'Repository added — no compatible extensions found'),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+      ));
     } catch (e) {
-      if (context.mounted) {
-        showSnack(ref, context, 'Could not add repository: $e');
-      }
+      messenger?.hideCurrentSnackBar();
+      messenger?.showSnackBar(SnackBar(
+        content: Text('Could not add repository: $e'),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 5),
+      ));
     }
+    if (mounted) {
+      setState(() => _submitting = false);
+      Navigator.of(context).maybePop();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+          20, 0, 20, MediaQuery.of(context).viewInsets.bottom + 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Paste the URL of a Lumina / Tachiyomi / Aniyomi / Mihon '
+            'compatible extension repository (index.json, index.min.json '
+            'or index.pb) to make its extensions available.',
+            style: HeroTokens.bodySmall.copyWith(color: h.muted),
+          ),
+          const SizedBox(height: 16),
+          HeroInput(
+            controller: _controller,
+            autofocus: true,
+            hint: 'https://raw.githubusercontent.com/…/…',
+            prefixIcon: Icons.link_rounded,
+            onSubmitted: (_) => _submit(),
+          ),
+          const SizedBox(height: 8),
+          const _ExistingReposList(),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              HeroButton(
+                label: 'Cancel',
+                variant: HeroButtonVariant.light,
+                color: HeroColorRole.neutral,
+                onPressed: () => Navigator.pop(context),
+              ),
+              const SizedBox(width: 12),
+              HeroButton(
+                label: _submitting ? 'Adding…' : 'Add',
+                icon: _submitting ? null : Icons.add_rounded,
+                onPressed: _submitting ? null : _submit,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 
 class _ExistingReposList extends ConsumerWidget {
+  const _ExistingReposList();
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final h = HeroScope.of(context);
@@ -587,8 +634,8 @@ class _ExtensionCatalogSheetState
                 // Closes the extensions sheet and opens the real add-repo
                 // form (previously this button only dismissed the sheet).
                 onPressed: () {
+                  showAddRepoSheet(context);
                   Navigator.pop(context);
-                  showAddRepoSheet(context, ref);
                 },
               ),
             ],
@@ -641,10 +688,13 @@ class _CatalogTile extends ConsumerWidget {
   bool get _supported =>
       const {'madara', 'mangareader', 'mangadex', 'mangabox', 'mmrcms'}
           .contains((entry.typeSource ?? '').toLowerCase()) ||
-      // MangaDex language variants: `single` template on mangadex.org runs
-      // through the native MangaDex implementation.
-      ((entry.typeSource ?? '').toLowerCase() == 'single' &&
-          entry.baseUrl.contains('mangadex.org'));
+      // Central truth: templates, MangaDex variants, JS extensions and
+      // Aniyomi/Mihon APK extensions.
+      eval_lib.isRepoDtoSupported(
+        typeSource: entry.typeSource,
+        baseUrl: entry.baseUrl,
+        sourceCodeLanguage: entry.sourceCodeLanguage,
+      );
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

@@ -73,6 +73,10 @@ class MManga {
   /// Structured category list.
   List<String>? categories;
 
+  /// Chapter / episode list when the source returns them with the detail
+  /// (JS + Mihon extensions do; native sources use getChapterList).
+  List<MChapter>? chapters;
+
   /// Whether this entry is a Japanese manga.
   bool? isManga;
 
@@ -101,6 +105,7 @@ class MManga {
     this.status,
     this.genre,
     this.categories,
+    this.chapters,
     this.isManga,
     this.isManhua,
     this.isManhwa,

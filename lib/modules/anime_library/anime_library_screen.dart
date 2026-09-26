@@ -188,20 +188,21 @@ class _AnimeAppBar extends StatelessWidget implements PreferredSizeWidget {
       child: searchVisible
           ? Padding(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-              child: TextField(
+              // HeroInput (single hairline border) — the raw TextField here
+              // stacked its own OutlineInputBorder on top of the theme's
+              // filled OutlineInputBorder, rendering TWO outlines around
+              // the field.
+              child: HeroInput(
                 controller: searchController,
                 autofocus: true,
+                hint: 'Search anime…',
+                prefixIcon: Icons.search_rounded,
                 onChanged: onSearchChanged,
-                decoration: InputDecoration(
-                  hintText: 'Search anime…',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: onSearchToggle,
-                  ),
-                  border: const OutlineInputBorder(
-                    borderRadius: BorderRadius.all(Radius.circular(16)),
-                  ),
+                suffix: HeroIconButton(
+                  icon: Icons.close_rounded,
+                  iconSize: 19,
+                  size: 32,
+                  onPressed: onSearchToggle,
                 ),
               ),
             )

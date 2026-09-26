@@ -329,6 +329,14 @@ dto.Source sourceToDto(db.Source s) {
     additionalParams: s.additionalParams,
     sourceCodeUrl: s.sourceCodeUrl,
     versionLast: s.versionLast,
+    sourceCodeLanguage: switch (s.sourceCodeLanguage) {
+      db.SourceCodeLanguage.javascript => 1,
+      db.SourceCodeLanguage.mihon => 3,
+      db.SourceCodeLanguage.dart => 0,
+      db.SourceCodeLanguage.lua => 2,
+      null => null,
+    },
+    isApk: (s.typeSource ?? '').startsWith('apk'),
   );
 }
 

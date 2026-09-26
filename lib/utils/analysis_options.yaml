@@ -1,0 +1,13 @@
+# utils/cryptoaes, utils/extensions and utils/xpath_selector are ports of
+# upstream Mangayomi helpers (Apache-2.0). Keep the repo's strictness for
+# hand-written files but silence upstream-style lints.
+analyzer:
+  errors:
+    prefer_single_quotes: ignore
+    avoid_print: ignore
+    prefer_final_locals: ignore
+    unnecessary_import: ignore
+linter:
+  rules:
+    prefer_single_quotes: false
+    avoid_print: false

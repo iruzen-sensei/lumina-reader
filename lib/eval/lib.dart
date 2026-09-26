@@ -18,8 +18,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import 'dart:io' show Platform;
+
 import 'package:lumina_reader/eval/base_service.dart';
 import 'package:lumina_reader/eval/interface.dart';
+import 'package:lumina_reader/eval/javascript/service.dart';
+import 'package:lumina_reader/eval/mihon/service.dart';
 import 'package:lumina_reader/eval/model/m_models.dart';
 import 'package:lumina_reader/eval/native/anizone_source.dart';
 import 'package:lumina_reader/eval/native/madara_source.dart';
@@ -29,14 +33,16 @@ import 'package:lumina_reader/eval/native/mangareader_source.dart';
 import 'package:lumina_reader/eval/native/mmrcms_source.dart';
 import 'package:lumina_reader/eval/null_extension_service.dart';
 import 'package:lumina_reader/models/source.dart';
+import 'package:lumina_reader/services/extension_server.dart';
 
 export 'package:lumina_reader/eval/base_service.dart';
 export 'package:lumina_reader/eval/null_extension_service.dart';
 
-// NOTE: the d4rt (Dart interpreter) backend was removed — every published
-// d4rt version conflicts with isar_generator's analyzer constraints and the
-// backend was parked as experimental. Dart-language extension sources route
-// to NullExtensionService below with an honest reason.
+// NOTE: the d4rt (Dart interpreter) backend is not shipped — Dart-language
+// extension sources (the madara/mangareader .dart multisrc singles beyond
+// the native templates) route to NullExtensionService with an honest
+// reason. The madara/mangareader templates they describe are covered
+// natively by eval/native/.
 
 /// Built-in native sources, keyed by their `builtin:` scheme identifier
 /// (stored in [Source.sourceCode]). Native sources are pure Dart and speak
@@ -115,15 +121,35 @@ ExtensionService getExtensionService(Source source) {
     return MangaDexSource(source);
   }
 
-  // 2. Interpreter-backed sources (EXPERIMENTAL — see class docs).
+  // 2. Interpreter-backed sources.
   switch (source.sourceCodeLanguage) {
     case SourceCodeLanguage.javascript:
-      // QuickJS backend (eval/javascript/) compiles but is not yet
-      // runtime-validated. Enable by constructing JsExtensionService here
-      // once validated on device.
-      return NullExtensionService(source,
-          reason: 'JS interpreter sources are experimental in this build; '
-              'only built-in native sources are active.');
+      // QuickJS host (eval/javascript/) — the Mangayomi JS extension
+      // ecosystem runs for real: Client/Document/SharedPreferences/extractor
+      // glue is ported from upstream, and the source code (fetched at
+      // install time) lives in source.displaySourceCode.
+      final code = source.displaySourceCode;
+      if (code == null || code.trim().isEmpty) {
+        return NullExtensionService(source,
+            reason: 'JS extension has no source code — reinstall it from '
+                'the extension manager.');
+      }
+      return JsExtensionService(source);
+    case SourceCodeLanguage.mihon:
+      // Aniyomi/Mihon APK extension — runs through the on-device Dex class
+      // loader bridge (services/extension_server.dart + eval/mihon/).
+      final apk = source.sourceCode;
+      if (apk == null || apk.isEmpty) {
+        return NullExtensionService(source,
+            reason: 'APK extension not downloaded — reinstall it from the '
+                'extension manager.');
+      }
+      if (!Platform.isAndroid) {
+        return NullExtensionService(source,
+            reason: 'APK extensions only run on Android.');
+      }
+      return MihonExtensionService(
+          source, ExtensionServerRuntime.instance);
     case SourceCodeLanguage.dart:
       return NullExtensionService(source,
           reason: 'The Dart interpreter backend is not available in this '
@@ -157,3 +183,45 @@ MSource sourceToMSource(Source s) => MSource(
       baseUrl: s.displayBaseUrl,
       lang: s.lang,
     );
+
+/// Whether a repo catalog row can run in THIS build — single source of
+/// truth for the extension manager UI, the browse catalog sheet and the
+/// install flow.
+///
+/// Supported runtimes:
+///   * native multisrc templates (madara / mangareader / mangadex /
+///     mangabox / mmrcms)
+///   * MangaDex language variants (`single` on mangadex.org)
+///   * JavaScript extensions (QuickJS host, eval/javascript/)
+///   * Aniyomi/Mihon APK extensions (Dex bridge, eval/mihon/) — Android only
+bool isRepoRowSupported(Source s) {
+  final template = (s.typeSource ?? '').toLowerCase();
+  if (kSupportedTemplates.contains(template)) return true;
+  if (template == 'single' &&
+      (s.baseUrl ?? '').contains('mangadex.org')) {
+    return true;
+  }
+  switch (s.sourceCodeLanguage) {
+    case SourceCodeLanguage.javascript:
+      return true;
+    case SourceCodeLanguage.mihon:
+      return true;
+    case SourceCodeLanguage.dart:
+    case SourceCodeLanguage.lua:
+    case null:
+      return false;
+  }
+}
+
+/// DTO-flavoured variant for UI tiles that hold the view model Source
+/// (models/models.dart) instead of the Isar row.
+bool isRepoDtoSupported({
+  required String? typeSource,
+  required String baseUrl,
+  required int? sourceCodeLanguage,
+}) {
+  final template = (typeSource ?? '').toLowerCase();
+  if (kSupportedTemplates.contains(template)) return true;
+  if (template == 'single' && baseUrl.contains('mangadex.org')) return true;
+  return sourceCodeLanguage == 1 || sourceCodeLanguage == 3;
+}
