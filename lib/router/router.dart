@@ -7,6 +7,8 @@ import 'package:go_router/go_router.dart';
 
 import '../models/models.dart' show Manga;
 import '../modules/anime/anime_detail_screen.dart';
+import '../modules/anime_home/anime_browse_screen.dart';
+import '../modules/anime_home/anime_home_screen.dart';
 import '../modules/anime/player/anime_player_screen.dart';
 import '../modules/anime_library/anime_library_screen.dart';
 import '../modules/browse/browse_screen.dart';
@@ -45,11 +47,27 @@ final routerProvider = Provider<GoRouter>((ref) {
             name: 'library',
             builder: (context, state) => const LibraryScreen(),
           ),
-          // Anime Library (separate tab)
+          // Anime HOME — the app's front page (Netflix-style discovery).
           GoRoute(
             path: '/anime',
+            name: 'animeHome',
+            builder: (context, state) => const AnimeHomeScreen(),
+          ),
+          // The classic anime library grid (My List → See all).
+          GoRoute(
+            path: '/animeLibrary',
             name: 'animeLibrary',
             builder: (context, state) => const AnimeLibraryScreen(),
+          ),
+          // Anime catalog explorer (filters + search + pagination).
+          GoRoute(
+            path: '/animeBrowse',
+            name: 'animeBrowse',
+            builder: (context, state) => AnimeBrowseScreen(
+              initialSearch: state.uri.queryParameters['search'],
+              initialGenre: state.uri.queryParameters['genre'],
+              initialRow: state.uri.queryParameters['row'],
+            ),
           ),
           // Browse (all sources — manga + anime + novels)
           GoRoute(

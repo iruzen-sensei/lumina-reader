@@ -41,6 +41,7 @@ import '../models/settings.dart' as db_s;
 import '../models/update.dart' as db_update;
 import '../models/models.dart';
 import '../services/anichart.dart' as anichart;
+import '../services/anilist.dart' as anilist;
 import '../services/aniskip.dart' as aniskip;
 import '../services/extension_coordinator.dart';
 import '../services/extension_repo_service.dart';
@@ -1523,6 +1524,11 @@ final extensionCatalogProvider =
     StateNotifierProvider<ExtensionCatalogNotifier, List<Source>>(
   (ref) => ExtensionCatalogNotifier(
       ref.watch(data.extensionRepoServiceProvider)),
+);
+
+// AniList catalog service (anime discovery layer).
+final aniListServiceProvider = Provider<anilist.AniListService>(
+  (ref) => anilist.AniListService(),
 );
 
 // ---------------------------------------------------------------------------

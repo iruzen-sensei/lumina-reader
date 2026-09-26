@@ -23,24 +23,24 @@ class MainScreen extends StatelessWidget {
 
   static const _destinations = [
     _NavDestination(
-      icon: Icons.library_books_outlined,
-      selectedIcon: Icons.library_books_rounded,
-      label: 'Library',
-    ),
-    _NavDestination(
       icon: Icons.play_circle_outline_rounded,
       selectedIcon: Icons.play_circle_rounded,
       label: 'Anime',
     ),
     _NavDestination(
-      icon: Icons.explore_outlined,
-      selectedIcon: Icons.explore_rounded,
-      label: 'Browse',
+      icon: Icons.library_books_outlined,
+      selectedIcon: Icons.library_books_rounded,
+      label: 'Library',
     ),
     _NavDestination(
-      icon: Icons.download_outlined,
-      selectedIcon: Icons.download_rounded,
-      label: 'Downloads',
+      icon: Icons.explore_outlined,
+      selectedIcon: Icons.explore_rounded,
+      label: 'Explore',
+    ),
+    _NavDestination(
+      icon: Icons.update_outlined,
+      selectedIcon: Icons.update_rounded,
+      label: 'Updates',
     ),
     _NavDestination(
       icon: Icons.grid_view_outlined,
@@ -54,18 +54,18 @@ class MainScreen extends StatelessWidget {
     final location = GoRouterState.of(context).matchedLocation;
     final h = HeroScope.of(context);
     int selectedIndex = 0;
-    if (location.startsWith('/anime')) {
+    if (location.startsWith('/library')) {
       selectedIndex = 1;
     } else if (location.startsWith('/browse')) {
       selectedIndex = 2;
-    } else if (location.startsWith('/downloads')) {
+    } else if (location.startsWith('/updates')) {
       selectedIndex = 3;
     } else if (location.startsWith('/more') ||
         location.startsWith('/stats') ||
         location.startsWith('/notes') ||
         location.startsWith('/history') ||
-        location.startsWith('/updates') ||
-        location.startsWith('/calendar')) {
+        location.startsWith('/calendar') ||
+        location.startsWith('/downloads')) {
       selectedIndex = 4;
     }
 
@@ -116,13 +116,13 @@ class MainScreen extends StatelessWidget {
   void _navigate(BuildContext context, int index) {
     switch (index) {
       case 0:
-        context.go('/library');
-      case 1:
         context.go('/anime');
+      case 1:
+        context.go('/library');
       case 2:
         context.go('/browse');
       case 3:
-        context.go('/downloads');
+        context.go('/updates');
       case 4:
         context.go('/more');
     }

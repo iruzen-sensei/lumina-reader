@@ -1,0 +1,869 @@
+// Copyright 2024 Lumina Reader Contributors
+// Licensed under the Apache License, Version 2.0
+//
+// ANIME HOME — the app's front page, structured like a streaming service:
+//
+//   * Netflix-red hero banner (the #1 trending show with Play / Info)
+//   * Continue Watching rail (real watch progress, resume one tap away)
+//   * My List rail (the user's anime library)
+//   * Trending Now / New This Season / Top 10 (numbered) / All-Time
+//     Popular / Coming Soon rails (AniList GraphQL)
+//   * Genre chips + full filter sheet (genre, year, season, format,
+//     status, sort) feeding a paginated browse grid
+//
+// Accent note: this screen deliberately uses Netflix crimson (#E50914)
+// for its primary actions — everywhere else the app stays Lumina Noir.
+
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../core/ui/lumina_ui.dart';
+import '../../data/providers.dart' as data;
+import '../../models/models.dart';
+import '../../providers/providers.dart';
+import '../../services/anilist.dart';
+import '../shared/widgets.dart' show showSnack, BookCover;
+
+const Color kNetflixRed = Color(0xFFE50914);
+
+// ---------------------------------------------------------------------------
+// Providers
+// ---------------------------------------------------------------------------
+
+final _anilistProvider = Provider<AniListService>((ref) {
+  final svc = ref.watch(aniListServiceProvider);
+  return svc;
+});
+
+final animeTrendingProvider = FutureProvider.autoDispose<List<AniListAnime>>(
+    (ref) => ref.watch(_anilistProvider).trending());
+
+final animeSeasonalProvider = FutureProvider.autoDispose<List<AniListAnime>>(
+    (ref) => ref.watch(_anilistProvider).seasonal());
+
+final animeTopProvider = FutureProvider.autoDispose<List<AniListAnime>>(
+    (ref) => ref.watch(_anilistProvider).topRated());
+
+final animePopularProvider = FutureProvider.autoDispose<List<AniListAnime>>(
+    (ref) => ref.watch(_anilistProvider).popular());
+
+final animeUpcomingProvider = FutureProvider.autoDispose<List<AniListAnime>>(
+    (ref) => ref.watch(_anilistProvider).upcoming());
+
+/// One Continue-Watching card: library entry + latest watch progress.
+class ContinueWatchingItem {
+  const ContinueWatchingItem({
+    required this.manga,
+    required this.episodeName,
+    required this.progress,
+    required this.lastWatchedAt,
+  });
+
+  final Manga manga;
+  final String episodeName;
+  final double progress;
+  final DateTime lastWatchedAt;
+}
+
+/// Continue Watching = the newest history row per anime, resolved against
+/// the library for covers/titles. Watches history so the rail updates the
+/// moment a watch session lands.
+final continueWatchingProvider =
+    StreamProvider.autoDispose<List<ContinueWatchingItem>>((ref) async* {
+  final repo = ref.watch(data.historyRepositoryProvider);
+  final library = ref.watch(data.libraryRepositoryProvider);
+
+  Future<List<ContinueWatchingItem>> load() async {
+    final history = await repo.getHistory();
+    final latestByManga = <int, HistoryEntry>{};
+    // (null-safety lint satisfaction: history rows are non-null)
+    for (final hh in history) {
+      if (!hh.isAnime) continue;
+      final id = hh.mangaId;
+      final existing = latestByManga[id];
+      if (existing == null || hh.readAt.isAfter(existing.readAt)) {
+        latestByManga[id] = hh;
+      }
+    }
+    final out = <ContinueWatchingItem>[];
+    for (final entry in latestByManga.values) {
+      final manga = await library.getManga(entry.mangaId);
+      if (manga == null) continue;
+      out.add(ContinueWatchingItem(
+        manga: manga,
+        episodeName: entry.chapterName,
+        progress: entry.progress,
+        lastWatchedAt: entry.readAt,
+      ));
+    }
+    out.sort((a, b) => b.lastWatchedAt.compareTo(a.lastWatchedAt));
+    return out.take(12).toList();
+  }
+
+  yield await load();
+  await for (final _ in repo.watchHistory()) {
+    yield await load();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Screen
+// ---------------------------------------------------------------------------
+
+class AnimeHomeScreen extends ConsumerStatefulWidget {
+  const AnimeHomeScreen({super.key});
+
+  @override
+  ConsumerState<AnimeHomeScreen> createState() => _AnimeHomeScreenState();
+}
+
+class _AnimeHomeScreenState extends ConsumerState<AnimeHomeScreen> {
+  @override
+  Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
+    final trending = ref.watch(animeTrendingProvider);
+
+    return Scaffold(
+      backgroundColor: h.background,
+      body: SafeArea(
+        bottom: false,
+        child: CustomScrollView(
+          slivers: [
+            SliverAppBar(
+              pinned: false,
+              floating: true,
+              automaticallyImplyLeading: false,
+              title: Text(
+                'Anime',
+                style: HeroTokens.display.copyWith(color: h.foreground),
+              ),
+              actions: [
+                HeroIconButton(
+                  tooltip: 'Search anime',
+                  icon: Icons.search_rounded,
+                  onPressed: () => _openSearch(context),
+                ),
+                HeroIconButton(
+                  tooltip: 'Browse by filters',
+                  icon: Icons.tune_rounded,
+                  onPressed: () => context.push('/animeBrowse'),
+                ),
+                const SizedBox(width: 8),
+              ],
+            ),
+            // Hero banner — the #1 trending title.
+            trending.when(
+              data: (items) => items.isEmpty
+                  ? const SliverToBoxAdapter(child: SizedBox.shrink())
+                  : SliverToBoxAdapter(child: _HeroBanner(anime: items.first)),
+              loading: () => const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: HeroSkeleton(height: 220),
+                ),
+              ),
+              error: (e, _) => SliverToBoxAdapter(
+                child: _HeroError(message: e.toString()),
+              ),
+            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 8)),
+            // Continue Watching
+            const _ContinueWatchingSection(),
+            // My List
+            const _MyListSection(),
+            // Discovery rows
+            _AniListRow(
+              title: 'Trending Now',
+              provider: animeTrendingProvider,
+            ),
+            _AniListRow(
+              title: 'New This Season',
+              provider: animeSeasonalProvider,
+            ),
+            _AniListRow(
+              title: 'Top 10 Anime',
+              provider: animeTopProvider,
+              numbered: true,
+            ),
+            _AniListRow(
+              title: 'All-Time Popular',
+              provider: animePopularProvider,
+            ),
+            _AniListRow(
+              title: 'Coming Soon',
+              provider: animeUpcomingProvider,
+            ),
+            // Genre chips
+            const _GenreSection(),
+            const SliverToBoxAdapter(
+                child: SizedBox(height: kBottomNavigationBarHeight + 32)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openSearch(BuildContext context) {
+    final controller = TextEditingController();
+    showHeroSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final h = HeroScope.of(sheetContext);
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, 0, 20,
+              MediaQuery.of(sheetContext).viewInsets.bottom + 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              HeroInput(
+                controller: controller,
+                autofocus: true,
+                hint: 'Search AniList…',
+                prefixIcon: Icons.search_rounded,
+                onSubmitted: (v) {
+                  Navigator.pop(sheetContext);
+                  if (v.trim().isNotEmpty) {
+                    context.push(
+                        '/animeBrowse?search=${Uri.encodeComponent(v.trim())}');
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Search across thousands of shows on AniList.',
+                style: HeroTokens.bodySmall.copyWith(color: h.muted),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Hero banner
+// ---------------------------------------------------------------------------
+
+class _HeroBanner extends ConsumerWidget {
+  const _HeroBanner({required this.anime});
+
+  final AniListAnime anime;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: HeroScaleTap(
+        onTap: () => openAniListEntry(context, ref, anime),
+        child: Container(
+          height: 230,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(HeroTokens.radiusCard),
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (anime.bannerUrl != null || anime.coverUrl != null)
+                Image.network(
+                  anime.bannerUrl ?? anime.coverUrl!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                ),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: const [0.0, 0.45, 1.0],
+                    colors: [
+                      Colors.black.withValues(alpha: 0.15),
+                      Colors.black.withValues(alpha: 0.45),
+                      Colors.black.withValues(alpha: 0.92),
+                    ],
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Spacer(),
+                    const Text(
+                      '#1 IN TRENDING TODAY',
+                      style: TextStyle(
+                        fontFamily: HeroTokens.fontSans,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.1,
+                        color: kNetflixRed,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      anime.bestTitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: HeroTokens.display.copyWith(
+                        color: Colors.white,
+                        fontSize: 26,
+                        height: 1.1,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _metaLine(),
+                      style: TextStyle(
+                        fontFamily: HeroTokens.fontSans,
+                        fontSize: 12,
+                        color: Colors.white.withValues(alpha: 0.75),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: kNetflixRed,
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: () => openAniListEntry(context, ref, anime),
+                          icon: const Icon(Icons.play_arrow_rounded),
+                          label: const Text('Play'),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor:
+                                Colors.white.withValues(alpha: 0.16),
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: () => openAniListEntry(context, ref, anime),
+                          icon: const Icon(Icons.info_outline_rounded),
+                          label: const Text('Info'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _metaLine() {
+    final parts = <String>[
+      if (anime.averageScore != null) '★ ${anime.averageScore}%',
+      if (anime.format != null) anime.format!,
+      if (anime.seasonYear != null) '${anime.seasonYear}',
+      if (anime.episodes != null) '${anime.episodes} eps',
+    ];
+    return parts.join('  •  ');
+  }
+}
+
+class _HeroError extends ConsumerWidget {
+  const _HeroError({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Container(
+        height: 150,
+        decoration: BoxDecoration(
+          color: h.surface,
+          borderRadius: BorderRadius.circular(HeroTokens.radiusCard),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.wifi_off_rounded, size: 30, color: h.muted),
+              const SizedBox(height: 10),
+              Text(
+                'AniList is unreachable',
+                style: HeroTokens.body.copyWith(
+                    color: h.foreground, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Check your connection and try again.',
+                style: HeroTokens.caption.copyWith(color: h.muted),
+              ),
+              const SizedBox(height: 12),
+              HeroButton(
+                label: 'Retry',
+                icon: Icons.refresh_rounded,
+                size: HeroButtonSize.sm,
+                onPressed: () => ref.refresh(animeTrendingProvider),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Rows
+// ---------------------------------------------------------------------------
+
+class _RowHeader extends StatelessWidget {
+  const _RowHeader({required this.title, this.onSeeAll});
+
+  final String title;
+  final VoidCallback? onSeeAll;
+
+  @override
+  Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 18, 12, 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: HeroTokens.title.copyWith(
+                color: h.foreground,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          if (onSeeAll != null)
+            HeroIconButton(
+              tooltip: 'See all',
+              icon: Icons.chevron_right_rounded,
+              size: 34,
+              iconSize: 22,
+              onPressed: onSeeAll,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ContinueWatchingSection extends ConsumerWidget {
+  const _ContinueWatchingSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final items = ref.watch(continueWatchingProvider).value ?? const [];
+    if (items.isEmpty) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+    return SliverMainAxisGroup(
+      slivers: [
+        const SliverToBoxAdapter(
+            child: _RowHeader(title: 'Continue Watching')),
+        SliverToBoxAdapter(
+          child: SizedBox(
+            height: 168,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: items.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (context, i) => _ContinueCard(item: items[i]),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ContinueCard extends StatelessWidget {
+  const _ContinueCard({required this.item});
+
+  final ContinueWatchingItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
+    final m = item.manga;
+    return HeroScaleTap(
+      onTap: () => context.push('/animeDetail/${m.id}'),
+      child: SizedBox(
+        width: 232,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 232,
+              height: 118,
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(HeroTokens.radiusCard),
+                color: h.surface,
+              ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if ((m.thumbnailUrl ?? '').isNotEmpty)
+                    Image.network(m.thumbnailUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.55),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.play_arrow_rounded,
+                          color: Colors.white, size: 26),
+                    ),
+                  ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: LinearProgressIndicator(
+                      value: item.progress.clamp(0.0, 1.0),
+                      minHeight: 3,
+                      backgroundColor: Colors.white.withValues(alpha: 0.25),
+                      valueColor:
+                          const AlwaysStoppedAnimation(kNetflixRed),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              m.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: HeroTokens.body.copyWith(
+                  color: h.foreground, fontWeight: FontWeight.w600),
+            ),
+            Text(
+              item.episodeName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: HeroTokens.caption.copyWith(color: h.muted),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MyListSection extends ConsumerWidget {
+  const _MyListSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final list = ref.watch(animeLibraryProvider);
+    if (list.isEmpty) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+    return SliverMainAxisGroup(
+      slivers: [
+        SliverToBoxAdapter(
+          child: _RowHeader(
+            title: 'My List',
+            onSeeAll: () => context.push('/animeLibrary'),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: SizedBox(
+            height: 208,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: list.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (context, i) => BookCover(
+                manga: list[i],
+                width: 120,
+                onTap: () => context.push('/animeDetail/${list[i].id}'),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AniListRow extends ConsumerWidget {
+  const _AniListRow({
+    required this.title,
+    required this.provider,
+    this.numbered = false,
+  });
+
+  final String title;
+  final AutoDisposeFutureProvider<List<AniListAnime>> provider;
+  final bool numbered;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
+    final items = ref.watch(provider);
+    return SliverMainAxisGroup(
+      slivers: [
+        SliverToBoxAdapter(
+          child: _RowHeader(
+            title: title,
+            onSeeAll: () => context.push(
+                '/animeBrowse?row=${Uri.encodeComponent(title)}'),
+          ),
+        ),
+        items.when(
+          data: (list) => SliverToBoxAdapter(
+            child: SizedBox(
+              height: numbered ? 210 : 196,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: list.length,
+                separatorBuilder: (_, __) =>
+                    SizedBox(width: numbered ? 4 : 10),
+                itemBuilder: (context, i) {
+                  final anime = list[i];
+                  return numbered
+                      ? _NumberedCard(rank: i + 1, anime: anime)
+                      : _PosterCard(anime: anime);
+                },
+              ),
+            ),
+          ),
+          loading: () => const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  HeroSkeleton(width: 118, height: 170),
+                  SizedBox(width: 10),
+                  HeroSkeleton(width: 118, height: 170),
+                  SizedBox(width: 10),
+                  HeroSkeleton(width: 118, height: 170),
+                ],
+              ),
+            ),
+          ),
+          error: (e, _) => SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(
+                'Could not load — check your connection.',
+                style: HeroTokens.caption.copyWith(color: h.muted),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Standard portrait poster card.
+class _PosterCard extends ConsumerWidget {
+  const _PosterCard({required this.anime});
+
+  final AniListAnime anime;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
+    return HeroScaleTap(
+      onTap: () => openAniListEntry(context, ref, anime),
+      child: SizedBox(
+        width: 118,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 118,
+              height: 160,
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(HeroTokens.radiusCard),
+                color: h.surface,
+              ),
+              child: (anime.coverUrl ?? '').isNotEmpty
+                  ? Image.network(anime.coverUrl!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink())
+                  : const SizedBox.shrink(),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              anime.bestTitle,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: HeroTokens.caption.copyWith(
+                color: h.foreground,
+                fontWeight: FontWeight.w600,
+                height: 1.2,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Netflix-style numbered Top-10 card: giant outlined numeral behind the
+/// poster, poster offset to the right.
+class _NumberedCard extends ConsumerWidget {
+  const _NumberedCard({required this.rank, required this.anime});
+
+  final int rank;
+  final AniListAnime anime;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
+    return HeroScaleTap(
+      onTap: () => openAniListEntry(context, ref, anime),
+      child: SizedBox(
+        width: 150,
+        height: 200,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned(
+              left: -6,
+              bottom: -8,
+              child: Text(
+                '$rank',
+                style: TextStyle(
+                  fontFamily: HeroTokens.fontSans,
+                  fontSize: 96,
+                  fontWeight: FontWeight.w800,
+                  height: 0.9,
+                  foreground: Paint()
+                    ..style = PaintingStyle.stroke
+                    ..strokeWidth = 2.5
+                    ..color = h.muted.withValues(alpha: 0.55),
+                ),
+              ),
+            ),
+            Positioned(
+              right: 0,
+              child: Container(
+                width: 112,
+                height: 152,
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(HeroTokens.radiusCard),
+                  color: h.surface,
+                ),
+                child: (anime.coverUrl ?? '').isNotEmpty
+                    ? Image.network(anime.coverUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink())
+                    : const SizedBox.shrink(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Genre chips
+// ---------------------------------------------------------------------------
+
+class _GenreSection extends StatelessWidget {
+  const _GenreSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
+    return SliverMainAxisGroup(
+      slivers: [
+        const SliverToBoxAdapter(
+            child: _RowHeader(title: 'Browse by Genre')),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final genre in AniListService.genres)
+                  ActionChip(
+                    label: Text(genre),
+                    backgroundColor: h.surface,
+                    side: BorderSide(color: h.border),
+                    labelStyle:
+                        HeroTokens.bodySmall.copyWith(color: h.foreground),
+                    onPressed: () => context.push(
+                        '/animeBrowse?genre=${Uri.encodeComponent(genre)}'),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared routing helper
+// ---------------------------------------------------------------------------
+
+/// Opens an AniList catalog entry through the streaming pipeline: routes to
+/// the source-anime preview with the seeded AniList provider, carrying the
+/// `anilist:<id>` identity tag so AniSkip + calendar cross-links resolve.
+void openAniListEntry(
+    BuildContext context, WidgetRef ref, AniListAnime anime) {
+  final sources = ref.read(sourcesProvider);
+  int? sourceId;
+  for (final s in sources) {
+    if (!s.isInstalled) continue;
+    final hay = '${s.baseUrl} ${s.idString ?? ''} ${s.typeSource ?? ''}'
+        .toLowerCase();
+    if (hay.contains('anilist') || hay.contains('anizone')) {
+      sourceId = s.id;
+      break;
+    }
+  }
+  if (sourceId == null) {
+    showSnack(ref, context,
+        'No anime source installed — install one from Explore.');
+    return;
+  }
+  final dto = Manga(
+    id: 0,
+    title: anime.bestTitle,
+    sourceId: sourceId,
+    url: 'anilist:${anime.id}',
+    itemType: ItemType.anime,
+    thumbnailUrl: anime.coverUrl,
+    description: anime.description,
+    genre: [
+      ...anime.genres,
+      'anilist:${anime.id}',
+      if (anime.idMal != null) 'mal:${anime.idMal}',
+    ],
+  );
+  GoRouter.of(context).push('/sourceMangaDetail', extra: dto);
+}

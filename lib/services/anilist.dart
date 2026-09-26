@@ -207,6 +207,146 @@ class AniListService {
       }
     }''', {'q': query, 'page': page, 'perPage': perPage});
 
+  /// Unified Netflix-style browse with filters. Every parameter is optional;
+  /// combinations map straight onto AniList's media query arguments.
+  Future<List<AniListAnime>> browse({
+    int page = 1,
+    String? search,
+    String? genre,
+    int? year,
+    String? season, // WINTER / SPRING / SUMMER / FALL
+    String? format, // TV / TV_SHORT / MOVIE / OVA / ONA / SPECIAL
+    String? status, // FINISHED / RELEASING / NOT_YET_RELEASED / CANCELLED / HIATUS
+    String sort = 'TRENDING_DESC', // *_DESC sorts from [sortOptions]
+  }) =>
+      _page('''
+    query Browse(\$page: Int, \$perPage: Int, \$search: String, \$genre: String,
+                \$year: Int, \$season: MediaSeason, \$format: MediaFormat,
+                \$status: MediaStatus, \$sort: [MediaSort]) {
+      Page(page: \$page, perPage: \$perPage) {
+        media(type: ANIME, isAdult: false, search: \$search, genre: \$genre,
+              seasonYear: \$year, season: \$season, format: \$format,
+              status: \$status, sort: \$sort) {
+          $_mediaFields
+        }
+      }
+    }''', {
+        'page': page,
+        'perPage': perPage,
+        if (search != null && search.isNotEmpty) 'search': search,
+        if (genre != null && genre.isNotEmpty) 'genre': genre,
+        if (year != null) 'year': year,
+        if (season != null && season.isNotEmpty) 'season': season,
+        if (format != null && format.isNotEmpty) 'format': format,
+        if (status != null && status.isNotEmpty) 'status': status,
+        'sort': [sort],
+      });
+
+  /// All-time top-rated (the Top 10 row).
+  Future<List<AniListAnime>> topRated({int page = 1}) => _page('''
+    query Top(\$page: Int, \$perPage: Int) {
+      Page(page: \$page, perPage: \$perPage) {
+        media(type: ANIME, sort: SCORE_DESC, isAdult: false) { $_mediaFields }
+      }
+    }''', {'page': page, 'perPage': perPage});
+
+  /// Upcoming NEXT season — the "Coming Soon" row.
+  Future<List<AniListAnime>> upcoming({int page = 1}) {
+    final next = _nextSeason();
+    return _page('''
+    query Upcoming(\$page: Int, \$perPage: Int, \$season: MediaSeason, \$year: Int) {
+      Page(page: \$page, perPage: \$perPage) {
+        media(type: ANIME, season: \$season, seasonYear: \$year,
+              sort: POPULARITY_DESC, isAdult: false) { $_mediaFields }
+      }
+    }''', {'page': page, 'perPage': perPage, ...next});
+  }
+
+  /// "More like this" — recommendations for one entry.
+  Future<List<AniListAnime>> recommendations(int anilistId,
+      {int limit = 12}) async {
+    const recFields = '''
+          id
+          title { romaji english native }
+          coverImage { large }
+          bannerImage
+          format
+          status
+          seasonYear
+          episodes
+          genres
+          averageScore
+          isAdult
+    ''';
+    const query = '''
+      query Recs(\$id: Int, \$perPage: Int) {
+        Media(id: \$id, type: ANIME) {
+          recommendations(sort: RATING_DESC, perPage: \$perPage) {
+            nodes { mediaRecommendation { $recFields } }
+          }
+        }
+      }''';
+    final res = await _http.post(
+      Uri.parse(_endpoint),
+      headers: const {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: jsonEncode({
+        'query': query,
+        'variables': {'id': anilistId, 'perPage': limit},
+      }),
+    );
+    if (res.statusCode != 200) {
+      throw StateError(
+          'AniList recommendations -> HTTP ${res.statusCode}');
+    }
+    final body =
+        jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    final nodes = (body['data']?['Media']?['recommendations']?['nodes']
+        as List?) ??
+        const [];
+    return [
+      for (final n in nodes)
+        if (n is Map && n['mediaRecommendation'] != null)
+          AniListAnime.fromMedia(n['mediaRecommendation']),
+    ];
+  }
+
+  /// AniList's genre collection (static — the API's genre collection is
+  /// stable and cached at zero cost).
+  static const List<String> genres = [
+    'Action', 'Adventure', 'Comedy', 'Drama', 'Ecchi', 'Fantasy', 'Horror',
+    'Mahou Shoujo', 'Mecha', 'Music', 'Mystery', 'Psychological', 'Romance',
+    'Sci-Fi', 'Slice of Life', 'Sports', 'Supernatural', 'Thriller',
+  ];
+
+  /// Sort options for the filter sheet.
+  static const Map<String, String> sortOptions = {
+    'Trending': 'TRENDING_DESC',
+    'Popularity': 'POPULARITY_DESC',
+    'Rating': 'SCORE_DESC',
+    'Newest': 'START_DATE_DESC',
+    'Episodes': 'EPISODES_DESC',
+  };
+
+  static const Map<String, String> formatOptions = {
+    'TV': 'TV',
+    'TV Short': 'TV_SHORT',
+    'Movie': 'MOVIE',
+    'OVA': 'OVA',
+    'ONA': 'ONA',
+    'Special': 'SPECIAL',
+  };
+
+  static const Map<String, String> statusOptions = {
+    'Finished': 'FINISHED',
+    'Airing': 'RELEASING',
+    'Not yet aired': 'NOT_YET_RELEASED',
+    'Cancelled': 'CANCELLED',
+    'Hiatus': 'HIATUS',
+  };
+
   /// Full detail for one entry (richer description + relations).
   Future<AniListAnime> detail(int id) async {
     const query = '''
@@ -246,6 +386,17 @@ class AniListService {
     final media = body['data']?['Media'];
     if (media == null) throw StateError('AniList: no media $id');
     return AniListAnime.fromMedia(media);
+  }
+
+  /// Next season (for the Coming Soon row).
+  static Map<String, dynamic> _nextSeason() {
+    final now = DateTime.now().toUtc().add(const Duration(hours: 9)); // JST
+    const seasons = ['WINTER', 'SPRING', 'SUMMER', 'FALL'];
+    var idx = (now.month - 1) ~/ 3;
+    var year = now.year;
+    idx = (idx + 1) % 4;
+    if (idx == 0) year += 1;
+    return {'season': seasons[idx], 'year': year};
   }
 
   /// Current season name + year (AniList seasons: WINTER/SPRING/SUMMER/FALL).
