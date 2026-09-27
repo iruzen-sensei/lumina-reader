@@ -17,6 +17,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/ui/lumina_ui.dart';
+import '../../core/ui/watermelon.dart';
 import 'package:lumina_reader/core/ui/hero_motion.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -40,7 +41,18 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
   final _searchController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    // Live filtering companion to the predictive search input.
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  void _onSearchChanged() =>
+      ref.read(notesSearchProvider.notifier).state = _searchController.text;
+
+  @override
   void dispose() {
+    _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     super.dispose();
   }
@@ -78,11 +90,18 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: HeroInput(
+                // watermelon.sh Predictive Text — completions from note
+                // tags + titles; live filtering via the controller listener.
+                child: WmPredictiveInput(
                   controller: _searchController,
                   hint: 'Search notes…',
-                  prefixIcon: Icons.search_rounded,
-                  onChanged: (v) =>
+                  dictionary: [
+                    for (final n in ref.watch(notesProvider).take(100)) ...[
+                      ...n.tags,
+                      if (n.mangaTitle.isNotEmpty) n.mangaTitle,
+                    ],
+                  ],
+                  onSubmitted: (v) =>
                       ref.read(notesSearchProvider.notifier).state = v,
                 ),
               ),
@@ -150,15 +169,28 @@ class _FilterTabs extends ConsumerWidget {
     final filter = ref.watch(notesFilterProvider);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: HeroSegmented<NotesFilter>(
-        expand: true,
-        segments: const [
-          (NotesFilter.all, 'All', Icons.list_rounded),
-          (NotesFilter.highlights, 'Highlights', Icons.highlight_rounded),
-          (NotesFilter.thoughts, 'Thoughts', Icons.lightbulb_outline_rounded),
-        ],
-        selected: filter,
-        onChanged: (f) => ref.read(notesFilterProvider.notifier).state = f,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        // watermelon.sh Quick Option Picker — the notes filter.
+        child: WmQuickOptionPicker<NotesFilter>(
+          trayAbove: false,
+          value: filter,
+          options: const [
+            WmPickerOption(
+                value: NotesFilter.all,
+                label: 'All',
+                icon: Icons.list_rounded),
+            WmPickerOption(
+                value: NotesFilter.highlights,
+                label: 'Highlights',
+                icon: Icons.highlight_rounded),
+            WmPickerOption(
+                value: NotesFilter.thoughts,
+                label: 'Thoughts',
+                icon: Icons.lightbulb_outline_rounded),
+          ],
+          onChanged: (f) => ref.read(notesFilterProvider.notifier).state = f,
+        ),
       ),
     );
   }
@@ -173,30 +205,26 @@ class _BookFilterRow extends ConsumerWidget {
     if (bookIds.isEmpty) return const SizedBox.shrink();
     final allNotes = ref.watch(notesProvider);
     final selectedBook = ref.watch(notesBookFilterProvider);
-    return SizedBox(
-      height: 44,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        itemCount: bookIds.length + 1,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (context, i) {
-          if (i == 0) {
-            return StatusChip(
-              label: 'All books',
-              selected: selectedBook == null,
-              onTap: () =>
-                  ref.read(notesBookFilterProvider.notifier).state = null,
-            );
-          }
-          final id = bookIds[i - 1];
-          final title = allNotes.firstWhere((n) => n.mangaId == id).mangaTitle;
-          return StatusChip(
-            label: title,
-            selected: selectedBook == id,
-            onTap: () => ref.read(notesBookFilterProvider.notifier).state = id,
-          );
-        },
+    String titleFor(int id) =>
+        allNotes.firstWhere((n) => n.mangaId == id).mangaTitle;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        // watermelon.sh Quick Option Picker — the book filter (replaces
+        // the horizontal custom-chip row).
+        child: WmQuickOptionPicker<int?>(
+          trayAbove: false,
+          value: selectedBook,
+          options: [
+            const WmPickerOption(
+                value: null, label: 'All books', icon: Icons.library_books_rounded),
+            for (final id in bookIds)
+              WmPickerOption(value: id, label: titleFor(id)),
+          ],
+          onChanged: (id) =>
+              ref.read(notesBookFilterProvider.notifier).state = id,
+        ),
       ),
     );
   }
@@ -313,48 +341,50 @@ class _NoteCard extends ConsumerWidget {
                               ),
                             ],
                             const SizedBox(height: 12),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                _ActionChip(
-                                  icon: Icons.copy_outlined,
-                                  label: 'Copy',
-                                  color: h.accent,
-                                  onTap: () async {
-                                    await Clipboard.setData(
-                                        ClipboardData(text: note.content));
-                                    if (context.mounted) {
-                                      showSnack(ref, context, 'Note copied');
-                                    }
-                                  },
-                                ),
-                                const SizedBox(width: 8),
-                                _ActionChip(
-                                  icon: Icons.edit_outlined,
-                                  label: 'Edit',
-                                  color: h.accent,
-                                  onTap: () => _showEditSheet(context, ref),
-                                ),
-                                const SizedBox(width: 8),
-                                _ActionChip(
-                                  icon: Icons.delete_outline,
-                                  label: 'Delete',
-                                  color: h.danger,
-                                  onTap: () async {
-                                    if (await _confirmDelete(context) &&
-                                        context.mounted) {
-                                      // REAL deletion — the notifier watches
-                                      // the Isar collection so the list updates.
-                                      await ref
-                                          .read(notesProvider.notifier)
-                                          .delete(note.id);
+                            // watermelon.sh Split Actions — one trigger fans
+                            // out Copy / Edit / Delete (replaces the custom
+                            // three-chip action row).
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: WmSplitActions(
+                                triggerIcon: Icons.more_horiz_rounded,
+                                actions: [
+                                  WmSplitAction(
+                                    icon: Icons.copy_outlined,
+                                    label: 'Copy',
+                                    onTap: () async {
+                                      await Clipboard.setData(
+                                          ClipboardData(text: note.content));
                                       if (context.mounted) {
-                                        showSnack(ref, context, 'Note deleted');
+                                        showSnack(ref, context, 'Note copied');
                                       }
-                                    }
-                                  },
-                                ),
-                              ],
+                                    },
+                                  ),
+                                  WmSplitAction(
+                                    icon: Icons.edit_outlined,
+                                    label: 'Edit',
+                                    onTap: () => _showEditSheet(context, ref),
+                                  ),
+                                  WmSplitAction(
+                                    icon: Icons.delete_outline,
+                                    label: 'Delete',
+                                    onTap: () async {
+                                      if (await _confirmDelete(context) &&
+                                          context.mounted) {
+                                        // REAL deletion — the notifier watches
+                                        // the Isar collection so the list updates.
+                                        await ref
+                                            .read(notesProvider.notifier)
+                                            .delete(note.id);
+                                        if (context.mounted) {
+                                          showSnack(
+                                              ref, context, 'Note deleted');
+                                        }
+                                      }
+                                    },
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
@@ -412,47 +442,6 @@ class _NoteCard extends ConsumerWidget {
   }
 }
 
-class _ActionChip extends StatelessWidget {
-  const _ActionChip({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.color,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final h = HeroScope.of(context);
-    final c = color ?? h.accent;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: c.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 14, color: c),
-            const SizedBox(width: 4),
-            Text(label,
-                style: TextStyle(
-                    fontSize: 11, fontWeight: FontWeight.w600, color: c)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _CreateNoteSheet extends ConsumerStatefulWidget {
   const _CreateNoteSheet();
 
@@ -484,12 +473,20 @@ class _CreateNoteSheetState extends ConsumerState<_CreateNoteSheet> {
           Text('New note',
               style: HeroTokens.title.copyWith(color: h.foreground)),
           const SizedBox(height: 12),
-          HeroSegmented<NoteType>(
-            segments: const [
-              (NoteType.thought, 'Thought', Icons.lightbulb_outline_rounded),
-              (NoteType.highlight, 'Highlight', Icons.highlight_rounded),
+          // watermelon.sh Quick Option Picker — the note type chooser.
+          WmQuickOptionPicker<NoteType>(
+            trayAbove: false,
+            value: _type,
+            options: const [
+              WmPickerOption(
+                  value: NoteType.thought,
+                  label: 'Thought',
+                  icon: Icons.lightbulb_outline_rounded),
+              WmPickerOption(
+                  value: NoteType.highlight,
+                  label: 'Highlight',
+                  icon: Icons.highlight_rounded),
             ],
-            selected: _type,
             onChanged: (t) => setState(() => _type = t),
           ),
           const SizedBox(height: 12),

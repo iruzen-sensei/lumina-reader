@@ -21,6 +21,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/theme.dart';
 import '../../core/ui/lumina_ui.dart';
+import '../../core/ui/watermelon.dart';
 import 'package:lumina_reader/core/ui/hero_motion.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
@@ -296,22 +297,24 @@ class _CategoryTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 44,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        itemCount: categories.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (context, i) {
-          final c = categories[i];
-          final active = c.id == activeId;
-          return StatusChip(
-            label: c.name,
-            selected: active,
-            onTap: () => onSelect(c.id),
-          );
-        },
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        // watermelon.sh Quick Option Picker — category selection.
+        child: WmQuickOptionPicker<int>(
+          trayAbove: false,
+          value: activeId,
+          options: [
+            for (final c in categories)
+              WmPickerOption(
+                value: c.id,
+                label: c.name,
+                icon: Icons.label_outline_rounded,
+              ),
+          ],
+          onChanged: onSelect,
+        ),
       ),
     );
   }
@@ -321,51 +324,44 @@ class _FilterRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final filter = ref.watch(libraryOptionsProvider.select((o) => o.filter));
-    return SizedBox(
-      height: 44,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        children: [
-          StatusChip(
-            label: LibraryFilter.all.label,
-            selected: filter == LibraryFilter.all,
-            color: LuminaTheme.seed,
-            onTap: () => ref
-                .read(libraryOptionsProvider.notifier)
-                .setFilter(LibraryFilter.all),
-          ),
-          const SizedBox(width: 8),
-          StatusChip(
-            label: LibraryFilter.reading.label,
-            icon: Icons.live_tv_rounded,
-            selected: filter == LibraryFilter.reading,
-            color: LuminaTheme.readingColor,
-            onTap: () => ref
-                .read(libraryOptionsProvider.notifier)
-                .setFilter(LibraryFilter.reading),
-          ),
-          const SizedBox(width: 8),
-          StatusChip(
-            label: LibraryFilter.finished.label,
-            icon: Icons.check_circle_outline,
-            selected: filter == LibraryFilter.finished,
-            color: LuminaTheme.finishedColor,
-            onTap: () => ref
-                .read(libraryOptionsProvider.notifier)
-                .setFilter(LibraryFilter.finished),
-          ),
-          const SizedBox(width: 8),
-          StatusChip(
-            label: LibraryFilter.unread.label,
-            icon: Icons.notification_important_outlined,
-            selected: filter == LibraryFilter.unread,
-            color: LuminaTheme.unreadColor,
-            onTap: () => ref
-                .read(libraryOptionsProvider.notifier)
-                .setFilter(LibraryFilter.unread),
-          ),
-        ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        // watermelon.sh Status Picker — the watching-status filter with
+        // semantic colors (replaces the horizontal custom-chip row).
+        child: WmStatusPicker(
+          value: LibraryFilter.values.indexOf(filter),
+          onChanged: (i) => ref
+              .read(libraryOptionsProvider.notifier)
+              .setFilter(LibraryFilter.values[i]),
+          items: [
+            WmStatusItem(
+              id: 0,
+              icon: Icons.apps_rounded,
+              name: LibraryFilter.all.label,
+              color: LuminaTheme.seed,
+            ),
+            WmStatusItem(
+              id: 1,
+              icon: Icons.live_tv_rounded,
+              name: LibraryFilter.reading.label,
+              color: LuminaTheme.readingColor,
+            ),
+            WmStatusItem(
+              id: 2,
+              icon: Icons.check_circle_outline,
+              name: LibraryFilter.finished.label,
+              color: LuminaTheme.finishedColor,
+            ),
+            WmStatusItem(
+              id: 3,
+              icon: Icons.notification_important_outlined,
+              name: LibraryFilter.unread.label,
+              color: LuminaTheme.unreadColor,
+            ),
+          ],
+        ),
       ),
     );
   }

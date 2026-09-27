@@ -1,10 +1,10 @@
 // Copyright 2024 Lumina Reader Contributors
 // Licensed under the Apache License, Version 2.0
 //
-// ANIME BROWSE — the Netflix-style catalog explorer: a filter bar (genre,
-// year, season, format, status, sort), AniList search, and an infinite
-// paginated grid. Reached from the Anime home (rows' See all / genre
-// chips / search / filter icon).
+// ANIME BROWSE — the Netflix-style catalog explorer. ALL filtering lives
+// in ONE surface: the Quick Option Picker filter bar (genre / season /
+// format / status / sort) under the app bar. The old tune-icon filter
+// sheet (a second, duplicated chip-wall) was removed.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,8 +13,7 @@ import '../../core/ui/lumina_ui.dart';
 import '../../core/ui/watermelon.dart';
 import '../../providers/providers.dart';
 import '../../services/anilist.dart';
-import '../anime_home/anime_home_screen.dart'
-    show openAniListEntry, kNetflixRed;
+import '../anime_home/anime_home_screen.dart' show openAniListEntry;
 
 /// Filter state for the browse screen.
 class AnimeBrowseFilters {
@@ -211,14 +210,6 @@ class _AnimeBrowseScreenState extends ConsumerState<AnimeBrowseScreen> {
           _title(),
           style: HeroTokens.title.copyWith(color: h.foreground),
         ),
-        actions: [
-          HeroIconButton(
-            tooltip: 'Filters',
-            icon: Icons.tune_rounded,
-            onPressed: () => _openFilterSheet(context),
-          ),
-          const SizedBox(width: 8),
-        ],
       ),
       body: Column(
         children: [
@@ -304,27 +295,13 @@ class _AnimeBrowseScreenState extends ConsumerState<AnimeBrowseScreen> {
   }
 
   void _setFilters(AnimeBrowseFilters f) => setState(() => _filters = f);
-
-  void _openFilterSheet(BuildContext context) {
-    showHeroSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      title: 'Filters',
-      builder: (sheetContext) => _FilterSheet(
-        filters: _filters,
-        onChanged: (f) {
-          _setFilters(f);
-          Navigator.pop(sheetContext);
-        },
-      ),
-    );
-  }
 }
 
 // ---------------------------------------------------------------------------
 // Quick filter bar — watermelon.sh Quick Option Pickers: compact pills
-// (Genre / Season / Sort) that pop a tray of options above with a 3D
-// bottom-origin tilt. Replaces the old 20-chip scrolling wall.
+// (Genre / Season / Format / Status / Sort) that pop a tray of options
+// above with a 3D bottom-origin tilt. The ONLY filter surface on this
+// screen (the old tune-icon chip-wall sheet was a duplicate — removed).
 // ---------------------------------------------------------------------------
 
 class _FilterBar extends StatelessWidget {
@@ -388,6 +365,40 @@ class _FilterBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           WmQuickOptionPicker<String>(
+            hint: 'Format',
+            trayAbove: false,
+            value: filters.format ?? '',
+            options: [
+              const WmPickerOption(
+                  value: '',
+                  label: 'Any format',
+                  icon: Icons.apps_rounded),
+              for (final e in AniListService.formatOptions.entries)
+                WmPickerOption(value: e.value, label: e.key),
+            ],
+            onChanged: (v) => onChanged(v.isEmpty
+                ? filters.copyWith(clearFormat: true)
+                : filters.copyWith(format: v)),
+          ),
+          const SizedBox(width: 8),
+          WmQuickOptionPicker<String>(
+            hint: 'Status',
+            trayAbove: false,
+            value: filters.status ?? '',
+            options: [
+              const WmPickerOption(
+                  value: '',
+                  label: 'Any status',
+                  icon: Icons.public_rounded),
+              for (final e in AniListService.statusOptions.entries)
+                WmPickerOption(value: e.value, label: e.key),
+            ],
+            onChanged: (v) => onChanged(v.isEmpty
+                ? filters.copyWith(clearStatus: true)
+                : filters.copyWith(status: v)),
+          ),
+          const SizedBox(width: 8),
+          WmQuickOptionPicker<String>(
             hint: 'Sort',
             trayAbove: false,
             value: filters.sort,
@@ -406,182 +417,6 @@ class _FilterBar extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Full filter sheet
-// ---------------------------------------------------------------------------
-
-class _FilterSheet extends StatefulWidget {
-  const _FilterSheet({required this.filters, required this.onChanged});
-
-  final AnimeBrowseFilters filters;
-  final ValueChanged<AnimeBrowseFilters> onChanged;
-
-  @override
-  State<_FilterSheet> createState() => _FilterSheetState();
-}
-
-class _FilterSheetState extends State<_FilterSheet> {
-  late AnimeBrowseFilters _f;
-  late final TextEditingController _searchController;
-
-  @override
-  void initState() {
-    super.initState();
-    _f = widget.filters;
-    _searchController =
-        TextEditingController(text: widget.filters.search ?? '');
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-          20, 0, 20, MediaQuery.of(context).viewInsets.bottom + 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // watermelon.sh Predictive Text: the search input floats up to
-          // three prefix-completion chips (genres + common terms), tap to
-          // complete the word.
-          WmPredictiveInput(
-            controller: _searchController,
-            hint: 'Search titles…',
-            dictionary: [
-              ...AniListService.genres.map((g) => g.toLowerCase()),
-              ...const [
-                'adventure', 'action', 'comedy', 'romance', 'isekai',
-                'school', 'shounen', 'shoujo', 'seinen', 'slice',
-                'supernatural', 'sports', 'mecha', 'music', 'mystery',
-              ],
-            ],
-            onSubmitted: (v) {
-              setState(() => _f = _f.copyWith(search: v.trim()));
-            },
-          ),
-          const SizedBox(height: 16),
-          _group('Sort', [
-            for (final e in AniListService.sortOptions.entries)
-              _option(e.key, _f.sort == e.value,
-                  () => setState(() => _f = _f.copyWith(sort: e.value))),
-          ]),
-          _group('Genre', [
-            _option('Any', _f.genre == null,
-                () => setState(() => _f = _f.copyWith(clearGenre: true))),
-            for (final g in AniListService.genres)
-              _option(g, _f.genre == g,
-                  () => setState(() => _f = _f.copyWith(genre: g))),
-          ]),
-          _group('Format', [
-            _option('Any', _f.format == null,
-                () => setState(() => _f = _f.copyWith(clearFormat: true))),
-            for (final e in AniListService.formatOptions.entries)
-              _option(e.key, _f.format == e.value,
-                  () => setState(() => _f = _f.copyWith(format: e.value))),
-          ]),
-          _group('Status', [
-            _option('Any', _f.status == null,
-                () => setState(() => _f = _f.copyWith(clearStatus: true))),
-            for (final e in AniListService.statusOptions.entries)
-              _option(e.key, _f.status == e.value,
-                  () => setState(() => _f = _f.copyWith(status: e.value))),
-          ]),
-          _group('Season', [
-            _option('Any', _f.season == null && _f.year == null,
-                () => setState(() => _f = _f.copyWith(clearSeason: true, clearYear: true))),
-            for (final (code, label) in const [
-              ('WINTER', 'Winter'),
-              ('SPRING', 'Spring'),
-              ('SUMMER', 'Summer'),
-              ('FALL', 'Fall'),
-            ])
-              for (final year in [
-                DateTime.now().year,
-                DateTime.now().year - 1,
-              ])
-                _option(
-                    '$label $year',
-                    _f.season == code && _f.year == year,
-                    () => setState(
-                        () => _f = _f.copyWith(season: code, year: year))),
-          ]),
-          const SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              HeroButton(
-                label: 'Reset',
-                variant: HeroButtonVariant.light,
-                color: HeroColorRole.neutral,
-                onPressed: () => setState(() {
-                  _searchController.clear();
-                  _f = const AnimeBrowseFilters();
-                }),
-              ),
-              const SizedBox(width: 12),
-              HeroButton(
-                label: 'Apply',
-                icon: Icons.check_rounded,
-                onPressed: () => widget.onChanged(_f.copyWith(
-                    search: _searchController.text.trim().isEmpty
-                        ? null
-                        : _searchController.text.trim())),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _group(String title, List<Widget> chips) {
-    final h = HeroScope.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title.toUpperCase(),
-            style: TextStyle(
-              fontFamily: HeroTokens.fontSans,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.8,
-              color: h.muted,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(spacing: 8, runSpacing: 8, children: chips),
-        ],
-      ),
-    );
-  }
-
-  Widget _option(String label, bool selected, VoidCallback onTap) {
-    final h = HeroScope.of(context);
-    return ActionChip(
-      label: Text(label),
-      backgroundColor: selected ? kNetflixRed : h.surface,
-      labelStyle: TextStyle(
-        fontFamily: HeroTokens.fontSans,
-        fontSize: 12,
-        fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-        color: selected ? Colors.white : h.muted,
-      ),
-      side:
-          BorderSide(color: selected ? kNetflixRed : h.border, width: selected ? 1.4 : 1),
-      onPressed: onTap,
     );
   }
 }

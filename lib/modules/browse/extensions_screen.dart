@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/ui/lumina_ui.dart';
+import '../../core/ui/watermelon.dart';
 import '../../data/providers.dart' as data;
 import '../../eval/lib.dart' as eval_lib;
 import 'browse_screen.dart' show showAddRepoSheet;
@@ -65,11 +66,19 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
         ExtensionsTab.repositories => 2,
       },
     );
+    // Live filtering companion to the predictive input.
+    _searchController.addListener(_onQueryChanged);
+  }
+
+  void _onQueryChanged() {
+    final v = _searchController.text;
+    if (v != _query) setState(() => _query = v);
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _searchController.removeListener(_onQueryChanged);
     _searchController.dispose();
     super.dispose();
   }
@@ -83,13 +92,38 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Extensions'),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: [
-            Tab(text: 'Installed (${installed.length})'),
-            Tab(text: 'Catalog (${catalog.length})'),
-            Tab(text: 'Repos (${repos.length})'),
-          ],
+        // watermelon.sh Quick Option Picker drives the SAME TabController
+        // (replaces the Material TabBar).
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(52),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: AnimatedBuilder(
+                animation: _tabController,
+                builder: (context, _) => WmQuickOptionPicker<int>(
+                  trayAbove: false,
+                  value: _tabController.index,
+                  options: [
+                    WmPickerOption(
+                        value: 0,
+                        label: 'Installed (${installed.length})',
+                        icon: Icons.download_done_rounded),
+                    WmPickerOption(
+                        value: 1,
+                        label: 'Catalog (${catalog.length})',
+                        icon: Icons.apps_rounded),
+                    WmPickerOption(
+                        value: 2,
+                        label: 'Repos (${repos.length})',
+                        icon: Icons.account_tree_rounded),
+                  ],
+                  onChanged: _tabController.animateTo,
+                ),
+              ),
+            ),
+          ),
         ),
         actions: [
           _syncing
@@ -123,9 +157,8 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
           _ReposTab(repos: repos),
         ],
       ),
-      // Bottom search field shared by the Installed/Catalog tabs — pinned
-      // under the body so the lists scroll independently. Listens to the
-      // controller so the field hides the instant the Repos tab appears.
+      // Bottom search shared by the Installed/Catalog tabs — watermelon.sh
+      // Predictive Text with live filtering; hides on the Repos tab.
       bottomNavigationBar: AnimatedBuilder(
         animation: _tabController,
         builder: (context, _) => _tabController.index == 2
@@ -134,11 +167,16 @@ class _ExtensionsScreenState extends ConsumerState<ExtensionsScreen>
                 top: false,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                  child: HeroInput(
+                  child: WmPredictiveInput(
                     controller: _searchController,
                     hint: 'Search extensions…',
-                    prefixIcon: Icons.search_rounded,
-                    onChanged: (v) => setState(() => _query = v),
+                    dictionary: [
+                      for (final e in catalog.take(60)) e.name,
+                      'english',
+                      'manga',
+                      'anime',
+                    ],
+                    onSubmitted: (v) => setState(() => _query = v),
                   ),
                 ),
               ),

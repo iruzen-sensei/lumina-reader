@@ -22,6 +22,7 @@ import 'package:flutter_html/flutter_html.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../../core/ui/watermelon.dart';
 import '../../data/providers.dart' as data;
 import '../../providers/providers.dart' show incognitoModeProvider;
 import '../shared/widgets.dart';
@@ -1002,29 +1003,26 @@ class EpubReaderSettingsSheet extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
               const _SectionLabel('Font family'),
-              Wrap(
-                spacing: 8,
-                children: [
+              // watermelon.sh Quick Option Pickers — one pill per setting.
+              WmQuickOptionPicker<String>(
+                trayAbove: false,
+                value: settings.fontFamily,
+                options: [
                   for (final f in const ['serif', 'sans-serif', 'monospace'])
-                    ChoiceChip(
-                      label: Text(f),
-                      selected: settings.fontFamily == f,
-                      onSelected: (_) => notifier.setFontFamily(f),
-                    ),
+                    WmPickerOption(value: f, label: f),
                 ],
+                onChanged: notifier.setFontFamily,
               ),
               const SizedBox(height: 12),
               const _SectionLabel('Background'),
-              Wrap(
-                spacing: 8,
-                children: [
+              WmQuickOptionPicker<EpubBackgroundTheme>(
+                trayAbove: false,
+                value: settings.background,
+                options: [
                   for (final b in EpubBackgroundTheme.values)
-                    ChoiceChip(
-                      label: Text(b.label),
-                      selected: settings.background == b,
-                      onSelected: (_) => notifier.setBackground(b),
-                    ),
+                    WmPickerOption(value: b, label: b.label),
                 ],
+                onChanged: notifier.setBackground,
               ),
               const SizedBox(height: 12),
               SwitchListTile(

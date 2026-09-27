@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/ui/lumina_ui.dart';
+import '../../core/ui/watermelon.dart';
 import 'package:lumina_reader/core/ui/hero_motion.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -269,41 +270,42 @@ class _DownloadsTabs extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tab = ref.watch(downloadsTabProvider);
-    return SizedBox(
-      height: 48,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        children: [
-          for (final t in DownloadsTab.values)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: StatusChip(
-                label: '${t.label} (${counts[t] ?? 0})',
-                selected: tab == t,
-                color: _tabColor(context, t),
-                onTap: () => ref.read(downloadsTabProvider.notifier).state = t,
+    final h = HeroScope.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        // watermelon.sh Status Picker — the download-state tabs with their
+        // semantic colors and live counts.
+        child: WmStatusPicker(
+          value: DownloadsTab.values.indexOf(tab),
+          onChanged: (i) =>
+              ref.read(downloadsTabProvider.notifier).state =
+                  DownloadsTab.values[i],
+          items: [
+            for (final (i, t) in DownloadsTab.values.indexed)
+              WmStatusItem(
+                id: i,
+                name: '${t.label} (${counts[t] ?? 0})',
+                icon: switch (t) {
+                  DownloadsTab.all => Icons.apps_rounded,
+                  DownloadsTab.downloading => Icons.downloading_rounded,
+                  DownloadsTab.queued => Icons.schedule_rounded,
+                  DownloadsTab.completed => Icons.check_circle_outline_rounded,
+                  DownloadsTab.failed => Icons.error_outline_rounded,
+                },
+                color: switch (t) {
+                  DownloadsTab.all => h.foreground,
+                  DownloadsTab.downloading => h.accent,
+                  DownloadsTab.queued => h.foreground,
+                  DownloadsTab.completed => h.success,
+                  DownloadsTab.failed => h.danger,
+                },
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
-  }
-
-  Color _tabColor(BuildContext context, DownloadsTab t) {
-    final h = HeroScope.of(context);
-    switch (t) {
-      case DownloadsTab.all:
-        return h.foreground;
-      case DownloadsTab.downloading:
-        return h.accent;
-      case DownloadsTab.queued:
-        return h.foreground;
-      case DownloadsTab.completed:
-        return h.success;
-      case DownloadsTab.failed:
-        return h.danger;
-    }
   }
 }
 

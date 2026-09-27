@@ -1282,7 +1282,10 @@ class _WmQuickOptionPickerState<T> extends State<WmQuickOptionPicker<T>> {
                     size: 14, color: _open ? h.accent : h.muted),
                 const SizedBox(width: 6),
               ],
-              AnimatedSwitcher(
+              // Flexible: a long option label (e.g. source names) ellipsizes
+              // instead of overflowing the pill's parent row.
+              Flexible(
+                child: AnimatedSwitcher(
                 duration: heroAnimationsEnabled
                     ? const Duration(milliseconds: 220)
                     : Duration.zero,
@@ -1298,10 +1301,13 @@ class _WmQuickOptionPickerState<T> extends State<WmQuickOptionPicker<T>> {
                 child: Text(
                   selected?.label ?? widget.hint ?? 'Select',
                   key: ValueKey(selected?.label ?? 'hint'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: HeroTokens.caption.copyWith(
                     color: h.foreground,
                     fontWeight: FontWeight.w600,
                   ),
+                ),
                 ),
               ),
               const SizedBox(width: 6),
@@ -1380,7 +1386,11 @@ class _TrayPanelState<T> extends State<_TrayPanel<T>>
         },
         child: Material(
           color: Colors.transparent,
-          child: Container(
+          // Max width: an anchored tray near a screen edge must never run
+          // off-screen; long labels ellipsize inside instead.
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 300),
+            child: Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
               color: h.surface2,
@@ -1402,6 +1412,7 @@ class _TrayPanelState<T> extends State<_TrayPanel<T>>
                     },
                   ),
               ],
+            ),
             ),
           ),
         ),
@@ -1441,11 +1452,15 @@ class _TrayOption<T> extends StatelessWidget {
                   size: 14, color: selected ? h.accent : h.muted),
               const SizedBox(width: 6),
             ],
-            Text(
-              option.label,
-              style: HeroTokens.caption.copyWith(
-                color: selected ? h.accent : h.foreground,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            Flexible(
+              child: Text(
+                option.label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: HeroTokens.caption.copyWith(
+                  color: selected ? h.accent : h.foreground,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                ),
               ),
             ),
           ],

@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/ui/lumina_ui.dart';
+import '../../core/ui/watermelon.dart';
 import 'package:lumina_reader/core/ui/hero_motion.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -38,7 +39,20 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   final _searchController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    // Live filtering companion to the predictive input: every keystroke
+    // re-runs the client-side filter in build.
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  void _onSearchChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     super.dispose();
   }
@@ -93,12 +107,16 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                  child: HeroInput(
+                  // watermelon.sh Predictive Text — completions from the
+                  // history's own titles; live filtering via the listener.
+                  child: WmPredictiveInput(
                     controller: _searchController,
                     hint: 'Search history…',
-                    prefixIcon: Icons.search_rounded,
                     autofocus: true,
-                    onChanged: (v) => setState(() {}),
+                    dictionary: [
+                      for (final e in allHistory.take(100)) e.mangaTitle,
+                    ],
+                    onSubmitted: (v) => setState(() {}),
                   ),
                 ),
               ),

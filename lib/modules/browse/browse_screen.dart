@@ -19,6 +19,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/ui/lumina_ui.dart';
+import '../../core/ui/watermelon.dart';
 import '../../data/providers.dart' as data;
 import '../../eval/lib.dart' as eval_lib;
 
@@ -62,13 +63,17 @@ Future<void> openSourceManga(
   }
 }
 
-/// The browse screen.
+/// The browse screen (Explore).
 ///
-/// Combines three surfaces: a source strip (installed extensions), a
-/// Popular / Latest / Search segmented control that switches the grid of
-/// covers for the active source, a global search that queries every source
-/// at once, an "Add repository" button (for third-party extension repos)
-/// and an "Extensions" management link.
+/// ONE search surface: the watermelon.sh Morphing Discovery Bar under the
+/// app bar (collapsed pill morphs into a live search field; submits run
+/// the GLOBAL search across every installed source). The old duplicated
+/// search surfaces — the app-bar global-search dialog AND the per-source
+/// Search tab — were removed.
+///
+/// Below it, ONE pinned picker row: the active Source (Quick Option
+/// Picker) and the Popular / Latest browse mode (Quick Option Picker)
+/// driving the grid.
 class BrowseScreen extends ConsumerStatefulWidget {
   const BrowseScreen({super.key});
 
@@ -79,14 +84,12 @@ class BrowseScreen extends ConsumerStatefulWidget {
 class _BrowseScreenState extends ConsumerState<BrowseScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController =
-      TabController(length: 3, vsync: this);
-  final _searchController = TextEditingController();
+      TabController(length: 2, vsync: this);
   int _selectedSourceId = 1;
 
   @override
   void dispose() {
     _tabController.dispose();
-    _searchController.dispose();
     super.dispose();
   }
 
@@ -166,16 +169,12 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
                 SliverAppBar(
                   pinned: true,
                   floating: true,
-                  expandedHeight: 84,
                   automaticallyImplyLeading: false,
-                  flexibleSpace: FlexibleSpaceBar(
-                    titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
-                    title: Text(
-                      'Browse',
-                      style: HeroTokens.display.copyWith(
-                        color: h.foreground,
-                        fontSize: 30,
-                      ),
+                  title: Text(
+                    'Explore',
+                    style: HeroTokens.display.copyWith(
+                      color: h.foreground,
+                      fontSize: 28,
                     ),
                   ),
                   actions: [
@@ -189,30 +188,44 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
                       icon: Icons.add_link,
                       onPressed: () => _showAddRepoSheet(context),
                     ),
-                    HeroIconButton(
-                      tooltip: 'Global search',
-                      icon: Icons.travel_explore_outlined,
-                      onPressed: () => _showGlobalSearch(context),
-                    ),
                     const SizedBox(width: 8),
                   ],
                 ),
+                // Morphing Discovery Bar (watermelon.sh) — THE search
+                // button. Collapsed: search pill + quick source categories.
+                // Expanded: morphs into a live field; submit runs the global
+                // search across every installed source.
                 SliverToBoxAdapter(
-                  child: _SourceStrip(
-                    sources: sources,
-                    selectedId: _selectedSourceId,
-                    onSelect: (id) => setState(() => _selectedSourceId = id),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                    child: WmDiscoveryBar(
+                      searchHint: 'Search all sources…',
+                      onSearch: _openGlobalSearchResults,
+                      categories: [
+                        for (final s in sources.take(4))
+                          WmDiscoveryCategory(
+                            icon: Icons.language_rounded,
+                            label: s.name,
+                            selected: s.id == activeSource.id,
+                            onTap: () =>
+                                setState(() => _selectedSourceId = s.id),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
                 SliverPersistentHeader(
                   pinned: true,
-                  // HeroSegmented instead of a Material TabBar: the control
-                  // now aligns exactly with the source strip's 16px inset
-                  // (the old TabBar indented "Popular" and broke the visual
-                  // rhythm) while still driving the SAME TabController as
-                  // the TabBarView below.
-                  delegate:
-                      _SegmentedHeaderDelegate(controller: _tabController),
+                  // ONE pinned picker row: active Source + Popular/Latest
+                  // mode, both watermelon.sh Quick Option Pickers. The old
+                  // source strip + 3-way segmented control are gone.
+                  delegate: _PickerHeaderDelegate(
+                    controller: _tabController,
+                    sources: sources,
+                    selectedSourceId: activeSource.id,
+                    onSelectSource: (id) =>
+                        setState(() => _selectedSourceId = id),
+                  ),
                 ),
               ];
             },
@@ -229,7 +242,6 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
                     label: 'Latest',
                     latest: true,
                     source: activeSource),
-                _SourceSearch(source: activeSource),
               ],
             ),
           );
@@ -263,65 +275,6 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
   // --------------------------------------------------------------------------
   void _showAddRepoSheet(BuildContext context) {
     showAddRepoSheet(context);
-  }
-
-  void _showGlobalSearch(BuildContext context) {
-    showHeroDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        final h = HeroScope.of(dialogContext);
-        return Padding(
-          // Keep the dialog above the on-screen keyboard.
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(dialogContext).viewInsets.bottom,
-          ),
-          child: HeroDialogFrame(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Global search',
-                  style: HeroTokens.title.copyWith(color: h.foreground),
-                ),
-                const SizedBox(height: 16),
-                HeroInput(
-                  controller: _searchController,
-                  autofocus: true,
-                  hint: 'Search across all sources…',
-                  prefixIcon: Icons.search_rounded,
-                  onSubmitted: (v) {
-                    Navigator.pop(dialogContext);
-                    _openGlobalSearchResults(v);
-                  },
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    HeroButton(
-                      label: 'Cancel',
-                      variant: HeroButtonVariant.light,
-                      color: HeroColorRole.neutral,
-                      onPressed: () => Navigator.pop(dialogContext),
-                    ),
-                    const SizedBox(width: 12),
-                    HeroButton(
-                      label: 'Search',
-                      icon: Icons.search_rounded,
-                      onPressed: () {
-                        Navigator.pop(dialogContext);
-                        _openGlobalSearchResults(_searchController.text);
-                      },
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
   }
 
   void _openGlobalSearchResults(String query) {
@@ -576,7 +529,21 @@ class _ExtensionCatalogSheetState
   bool _syncing = false;
 
   @override
+  void initState() {
+    super.initState();
+    // Live filtering: the predictive input's completion chips build on
+    // the controller, and every keystroke still narrows the list below.
+    _searchController.addListener(_onQueryChanged);
+  }
+
+  void _onQueryChanged() {
+    final v = _searchController.text;
+    if (v != _query) setState(() => _query = v);
+  }
+
+  @override
   void dispose() {
+    _searchController.removeListener(_onQueryChanged);
     _searchController.dispose();
     super.dispose();
   }
@@ -643,11 +610,19 @@ class _ExtensionCatalogSheetState
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-          child: HeroInput(
+          // watermelon.sh Predictive Text — completion chips built from the
+          // extension catalog itself; filtering stays live per keystroke.
+          child: WmPredictiveInput(
             controller: _searchController,
             hint: 'Search extensions…',
-            prefixIcon: Icons.search_rounded,
-            onChanged: (v) => setState(() => _query = v),
+            dictionary: [
+              for (final e in catalog.take(60))
+                e.name,
+              'english',
+              'manga',
+              'anime',
+            ],
+            onSubmitted: (v) => setState(() => _query = v),
           ),
         ),
         Expanded(
@@ -790,103 +765,27 @@ class _CatalogTile extends ConsumerWidget {
   }
 }
 
-class _SourceStrip extends StatelessWidget {
-  const _SourceStrip({
+/// Pins the ONE picker row under the discovery bar: active Source
+/// (watermelon.sh Quick Option Picker) + Popular / Latest mode (Quick
+/// Option Picker driving the SAME [TabController] as the [TabBarView]).
+class _PickerHeaderDelegate extends SliverPersistentHeaderDelegate {
+  _PickerHeaderDelegate({
+    required this.controller,
     required this.sources,
-    required this.selectedId,
-    required this.onSelect,
+    required this.selectedSourceId,
+    required this.onSelectSource,
   });
 
-  final List<Source> sources;
-  final int selectedId;
-  final ValueChanged<int> onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    final h = HeroScope.of(context);
-    return SizedBox(
-      height: 72,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        itemCount: sources.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
-        itemBuilder: (context, i) {
-          final s = sources[i];
-          final active = s.id == selectedId;
-          return GestureDetector(
-            onTap: () => onSelect(s.id),
-            child: AnimatedContainer(
-              duration: HeroTokens.motionColor,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                // Active pill: accent-soft fill + 1.5px accent border +
-                // accent avatar — a high-contrast selection state.
-                // Inactive: neutral surface2 pill with muted content.
-                color: active ? h.accentSoft : h.surface2,
-                borderRadius: BorderRadius.circular(HeroTokens.radiusChip),
-                border: Border.all(
-                  color: active ? h.accent : Colors.transparent,
-                  width: 1.5,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircleAvatar(
-                    radius: 11,
-                    backgroundColor: active ? h.accent : h.dflt,
-                    child: Text(
-                      s.name.isEmpty ? '?' : s.name.substring(0, 1),
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: active ? h.accentFg : h.muted,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // The previous vertical layout (avatar above label) needed
-                  // ~47px inside a 34px content box — it overflowed on every
-                  // device. Horizontal chip layout fits and reads better.
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 96),
-                    child: Text(
-                      s.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        height: 1.2,
-                        fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                        color: active ? h.accentSoftFg : h.muted,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-/// Pins the Popular / Latest / Search [HeroSegmented] directly under the
-/// source strip. Driven by the SAME [TabController] as the [TabBarView]:
-/// segment taps call [TabController.animateTo] and page swipes update the
-/// selection through the controller listener.
-class _SegmentedHeaderDelegate extends SliverPersistentHeaderDelegate {
-  _SegmentedHeaderDelegate({required this.controller});
-
   final TabController controller;
+  final List<Source> sources;
+  final int selectedSourceId;
+  final ValueChanged<int> onSelectSource;
 
   /// Pinned-bar height. The child is forced to this exact height via
-  /// SizedBox (a slimmer segmented control must never make the pinned
-  /// header's paintExtent fall below its declared layoutExtent — that
-  /// trips SliverGeometry's assertion).
-  static const double headerHeight = 46;
+  /// SizedBox (a slimmer picker row must never make the pinned header's
+  /// paintExtent fall below its declared layoutExtent — that trips
+  /// SliverGeometry's assertion).
+  static const double headerHeight = 52;
 
   @override
   double get minExtent => headerHeight;
@@ -914,19 +813,46 @@ class _SegmentedHeaderDelegate extends SliverPersistentHeaderDelegate {
       child: SizedBox(
         height: headerHeight,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          child: ListenableBuilder(
-            listenable: controller,
-            builder: (context, _) => HeroSegmented<int>(
-              expand: true,
-              selected: controller.index,
-              segments: const [
-                (0, 'Popular', Icons.local_fire_department_rounded),
-                (1, 'Latest', Icons.new_releases_rounded),
-                (2, 'Search', Icons.search_rounded),
-              ],
-              onChanged: controller.animateTo,
-            ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          child: Row(
+            children: [
+              Flexible(
+                child: WmQuickOptionPicker<int>(
+                  hint: 'Source',
+                  trayAbove: false,
+                  value: selectedSourceId,
+                  options: [
+                    for (final s in sources)
+                      WmPickerOption(
+                        value: s.id,
+                        label: s.name,
+                        icon: Icons.language_rounded,
+                      ),
+                  ],
+                  onChanged: onSelectSource,
+                ),
+              ),
+              const SizedBox(width: 8),
+              ListenableBuilder(
+                listenable: controller,
+                builder: (context, _) => WmQuickOptionPicker<int>(
+                  hint: 'Browse',
+                  trayAbove: false,
+                  value: controller.index,
+                  options: const [
+                    WmPickerOption(
+                        value: 0,
+                        label: 'Popular',
+                        icon: Icons.local_fire_department_rounded),
+                    WmPickerOption(
+                        value: 1,
+                        label: 'Latest',
+                        icon: Icons.new_releases_rounded),
+                  ],
+                  onChanged: controller.animateTo,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -934,31 +860,10 @@ class _SegmentedHeaderDelegate extends SliverPersistentHeaderDelegate {
   }
 
   @override
-  bool shouldRebuild(covariant _SegmentedHeaderDelegate oldDelegate) =>
-      controller != oldDelegate.controller;
-}
-
-/// 3-column skeleton grid (9 cover-shaped tiles) shown while a catalog
-/// search is in flight — HeroUI shimmer instead of a bare spinner.
-class _GridSkeleton extends StatelessWidget {
-  const _GridSkeleton();
-
-  @override
-  Widget build(BuildContext context) {
-    return GridView(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisExtent: 180,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 14,
-      ),
-      children: List.generate(
-        9,
-        (_) => const HeroSkeleton(width: double.infinity, height: 180),
-      ),
-    );
-  }
+  bool shouldRebuild(covariant _PickerHeaderDelegate oldDelegate) =>
+      controller != oldDelegate.controller ||
+      selectedSourceId != oldDelegate.selectedSourceId ||
+      sources != oldDelegate.sources;
 }
 
 class _SourceGrid extends ConsumerWidget {
@@ -1083,104 +988,6 @@ class _SourceGrid extends ConsumerWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _SourceSearch extends ConsumerStatefulWidget {
-  const _SourceSearch({required this.source});
-  final Source source;
-
-  @override
-  ConsumerState<_SourceSearch> createState() => _SourceSearchState();
-}
-
-class _SourceSearchState extends ConsumerState<_SourceSearch> {
-  final _controller = TextEditingController();
-  String _query = '';
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // Per-source search (previously watched the merged globalSearch
-    // provider, so searching ONE source returned every source's results).
-    final results = _query.isEmpty
-        ? const AsyncValue<List<Manga>>.data([])
-        : ref.watch(sourceSearchProvider((widget.source.id, _query)));
-
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-          child: HeroInput(
-            controller: _controller,
-            hint: 'Search ${widget.source.name}…',
-            prefixIcon: Icons.search_rounded,
-            suffix: _query.isNotEmpty
-                ? HeroIconButton(
-                    icon: Icons.close_rounded,
-                    size: 30,
-                    iconSize: 18,
-                    onPressed: () {
-                      _controller.clear();
-                      setState(() => _query = '');
-                    },
-                  )
-                : null,
-            onSubmitted: (v) => setState(() => _query = v.trim()),
-          ),
-        ),
-        Expanded(
-          child: results.when(
-            data: (items) {
-              if (items.isEmpty && _query.isEmpty) {
-                return emptyState(
-                  context: context,
-                  icon: Icons.search,
-                  title: 'Search ${widget.source.name}',
-                  subtitle: 'Type a title above and hit enter to begin.',
-                );
-              }
-              if (items.isEmpty) {
-                return emptyState(
-                  context: context,
-                  icon: Icons.sentiment_dissatisfied_outlined,
-                  title: 'No results',
-                  subtitle: '“$_query” did not match anything.',
-                );
-              }
-              return GridView.builder(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 120,
-                  childAspectRatio: 0.66,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 14,
-                ),
-                itemCount: items.length,
-                itemBuilder: (context, i) => BookCover(
-                  manga: items[i],
-                  width: double.infinity,
-                  height: double.infinity,
-                  onTap: () => openSourceManga(context, ref, items[i]),
-                ),
-              );
-            },
-            loading: () => const _GridSkeleton(),
-            error: (e, _) => emptyState(
-              context: context,
-              icon: Icons.error_outline,
-              title: 'Search failed',
-              subtitle: e.toString(),
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

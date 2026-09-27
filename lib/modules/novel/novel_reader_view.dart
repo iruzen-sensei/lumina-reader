@@ -23,6 +23,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../../core/ui/watermelon.dart';
 import '../../data/providers.dart' as data;
 import '../../providers/providers.dart';
 import '../../providers/storage_provider.dart';
@@ -370,43 +371,37 @@ class NovelReaderSettingsSheet extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
               const _SectionLabel('Font family'),
-              Wrap(
-                spacing: 8,
-                children: [
+              // watermelon.sh Quick Option Pickers — one pill per setting.
+              WmQuickOptionPicker<String>(
+                trayAbove: false,
+                value: settings.fontFamily,
+                options: [
                   for (final f in const ['serif', 'sans-serif', 'monospace'])
-                    ChoiceChip(
-                      label: Text(f),
-                      selected: settings.fontFamily == f,
-                      onSelected: (_) => notifier.setFontFamily(f),
-                    ),
+                    WmPickerOption(value: f, label: f),
                 ],
+                onChanged: notifier.setFontFamily,
               ),
               const SizedBox(height: 12),
               const _SectionLabel('Text alignment'),
-              Wrap(
-                spacing: 8,
-                children: [
+              WmQuickOptionPicker<NovelTextAlign>(
+                trayAbove: false,
+                value: settings.align,
+                options: [
                   for (final a in NovelTextAlign.values)
-                    ChoiceChip(
-                      avatar: Icon(a.icon),
-                      label: Text(a.label),
-                      selected: settings.align == a,
-                      onSelected: (_) => notifier.setAlign(a),
-                    ),
+                    WmPickerOption(value: a, label: a.label, icon: a.icon),
                 ],
+                onChanged: notifier.setAlign,
               ),
               const SizedBox(height: 12),
               const _SectionLabel('Background'),
-              Wrap(
-                spacing: 8,
-                children: [
+              WmQuickOptionPicker<NovelBackgroundTheme>(
+                trayAbove: false,
+                value: settings.background,
+                options: [
                   for (final b in NovelBackgroundTheme.values)
-                    ChoiceChip(
-                      label: Text(b.label),
-                      selected: settings.background == b,
-                      onSelected: (_) => notifier.setBackground(b),
-                    ),
+                    WmPickerOption(value: b, label: b.label),
                 ],
+                onChanged: notifier.setBackground,
               ),
               const SizedBox(height: 12),
               SwitchListTile(

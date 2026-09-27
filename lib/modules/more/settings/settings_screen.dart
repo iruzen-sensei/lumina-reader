@@ -22,6 +22,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/ui/lumina_ui.dart';
+import '../../../core/ui/watermelon.dart';
 import 'package:lumina_reader/core/ui/hero_motion.dart';
 import '../../../data/providers.dart' as data;
 import '../../../services/backup.dart';
@@ -163,7 +164,8 @@ class _SwitchSettingTile extends StatelessWidget {
 }
 
 /// Row with a leading icon, title, optional subtitle + trailing widget, and
-/// a full-width [HeroSegmented] control beneath it (for 2-4 way choices).
+/// a watermelon.sh Quick Option Picker beneath it (for 2-6 way choices —
+/// pill shows the active option, tap pops the tray).
 class _SegmentedSettingTile<T> extends StatelessWidget {
   const _SegmentedSettingTile({
     required this.icon,
@@ -199,11 +201,14 @@ class _SegmentedSettingTile<T> extends StatelessWidget {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: HeroSegmented<T>(
-            segments: segments,
-            selected: selected,
+          child: WmQuickOptionPicker<T>(
+            trayAbove: false,
+            value: selected,
+            options: [
+              for (final (v, label, segIcon) in segments)
+                WmPickerOption(value: v, label: label, icon: segIcon),
+            ],
             onChanged: onChanged,
-            expand: true,
           ),
         ),
       ],

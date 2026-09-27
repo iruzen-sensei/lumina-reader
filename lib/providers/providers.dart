@@ -215,6 +215,8 @@ class LibraryOptionsNotifier extends StateNotifier<LibraryOptions> {
   void setSort(LibrarySort s) => state = state.copyWith(sort: s);
   void toggleSortDirection() =>
       state = state.copyWith(sortDescending: !state.sortDescending);
+  void setSortDirection(bool descending) =>
+      state = state.copyWith(sortDescending: descending);
   void setFilter(LibraryFilter f) => state = state.copyWith(filter: f);
   void setMediaType(LibraryMediaType m) => state = state.copyWith(mediaType: m);
   void setCategory(int id) => state = state.copyWith(activeCategoryId: id);

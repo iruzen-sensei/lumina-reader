@@ -10,7 +10,11 @@
 //   * My List rail (the user's anime library)
 //   * Trending Now / New This Season / Top 10 (numbered) / All-Time
 //     Popular / Coming Soon rails (AniList GraphQL)
-//   * Genre chips feeding the paginated browse grid
+//
+//   NOTE: genre browsing lives in ONE place — the browse screen's
+//   Quick Option Picker filter bar (reached via the Discovery Bar and
+//   every row's See-all). The old duplicated genre chip-wall at the
+//   bottom of this page was removed.
 //
 // Accent note: this screen deliberately uses Netflix crimson (#E50914)
 // for its primary actions — everywhere else the app stays Lumina Noir.
@@ -230,8 +234,6 @@ class _AnimeHomeScreenState extends ConsumerState<AnimeHomeScreen> {
               provider: animeUpcomingProvider,
               hideOnError: feedDown,
             ),
-            // Genre chips
-            const _GenreSection(),
             const SliverToBoxAdapter(
                 child: SizedBox(height: kBottomNavigationBarHeight + 32)),
           ],
@@ -1012,46 +1014,6 @@ class _NumberedCard extends ConsumerWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Genre chips
-// ---------------------------------------------------------------------------
-
-class _GenreSection extends StatelessWidget {
-  const _GenreSection();
-
-  @override
-  Widget build(BuildContext context) {
-    final h = HeroScope.of(context);
-    return SliverMainAxisGroup(
-      slivers: [
-        const SliverToBoxAdapter(
-            child: _RowHeader(title: 'Browse by Genre')),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final genre in AniListService.genres)
-                  ActionChip(
-                    label: Text(genre),
-                    backgroundColor: h.surface,
-                    side: BorderSide(color: h.border),
-                    labelStyle:
-                        HeroTokens.bodySmall.copyWith(color: h.foreground),
-                    onPressed: () => context.push(
-                        '/animeBrowse?genre=${Uri.encodeComponent(genre)}'),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

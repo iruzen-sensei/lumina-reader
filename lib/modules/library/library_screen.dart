@@ -23,6 +23,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/theme.dart';
 import '../../core/ui/lumina_ui.dart';
+import '../../core/ui/watermelon.dart';
 import 'package:lumina_reader/core/ui/hero_motion.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
@@ -56,7 +57,18 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   final _refreshKey = GlobalKey<RefreshIndicatorState>();
 
   @override
+  void initState() {
+    super.initState();
+    // Live filtering companion to the predictive search input.
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  void _onSearchChanged() =>
+      ref.read(libraryOptionsProvider.notifier).setQuery(_searchController.text);
+
+  @override
   void dispose() {
+    _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     super.dispose();
   }
@@ -78,6 +90,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               downloadedOnly: downloadedOnly,
               searchVisible: _searchVisible,
               searchController: _searchController,
+              searchDictionary: [
+                for (final m in ref.watch(filteredMangaProvider).take(200))
+                  m.title,
+              ],
               onSearchToggle: () {
                 setState(() {
                   _searchVisible = !_searchVisible;
@@ -232,6 +248,7 @@ class _LibraryHeader extends StatelessWidget implements PreferredSizeWidget {
     required this.downloadedOnly,
     required this.searchVisible,
     required this.searchController,
+    required this.searchDictionary,
     required this.onSearchToggle,
     required this.onSearchChanged,
     required this.onToggleIncognito,
@@ -243,6 +260,7 @@ class _LibraryHeader extends StatelessWidget implements PreferredSizeWidget {
   final bool downloadedOnly;
   final bool searchVisible;
   final TextEditingController searchController;
+  final List<String> searchDictionary;
   final VoidCallback onSearchToggle;
   final ValueChanged<String> onSearchChanged;
   final VoidCallback onToggleIncognito;
@@ -260,18 +278,15 @@ class _LibraryHeader extends StatelessWidget implements PreferredSizeWidget {
       child: searchVisible
           ? Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-              child: HeroInput(
+              // watermelon.sh Predictive Text — completion chips built from
+              // the library's own titles; filtering stays live per keystroke
+              // via the controller listener in the state.
+              child: WmPredictiveInput(
                 controller: searchController,
                 hint: 'Search library…',
-                prefixIcon: Icons.search_rounded,
                 autofocus: true,
-                onChanged: onSearchChanged,
-                suffix: HeroIconButton(
-                  icon: Icons.close_rounded,
-                  iconSize: 19,
-                  size: 32,
-                  onPressed: onSearchToggle,
-                ),
+                dictionary: searchDictionary,
+                onSubmitted: onSearchChanged,
               ),
             )
           : Padding(
@@ -446,27 +461,32 @@ class _CategoryTabs extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return SizedBox(
-      height: 44,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        itemCount: categories.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (context, i) {
-          final c = categories[i];
-          final active = c.id == activeId;
-          return StatusChip(
-            label: c.name,
-            selected: active,
-            color: Color(c.color),
-            onTap: () => onSelect(c.id),
-            // Edit Badge interaction (watermelon.sh): long-press a category
-            // tab to rename it inline — the pencil badge opens a sheet with
-            // the name pre-filled, focused and selected.
-            onLongPress: c.id == 0 ? null : () => _renameCategory(context, ref, c),
-          );
-        },
+    final active = categories.where((c) => c.id == activeId).firstOrNull;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        // watermelon.sh Quick Option Picker — category selection. The
+        // Edit-Badge rename lives on a long-press of the pill (renames the
+        // ACTIVE category).
+        child: GestureDetector(
+          onLongPress: (active == null || active.id == 0)
+              ? null
+              : () => _renameCategory(context, ref, active),
+          child: WmQuickOptionPicker<int>(
+            trayAbove: false,
+            value: activeId,
+            options: [
+              for (final c in categories)
+                WmPickerOption(
+                  value: c.id,
+                  label: c.name,
+                  icon: Icons.label_outline_rounded,
+                ),
+            ],
+            onChanged: onSelect,
+          ),
+        ),
       ),
     );
   }
@@ -518,7 +538,7 @@ class _CategoryTabs extends ConsumerWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'Long-press any category tab to rename it.',
+              'Long-press the category pill to rename it.',
               style: HeroTokens.caption.copyWith(color: h.muted),
             ),
           ],
@@ -529,166 +549,103 @@ class _CategoryTabs extends ConsumerWidget {
   }
 }
 
-/// ONE compact row replacing the previous three always-visible filter rows
-/// (status pills + media pills + category tabs all stacked = 30% of the
-/// viewport). Media type lives in a segmented control; status + sort live
-/// behind a single Filter button that shows an active-count badge.
+/// ONE compact row of watermelon.sh pickers (media / status / sort /
+/// direction) — all library filtering is inline, no hidden sheet, no
+/// duplicated surfaces. Status uses the Status Picker (colored); the rest
+/// are Quick Option Pickers.
 class _LibraryFilterBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final options = ref.watch(libraryOptionsProvider);
-    final activeCount = (options.filter != LibraryFilter.all ? 1 : 0) +
-        (options.sortDescending ? 1 : 0) +
-        (options.sort != LibrarySort.title ? 1 : 0);
+    final notifier = ref.read(libraryOptionsProvider.notifier);
 
-    final mediaValues = [
-      LibraryMediaType.all,
-      LibraryMediaType.manga,
-      LibraryMediaType.novel,
-      LibraryMediaType.book,
-    ];
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      child: Row(
+    return SizedBox(
+      height: 52,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         children: [
-          Expanded(
-            child: HeroSegmented<LibraryMediaType>(
-              segments: [
-                for (final m in mediaValues) (m, m.label, null),
-              ],
-              selected: options.mediaType,
-              onChanged: (m) =>
-                  ref.read(libraryOptionsProvider.notifier).setMediaType(m),
-            ),
+          WmQuickOptionPicker<LibraryMediaType>(
+            hint: 'Media',
+            trayAbove: false,
+            value: options.mediaType,
+            options: [
+              for (final m in LibraryMediaType.values)
+                WmPickerOption(value: m, label: m.label),
+            ],
+            onChanged: notifier.setMediaType,
           ),
           const SizedBox(width: 8),
-          _FilterButton(
-            activeCount: activeCount,
-            onTap: () => _showFilterSheet(context, ref),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _showFilterSheet(BuildContext context, WidgetRef ref) async {
-    final notifier = ref.read(libraryOptionsProvider.notifier);
-    await showHeroSheet(
-      context: context,
-      title: 'Filter & sort',
-      builder: (ctx) => Consumer(builder: (ctx, ref, _) {
-        final options = ref.watch(libraryOptionsProvider);
-        final h = HeroScope.of(ctx);
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 20, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Status',
-                    style: HeroTokens.caption.copyWith(color: h.muted)),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final f in LibraryFilter.values)
-                      HeroChip(
-                        label: f.label,
-                        icon: switch (f) {
-                          LibraryFilter.all => null,
-                          LibraryFilter.reading => Icons.menu_book_rounded,
-                          LibraryFilter.finished =>
-                            Icons.check_circle_outline_rounded,
-                          LibraryFilter.unread => Icons.markunread_rounded,
-                        },
-                        selected: options.filter == f,
-                        variant: HeroChipVariant.outlineText,
-                        onTap: () => notifier.setFilter(f),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                Text('Sort by',
-                    style: HeroTokens.caption.copyWith(color: h.muted)),
-                const SizedBox(height: 8),
-                for (final sort in LibrarySort.values)
-                  HeroListTile(
-                    title: sort.label,
-                    leadingIcon: switch (sort) {
-                      LibrarySort.title => Icons.sort_by_alpha_rounded,
-                      LibrarySort.author => Icons.person_outline_rounded,
-                      LibrarySort.lastRead => Icons.schedule_rounded,
-                      LibrarySort.dateAdded => Icons.event_outlined,
-                      LibrarySort.unread => Icons.markunread_rounded,
-                      LibrarySort.progress => Icons.percent_rounded,
-                    },
-                    trailing: options.sort == sort
-                        ? Icon(Icons.check_rounded, size: 20, color: h.accent)
-                        : null,
-                    onTap: () => notifier.setSort(sort),
-                  ),
-                HeroListTile(
-                  title: 'Descending',
-                  leadingIcon: Icons.arrow_downward_rounded,
-                  trailing: HeroSwitch(
-                    value: options.sortDescending,
-                    onChanged: (_) => notifier.toggleSortDirection(),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      }),
-    );
-  }
-}
-
-class _FilterButton extends StatelessWidget {
-  const _FilterButton({required this.activeCount, required this.onTap});
-
-  final int activeCount;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final h = HeroScope.of(context);
-    final active = activeCount > 0;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration:
-            heroAnimationsEnabled ? HeroTokens.motionColor : Duration.zero,
-        height: 40,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        decoration: BoxDecoration(
-          color: active ? h.accentSoft : h.dflt,
-          borderRadius: BorderRadius.circular(HeroTokens.radiusButton),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.tune_rounded,
-              size: 18,
-              color: active ? h.accentSoftFg : h.muted,
-            ),
-            if (active) ...[
-              const SizedBox(width: 8),
-              Text(
-                '$activeCount',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: h.accentSoftFg,
-                ),
+          WmStatusPicker(
+            value: LibraryFilter.values.indexOf(options.filter),
+            onChanged: (i) => notifier.setFilter(LibraryFilter.values[i]),
+            items: [
+              WmStatusItem(
+                id: 0,
+                icon: Icons.apps_rounded,
+                name: LibraryFilter.all.label,
+              ),
+              WmStatusItem(
+                id: 1,
+                icon: Icons.menu_book_rounded,
+                name: LibraryFilter.reading.label,
+                color: HeroScope.of(context).accent,
+              ),
+              WmStatusItem(
+                id: 2,
+                icon: Icons.check_circle_outline_rounded,
+                name: LibraryFilter.finished.label,
+                color: HeroScope.of(context).success,
+              ),
+              WmStatusItem(
+                id: 3,
+                icon: Icons.markunread_rounded,
+                name: LibraryFilter.unread.label,
+                color: HeroScope.of(context).warning,
               ),
             ],
-          ],
-        ),
+          ),
+          const SizedBox(width: 8),
+          WmQuickOptionPicker<LibrarySort>(
+            hint: 'Sort',
+            trayAbove: false,
+            value: options.sort,
+            options: [
+              for (final sort in LibrarySort.values)
+                WmPickerOption(
+                  value: sort,
+                  label: sort.label,
+                  icon: switch (sort) {
+                    LibrarySort.title => Icons.sort_by_alpha_rounded,
+                    LibrarySort.author => Icons.person_outline_rounded,
+                    LibrarySort.lastRead => Icons.schedule_rounded,
+                    LibrarySort.dateAdded => Icons.event_outlined,
+                    LibrarySort.unread => Icons.markunread_rounded,
+                    LibrarySort.progress => Icons.percent_rounded,
+                  },
+                ),
+            ],
+            onChanged: notifier.setSort,
+          ),
+          const SizedBox(width: 8),
+          WmQuickOptionPicker<bool>(
+            hint: 'Order',
+            trayAbove: false,
+            value: options.sortDescending,
+            options: const [
+              WmPickerOption(
+                  value: true,
+                  label: 'Descending',
+                  icon: Icons.arrow_downward_rounded),
+              WmPickerOption(
+                  value: false,
+                  label: 'Ascending',
+                  icon: Icons.arrow_upward_rounded),
+            ],
+            onChanged: (desc) => notifier
+                .setSortDirection(desc),
+          ),
+        ],
       ),
     );
   }

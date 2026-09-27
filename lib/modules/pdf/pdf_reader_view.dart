@@ -21,6 +21,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../../core/ui/watermelon.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart' show incognitoModeProvider;
@@ -824,16 +825,15 @@ class PdfReaderSettingsSheet extends ConsumerWidget {
                 style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 16),
             const Text('Fit policy'),
-            Wrap(
-              spacing: 8,
-              children: [
+            // watermelon.sh Quick Option Picker — one pill, tap for tray.
+            WmQuickOptionPicker<PdfPageFitPolicy>(
+              trayAbove: false,
+              value: settings.fitPolicy,
+              options: [
                 for (final p in PdfPageFitPolicy.values)
-                  ChoiceChip(
-                    label: Text(p.label),
-                    selected: settings.fitPolicy == p,
-                    onSelected: (_) => notifier.setFitPolicy(p),
-                  ),
+                  WmPickerOption(value: p, label: p.label),
               ],
+              onChanged: notifier.setFitPolicy,
             ),
             const SizedBox(height: 12),
             SwitchListTile(

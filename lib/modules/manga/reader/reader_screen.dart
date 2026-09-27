@@ -22,6 +22,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../../../core/ui/watermelon.dart';
 import '../../../data/providers.dart' as data;
 import '../../../models/models.dart';
 import '../../../providers/providers.dart';
@@ -1217,57 +1218,53 @@ class _ReaderSettingsSheet extends ConsumerWidget {
             Text('Reader settings',
                 style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 16),
+            // watermelon.sh Quick Option Pickers: one pill per setting, tap
+            // pops the tray. Replaces the four ChoiceChip walls.
             const _SectionLabel('Reading mode'),
-            Wrap(
-              spacing: 8,
-              children: [
+            WmQuickOptionPicker<ReaderMode>(
+              trayAbove: false,
+              value: settings.mode,
+              options: [
                 for (final m in ReaderMode.values)
-                  ChoiceChip(
-                    label: Text(_modeLabel(m)),
-                    selected: settings.mode == m,
-                    onSelected: (_) => notifier.setMode(m),
-                  ),
+                  WmPickerOption(value: m, label: _modeLabel(m)),
               ],
+              onChanged: notifier.setMode,
             ),
             const SizedBox(height: 12),
             const _SectionLabel('Direction'),
-            Wrap(
-              spacing: 8,
-              children: [
+            WmQuickOptionPicker<ReaderDirection>(
+              trayAbove: false,
+              value: settings.direction,
+              options: [
                 for (final d in ReaderDirection.values)
-                  ChoiceChip(
-                    label: Text(_dirLabel(d)),
-                    selected: settings.direction == d,
-                    onSelected: (_) => notifier.setDirection(d),
-                  ),
+                  WmPickerOption(value: d, label: _dirLabel(d)),
               ],
+              onChanged: notifier.setDirection,
             ),
             const SizedBox(height: 12),
             const _SectionLabel('Fit'),
-            Wrap(
-              spacing: 8,
-              children: [
+            WmQuickOptionPicker<ReaderFit>(
+              trayAbove: false,
+              value: settings.fit,
+              options: [
                 for (final f in ReaderFit.values)
-                  ChoiceChip(
-                    label: Text(_fitLabel(f)),
-                    selected: settings.fit == f,
-                    onSelected: (_) => notifier.setFit(f),
-                  ),
+                  WmPickerOption(value: f, label: _fitLabel(f)),
               ],
+              onChanged: notifier.setFit,
             ),
             const SizedBox(height: 12),
             const _SectionLabel('Background'),
-            Wrap(
-              spacing: 8,
-              children: [
+            WmQuickOptionPicker<ReaderBgColor>(
+              trayAbove: false,
+              value: ReaderBgColor.values.firstWhere(
+                  (b) => b.color == settings.backgroundColor,
+                  orElse: () => ReaderBgColor.values.first),
+              options: [
                 for (final bg in ReaderBgColor.values)
-                  ChoiceChip(
-                    label: Text(bg.label),
-                    selected: settings.backgroundColor == bg.color,
-                    onSelected: (_) =>
-                        ref.read(readerSettingsProvider.notifier).setBackgroundColor(bg.color),
-                  ),
+                  WmPickerOption(value: bg, label: bg.label),
               ],
+              onChanged: (b) =>
+                  ref.read(readerSettingsProvider.notifier).setBackgroundColor(b.color),
             ),
             const SizedBox(height: 12),
             SwitchListTile(

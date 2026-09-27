@@ -1717,19 +1717,39 @@ class _GradientBottomState extends State<_GradientBottom> {
               ),
               const SizedBox(height: 2),
               // ---- Secondary row: the Extended Toolbar ----
+              // Speed is a watermelon.sh Quick Option Picker (pill → tray)
+              // — the old ChoiceChip modal sheet was a duplicate surface.
               Row(
                 children: [
+                  WmQuickOptionPicker<double>(
+                    hint: 'Speed',
+                    trayAbove: false,
+                    value: widget.speed,
+                    options: [
+                      for (final s in const [
+                        0.25,
+                        0.5,
+                        0.75,
+                        1.0,
+                        1.25,
+                        1.5,
+                        1.75,
+                        2.0
+                      ])
+                        WmPickerOption(
+                          value: s,
+                          label: s == 1.0 ? '1.0× Normal' : '${s.toStringAsFixed(2)}×',
+                          icon: Icons.speed_rounded,
+                        ),
+                    ],
+                    onChanged: widget.onSpeed,
+                  ),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: WmExtendedToolbar(
                         primary: [
-                          WmToolItem(
-                              icon: Icons.speed_rounded,
-                              label: 'Speed ${widget.speed}x',
-                              active: widget.speed != 1.0,
-                              onTap: () =>
-                                  _showSpeedSheet(context, widget.speed, widget.onSpeed)),
                           WmToolItem(
                               icon: Icons.hd_outlined,
                               label: widget.qualityLabel,
@@ -1770,57 +1790,6 @@ class _GradientBottomState extends State<_GradientBottom> {
           ),
         ),
       ),
-    );
-  }
-
-  void _showSpeedSheet(
-      BuildContext context, double current, ValueChanged<double> onSpeed) {
-    const speeds = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.black87,
-      showDragHandle: true,
-      isScrollControlled: true,
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.5,
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text('Playback speed',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold)),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: speeds
-                        .map((s) => ChoiceChip(
-                              label: Text('${s}x'),
-                              selected: s == current,
-                              onSelected: (_) {
-                                onSpeed(s);
-                                Navigator.pop(context);
-                              },
-                            ))
-                        .toList(),
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }
