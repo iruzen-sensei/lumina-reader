@@ -1,7 +1,7 @@
 name: lumina_reader
 description: Premium E-Book, Manga, Novel & Anime Reader with Extension System
 publish_to: 'none'
-version: 1.1.0+2
+version: 1.2.0+3
 
 environment:
   sdk: ^3.5.0
