@@ -21,6 +21,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/ui/lumina_ui.dart';
+import 'package:lumina_reader/core/ui/hero_motion.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -209,13 +210,13 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
   /// REAL remove-from-library with confirmation. The button truly deletes
   /// the entry (chapters, downloads, history, notes) and pops back.
   Future<void> _toggleFavorite(Manga manga) async {
-    final confirmed = await showHeroConfirm(
+    final confirmed = await showHeroDeleteConfirm(
       context: context,
       title: 'Remove from library?',
       message:
           '"${manga.title}" and its chapters, downloads, history and notes will be deleted. This cannot be undone.',
       confirmLabel: 'Remove',
-      danger: true,
+      
     );
     if (!confirmed) return;
     await ref.read(data.libraryRepositoryProvider).removeFromLibrary(manga.id);
@@ -1156,7 +1157,7 @@ class _ChapterList extends ConsumerWidget {
                 else
                   HeroListTile(
                     leadingIcon: Icons.delete_outline_rounded,
-                    danger: true,
+                    
                     title: 'Delete download',
                     subtitle: 'Removes the files from this device',
                     onTap: () {

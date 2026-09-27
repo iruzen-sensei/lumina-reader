@@ -23,6 +23,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/theme.dart';
 import '../../core/ui/lumina_ui.dart';
+import 'package:lumina_reader/core/ui/hero_motion.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -686,7 +687,7 @@ class _SelectionBar extends ConsumerWidget {
     WidgetRef ref,
     Set<int> selection,
   ) async {
-    final confirmed = await showHeroConfirm(
+    final confirmed = await showHeroDeleteConfirm(
       context: context,
       title:
           'Remove ${selection.length} ${selection.length == 1 ? 'entry' : 'entries'}?',

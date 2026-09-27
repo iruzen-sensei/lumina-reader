@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/ui/lumina_ui.dart';
+import 'package:lumina_reader/core/ui/hero_motion.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../shared/widgets.dart';
@@ -141,13 +142,13 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   }
 
   Future<void> _confirmClear() async {
-    final confirmed = await showHeroConfirm(
+    final confirmed = await showHeroDeleteConfirm(
       context: context,
       title: 'Clear history?',
       message: 'This permanently removes your reading and watching history. '
           'This action cannot be undone.',
       confirmLabel: 'Clear',
-      danger: true,
+      
     );
     if (!confirmed || !mounted) return;
     // REAL clear — previously a snackbar-only stub.

@@ -22,6 +22,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/ui/lumina_ui.dart';
+import 'package:lumina_reader/core/ui/hero_motion.dart';
 import '../../../data/providers.dart' as data;
 import '../../../services/backup.dart';
 import '../../../models/models.dart';
@@ -671,13 +672,12 @@ class _DownloadsCardState extends ConsumerState<_DownloadsCard> {
       showSnack(ref, context, 'Nothing to clear');
       return;
     }
-    final confirmed = await showHeroConfirm(
+    final confirmed = await showHeroDeleteConfirm(
       context: context,
       title: 'Clear download cache?',
       message: 'Downloaded chapter files will be removed from the device. '
           'Imported books are kept.',
       confirmLabel: 'Clear',
-      danger: true,
     );
     if (!confirmed) return;
     setState(() => _clearing = true);
@@ -703,13 +703,12 @@ class _DownloadsCardState extends ConsumerState<_DownloadsCard> {
   }
 
   Future<void> _deleteAll() async {
-    final confirmed = await showHeroConfirm(
+    final confirmed = await showHeroDeleteConfirm(
       context: context,
       title: 'Delete all downloads?',
       message: 'This removes every downloaded chapter from the device. Your '
           'library and reading progress are kept.',
       confirmLabel: 'Delete',
-      danger: true,
     );
     if (!confirmed) return;
     try {

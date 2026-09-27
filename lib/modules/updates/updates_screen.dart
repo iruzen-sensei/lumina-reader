@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/ui/lumina_ui.dart';
+import 'package:lumina_reader/core/ui/hero_motion.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -76,9 +77,9 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                   style: HeroTokens.display.copyWith(color: h.foreground),
                 ),
                 actions: [
-                  PopupMenuButton<String>(
+                  HeroMenuButton<String>(
                     tooltip: 'Filter',
-                    icon: const Icon(Icons.filter_list_rounded),
+                    icon: Icons.filter_list_rounded,
                     onSelected: (v) {
                       switch (v) {
                         case 'all':
@@ -93,13 +94,16 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                           break;
                       }
                     },
-                    itemBuilder: (_) => [
-                      const PopupMenuItem(
-                          value: 'all', child: Text('Show all')),
-                      const PopupMenuItem(
-                          value: 'unread', child: Text('Unread only')),
-                      const PopupMenuItem(
-                          value: 'read', child: Text('Read only')),
+                    items: const [
+                      HeroMenuItem(
+                          value: 'all', label: 'Show all',
+                          icon: Icons.apps_rounded),
+                      HeroMenuItem(
+                          value: 'unread', label: 'Unread only',
+                          icon: Icons.mark_email_unread_outlined),
+                      HeroMenuItem(
+                          value: 'read', label: 'Read only',
+                          icon: Icons.drafts_outlined),
                     ],
                   ),
                   HeroIconButton(
@@ -393,7 +397,7 @@ class _UpdateTileState extends ConsumerState<_UpdateTile> {
       // REAL delete — removes the downloaded files + queue rows and
       // resets the chapter flag (previously "flip visual state only").
       if (item.chapterId == null) return;
-      final confirmed = await showHeroConfirm(
+      final confirmed = await showHeroDeleteConfirm(
         context: context,
         title: 'Delete download?',
         message:

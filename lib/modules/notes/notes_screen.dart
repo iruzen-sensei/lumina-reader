@@ -17,6 +17,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/ui/lumina_ui.dart';
+import 'package:lumina_reader/core/ui/hero_motion.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../shared/widgets.dart';
@@ -381,12 +382,12 @@ class _NoteCard extends ConsumerWidget {
   }
 
   Future<bool> _confirmDelete(BuildContext context) async {
-    final result = await showHeroConfirm(
+    final result = await showHeroDeleteConfirm(
       context: context,
       title: 'Delete note?',
       message: 'This note will be permanently removed.',
       confirmLabel: 'Delete',
-      danger: true,
+      
     );
     return result;
   }

@@ -40,7 +40,7 @@
 // exact public API of the previous design system — only the VALUES changed,
 // so every screen adopting Hero* inherits the new language for free.
 
-import 'dart:ui' show ImageFilter;
+import 'dart:ui' show ImageFilter, lerpDouble;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart' show SpringDescription, SpringSimulation;
@@ -331,6 +331,48 @@ class HeroTokens {
   static const Color orbLavender = Color(0xFFC8B8E0);
   static const Color orbSky = Color(0xFFA8C8E8);
   static const Color orbRose = Color(0xFFE8B8C4);
+}
+
+// ---------------------------------------------------------------------------
+// HeroMotion — the shared motion language.
+//
+// Sourced from the two reference motion systems the app standardises on:
+//   * transitions.dev (menu-dropdown): entrances scale 0.97 -> 1 with a
+//     250ms decel; exits recede in 150ms to scale 0.99 — exits are quick
+//     and never scale TOWARD the viewer. House ease = cubic-bezier
+//     (.22, 1, .36, 1), which is already HeroTokens.springSoft.
+//   * rare-ui DeleteButton: the morph curve (.32,.72,0,1) for size/shape
+//     changes and a lid curve (.34,1.1,.64,1) whose 1.1 overshoot IS the
+//     bounce; press physics = spring(520, 18, mass .5) to 0.84.
+// ---------------------------------------------------------------------------
+
+class HeroMotion {
+  HeroMotion._();
+
+  /// transitions.dev house decel — entrances, staggers, settle-ins.
+  static const Curve easeOut = Cubic(0.22, 1, 0.36, 1);
+
+  /// rare-ui morph — size/shape changes (width, walls). Strong pull,
+  /// very long landing: reads as a material change, not a fade.
+  static const Curve easeMorph = Cubic(0.32, 0.72, 0, 1);
+
+  /// rare-ui lid — overshoots to 1.1, the "bounce" of the family. Use
+  /// ONLY where a playful release is earned (lids, badges, toggles).
+  static const Curve easeBounce = Cubic(0.34, 1.1, 0.64, 1);
+
+  /// Dropdown / sheet entrance duration (transitions.dev --dropdown-open-dur).
+  static const Duration durationIn = Duration(milliseconds: 250);
+
+  /// Dropdown / sheet exit duration — faster than the entrance; the exit
+  /// recedes instead of performing (--dropdown-close-dur 150ms).
+  static const Duration durationOut = Duration(milliseconds: 150);
+
+  /// Pre-appear scale for entrances (--dropdown-pre-scale).
+  static const double preScale = 0.97;
+
+  /// Exit scale — a 1% recede, never a shrink toward the viewer
+  /// (--dropdown-closing-scale).
+  static const double closingScale = 0.99;
 }
 
 /// Semantic colors resolved for the current brightness.
@@ -2151,6 +2193,58 @@ class HeroSeparator extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
+// HeroRouteScale — the transitions.dev dropdown language applied to routes.
+//
+// Layered INSIDE a modal (dialog / bottom sheet) on top of the platform
+// slide/fade: entrances grow from 0.97 at the anchor edge on the house
+// decel; exits recede to 0.99 — the exit never scales toward the viewer.
+// Follows the route's own animation, so drag-to-dismiss scrubs it too.
+// ---------------------------------------------------------------------------
+
+class HeroRouteScale extends StatelessWidget {
+  const HeroRouteScale({
+    super.key,
+    required this.child,
+    this.alignment = Alignment.center,
+  });
+
+  final Widget child;
+
+  /// The transform-origin edge the surface grows from — center for
+  /// dialogs, bottom-center for sheets (anchored to the screen floor).
+  final Alignment alignment;
+
+  @override
+  Widget build(BuildContext context) {
+    final route = ModalRoute.of(context);
+    final animation = route?.animation;
+    if (animation == null || !heroAnimationsEnabled) return child;
+
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (_, __) {
+        final t = animation.value;
+        if (t >= 1) return child;
+        // Forward: 0.97 -> 1 on the house decel. Reverse: 1 -> 0.99
+        // (a recede — the exit does not shrink toward the viewer).
+        final double scale;
+        if (animation.status == AnimationStatus.reverse) {
+          scale = lerpDouble(HeroMotion.closingScale, 1.0, t)!;
+        } else {
+          scale =
+              lerpDouble(HeroMotion.preScale, 1.0, HeroMotion.easeOut.transform(t))!;
+        }
+        return Transform.scale(
+          scale: scale,
+          alignment: alignment,
+          child: child,
+        );
+      },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // HeroSheet — bottom sheet, radius top 24, drag handle
 // ---------------------------------------------------------------------------
 
@@ -2183,34 +2277,39 @@ Future<T?> showHeroSheet<T>({
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
     showDragHandle: true,
-    builder: (ctx) => Padding(
-      // Keyboard inset: scroll-controlled sheets do NOT auto-avoid the
-      // IME (the framework only insets the non-scroll-controlled variant),
-      // and notes/editor sheets host TextFields — without this the keyboard
-      // covers the active field in landscape.
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (title != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(HeroTokens.space4, 0, HeroTokens.space4, HeroTokens.space4),
-              child: Text(
-                title,
-                style: HeroTokens.title.copyWith(
-                  color: h.foreground,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w600,
+    builder: (ctx) => HeroRouteScale(
+      // The sheet grows from the screen floor (its anchor edge) — the
+      // transitions.dev dropdown origin rule applied to bottom sheets.
+      alignment: Alignment.bottomCenter,
+      child: Padding(
+        // Keyboard inset: scroll-controlled sheets do NOT auto-avoid the
+        // IME (the framework only insets the non-scroll-controlled variant),
+        // and notes/editor sheets host TextFields — without this the keyboard
+        // covers the active field in landscape.
+        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (title != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(HeroTokens.space4, 0, HeroTokens.space4, HeroTokens.space4),
+                child: Text(
+                  title,
+                  style: HeroTokens.title.copyWith(
+                    color: h.foreground,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
+            Flexible(
+              // Flexible + SingleChildScrollView: the body scrolls instead of
+              // clipping, whatever its natural height.
+              child: SingleChildScrollView(child: builder(ctx)),
             ),
-          Flexible(
-            // Flexible + SingleChildScrollView: the body scrolls instead of
-            // clipping, whatever its natural height.
-            child: SingleChildScrollView(child: builder(ctx)),
-          ),
-        ],
+          ],
+        ),
       ),
     ),
   );
@@ -2230,7 +2329,7 @@ Future<T?> showHeroDialog<T>({
     context: context,
     barrierDismissible: barrierDismissible,
     barrierColor: h.backdrop,
-    builder: builder,
+    builder: (ctx) => HeroRouteScale(child: builder(ctx)),
   );
 }
 
@@ -2371,7 +2470,8 @@ Future<bool> showHeroConfirm({
   final result = await showDialog<bool>(
     context: context,
     barrierColor: h.backdrop,
-    builder: (ctx) => HeroDialogFrame(
+    builder: (ctx) => HeroRouteScale(
+      child: HeroDialogFrame(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2411,6 +2511,7 @@ Future<bool> showHeroConfirm({
             ],
           ),
         ],
+      ),
       ),
     ),
   );

@@ -21,6 +21,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/theme.dart';
 import '../../core/ui/lumina_ui.dart';
+import 'package:lumina_reader/core/ui/hero_motion.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -240,39 +241,40 @@ class _AnimeAppBar extends StatelessWidget implements PreferredSizeWidget {
                     );
                   }),
                   Consumer(builder: (context, ref, _) {
-                    return PopupMenuButton<String>(
-                      tooltip: 'Sort',
-                      icon: const Icon(Icons.sort_rounded),
-                      onSelected: (value) {
-                        final notifier =
-                            ref.read(libraryOptionsProvider.notifier);
-                        if (value == 'desc') {
-                          notifier.toggleSortDirection();
-                        } else {
-                          final sort = LibrarySort.values.firstWhere(
-                              (s) => s.name == value,
-                              orElse: () => LibrarySort.title);
-                          notifier.setSort(sort);
-                        }
-                      },
-                      itemBuilder: (context) {
-                        final options = ref.read(libraryOptionsProvider);
-                        return [
+                    return Builder(builder: (context) {
+                      final options = ref.watch(libraryOptionsProvider);
+                      return HeroMenuButton<String>(
+                        tooltip: 'Sort',
+                        icon: Icons.sort_rounded,
+                        onSelected: (value) {
+                          final notifier =
+                              ref.read(libraryOptionsProvider.notifier);
+                          if (value == 'desc') {
+                            notifier.toggleSortDirection();
+                          } else {
+                            final sort = LibrarySort.values.firstWhere(
+                                (s) => s.name == value,
+                                orElse: () => LibrarySort.title);
+                            notifier.setSort(sort);
+                          }
+                        },
+                        items: [
                           for (final s in LibrarySort.values)
-                            CheckedPopupMenuItem(
+                            HeroMenuItem(
                               value: s.name,
+                              label: s.label,
                               checked: options.sort == s,
-                              child: Text(s.label),
+                              dividerAfter:
+                                  s == LibrarySort.values.last,
                             ),
-                          const PopupMenuDivider(),
-                          CheckedPopupMenuItem(
+                          HeroMenuItem(
                             value: 'desc',
+                            label: 'Descending',
                             checked: options.sortDescending,
-                            child: const Text('Descending'),
                           ),
-                        ];
-                      },
-                    );
+                        ],
+                      );
+                    });
                   }),
                 ],
               ),
@@ -426,7 +428,7 @@ class _AnimeSelectionBar extends ConsumerWidget {
                 icon: Icons.delete_outline_rounded,
                 variant: HeroColorRole.danger,
                 onPressed: () async {
-                  final confirmed = await showHeroConfirm(
+                  final confirmed = await showHeroDeleteConfirm(
                     context: context,
                     title:
                         'Remove ${selection.length} ${selection.length == 1 ? 'entry' : 'entries'}?',

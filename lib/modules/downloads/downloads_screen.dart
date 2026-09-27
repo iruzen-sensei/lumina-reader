@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/ui/lumina_ui.dart';
+import 'package:lumina_reader/core/ui/hero_motion.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../shared/widgets.dart';
@@ -169,9 +170,9 @@ class _DownloadsHeader extends ConsumerWidget {
             )
           else
             const Spacer(),
-          PopupMenuButton<String>(
+          HeroMenuButton<String>(
             tooltip: 'More',
-            icon: const Icon(Icons.more_vert),
+            icon: Icons.more_vert_rounded,
             onSelected: (value) {
               final notifier = ref.read(downloadsProvider.notifier);
               switch (value) {
@@ -189,33 +190,22 @@ class _DownloadsHeader extends ConsumerWidget {
                   break;
               }
             },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
+            items: const [
+              HeroMenuItem(
                 value: 'pause_all',
-                child: ListTile(
-                  leading: Icon(Icons.pause_circle_outline),
-                  title: Text('Pause all'),
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                ),
+                label: 'Pause all',
+                icon: Icons.pause_circle_outline,
               ),
-              const PopupMenuItem(
+              HeroMenuItem(
                 value: 'resume_all',
-                child: ListTile(
-                  leading: Icon(Icons.play_circle_outline),
-                  title: Text('Resume all'),
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                ),
+                label: 'Resume all',
+                icon: Icons.play_circle_outline,
               ),
-              const PopupMenuItem(
+              HeroMenuItem(
                 value: 'clear_completed',
-                child: ListTile(
-                  leading: Icon(Icons.cleaning_services_outlined),
-                  title: Text('Clear completed'),
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                ),
+                label: 'Clear completed',
+                icon: Icons.cleaning_services_outlined,
+                dividerAfter: true,
               ),
             ],
           ),
