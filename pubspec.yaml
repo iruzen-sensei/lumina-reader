@@ -1,7 +1,7 @@
 name: lumina_reader
 description: Premium E-Book, Manga, Novel & Anime Reader with Extension System
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: ^3.5.0
@@ -81,9 +81,12 @@ dependencies:
   # wakelock_plus pins below and removed device_info_plus/package_info_plus).
   file_picker: 11.0.3
   permission_handler: ^13.0.2
-  # device_info_plus and package_info_plus REMOVED — both were declared but
-  # never imported (phantoms from the original skeleton), and both required
-  # win32 ^6.0.x, which conflicted with file_picker 11.0.3 (win32 ^5.9.0).
+  # device_info_plus REMOVED — declared but never imported (phantom from the
+  # original skeleton). package_info_plus 9.0.1 is RE-ADDED as a direct dep:
+  # it already resolves transitively in the current lock alongside win32 5.x
+  # (the old conflict was with the pre-9.x line), and the More screen now
+  # reports the real build version from it.
+  package_info_plus: ^9.0.0
   # Note: url_launcher, app_links, local_auth and permission_handler are also
   # currently unimported — candidates for a follow-up hygiene pass.
   # EXACT PIN — 1.6.0+ requires win32 >=6.0.0, incompatible with

@@ -33,6 +33,11 @@ android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
 android/key.properties
 *.jks
 *.keystore
+# EXCEPT the stable release keystore — committed deliberately (personal
+# sideloaded app): guarantees every CI build shares one signature so new
+# APKs install as updates over older ones. Anyone with repo access could
+# re-sign; acceptable trade-off here. See .github/workflows/build-android.yml.
+!.github/signing-keystore.jks
 
 # Linux Isar core binary — fetched on demand for repository tests (CI does
 # this automatically; see .github/workflows/build-android.yml).

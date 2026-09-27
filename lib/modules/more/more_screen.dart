@@ -15,9 +15,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../core/ui/lumina_ui.dart';
 import '../../providers/providers.dart';
+
+/// Real build version straight from PackageInfo (pubspec version) — never
+/// hardcoded again, so users can always verify which build they are on.
+final appVersionProvider = FutureProvider<String>((ref) async {
+  final info = await PackageInfo.fromPlatform();
+  return '${info.version} (${info.buildNumber})';
+});
 
 /// The "More" screen — a hub of secondary destinations and settings entry
 /// points. Each tile navigates via [GoRouter] to its module route.
@@ -179,7 +187,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                   HeroListTile(
                     leadingIcon: Icons.info_outline,
                     title: 'About Lumina Reader',
-                    subtitle: 'Version 1.0.0 • Apache 2.0',
+                    subtitle: 'Version ${ref.watch(appVersionProvider).valueOrNull ?? '…'} • Apache 2.0',
                     showChevron: true,
                     onTap: () => _showAbout(context),
                   ),
@@ -191,7 +199,8 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                     onTap: () => showLicensePage(
                       context: context,
                       applicationName: 'Lumina Reader',
-                      applicationVersion: '1.0.0',
+                      applicationVersion:
+                          ref.read(appVersionProvider).valueOrNull ?? '',
                       applicationLegalese: '© 2024 Lumina Reader Contributors',
                     ),
                   ),
@@ -201,7 +210,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
             const SizedBox(height: 12),
             Center(
               child: Text(
-                'Lumina Reader • Made with ♥',
+                'Lumina Reader v${ref.watch(appVersionProvider).valueOrNull ?? '…'} • Made with ♥',
                 style: HeroTokens.caption.copyWith(color: h.muted),
               ),
             ),
@@ -249,7 +258,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
               ),
               const SizedBox(height: 16),
               Text(
-                'Version 1.0.0',
+                'Version ${ref.read(appVersionProvider).valueOrNull ?? '…'}',
                 style: HeroTokens.bodySmall.copyWith(color: h.foreground),
               ),
               const SizedBox(height: 8),

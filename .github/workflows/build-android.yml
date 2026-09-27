@@ -80,7 +80,12 @@ jobs:
       # (re-signing after alignment can even invalidate the signature Gradle
       # already applied).
       #
-      # Stable signing (recommended): set these repository secrets —
+      # Stable signing: a release keystore is COMMITTED at
+      # .github/signing-keystore.jks (storepass/keypass lumina2026, alias
+      # lumina, RSA-4096, valid to 2126) so every build shares one
+      # signature — new APKs install as updates over older ones. For a
+      # private-key setup instead: set these repository secrets and DELETE
+      # the committed file — secrets always win:
       #   LUMINA_KEYSTORE_BASE64    base64 of your .jks  (base64 -w0 key.jks)
       #   LUMINA_KEYSTORE_PASSWORD  keystore password
       #   LUMINA_KEY_ALIAS          key alias
