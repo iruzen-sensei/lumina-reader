@@ -87,6 +87,20 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    // Duplicate META-INF resources from the Java-dependency graph (okhttp
+    // 5.3.2 sidecar jars + jspecify all bundle OSGI-INF/MANIFEST.MF) break
+    // mergeReleaseJavaResource — these files are build metadata only and
+    // are never read at runtime, so the first copy wins.
+    packaging {
+        resources {
+            excludes += "/META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "/META-INF/DEPENDENCIES"
+            excludes += "/META-INF/INDEX.LIST"
+            excludes += "/META-INF/NOTICE*"
+        }
+    }
 }
 
 // KGP 2.x DSL (kotlinOptions {} was removed in Kotlin 2.4). The `kotlin`
