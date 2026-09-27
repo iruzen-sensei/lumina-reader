@@ -37,6 +37,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:isar/isar.dart';
 
 import '../data/providers.dart' as data;
+import '../models/manga.dart' as db_manga;
 import '../models/settings.dart' as db_s;
 import '../models/update.dart' as db_update;
 import '../models/models.dart';
@@ -1087,6 +1088,23 @@ final streakProvider =
     StreakState(),
   ),
 );
+
+/// Unified per-media-type breakdown (anime / manga / novel / book).
+final statsByTypeProvider = FutureProvider.autoDispose
+    .family<Map<ItemType, MediaTypeStats>, bool>((ref, _) async {
+  final repo = ref.watch(data.statsRepositoryProvider);
+  final list = await repo.byType();
+  return {for (final e in list) e.type: e};
+});
+
+/// Top series by minutes for one media type.
+final statsTopSeriesProvider = FutureProvider.autoDispose
+    .family<List<SeriesStat>, ItemType>((ref, dtoType) {
+  final repo = ref.watch(data.statsRepositoryProvider);
+  // DTO ItemType -> DB ItemType by index (mirrors _itemTypeToDto).
+  final dbType = db_manga.ItemType.values[dtoType.index];
+  return repo.topSeries(dbType);
+});
 
 final statsSummaryProvider =
     StateNotifierProvider<_StatsReloader<Map<String, int>>, Map<String, int>>(

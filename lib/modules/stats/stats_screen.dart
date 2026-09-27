@@ -61,6 +61,7 @@ class StatsScreen extends ConsumerWidget {
             SliverToBoxAdapter(
               child: _StatCardGrid(summary: summary, streak: streak),
             ),
+            const SliverToBoxAdapter(child: _MediaBreakdownSection()),
             SliverToBoxAdapter(
               child: _HeatmapSection(),
             ),
@@ -265,6 +266,246 @@ class _GoalEditorTileState extends ConsumerState<_GoalEditorTile> {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Unified media breakdown — one card per content type.
+// ---------------------------------------------------------------------------
+
+class _MediaBreakdownSection extends ConsumerWidget {
+  const _MediaBreakdownSection();
+
+  static const _typeMeta = <ItemType, (IconData, String, String)>{
+    ItemType.anime: (Icons.play_circle_outline_rounded, 'Anime', 'episodes'),
+    ItemType.manga: (Icons.menu_book_outlined, 'Manga', 'chapters'),
+    ItemType.novel: (Icons.auto_stories_outlined, 'Novels', 'chapters'),
+    ItemType.book: (Icons.book_outlined, 'Books', 'chapters'),
+  };
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
+    final byType = ref.watch(statsByTypeProvider(true));
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'MEDIA BREAKDOWN',
+            style: TextStyle(
+              fontFamily: HeroTokens.fontSans,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.9,
+              color: h.muted,
+            ),
+          ),
+          const SizedBox(height: 10),
+          byType.when(
+            data: (map) => Column(
+              children: [
+                for (final entry in _typeMeta.entries)
+                  _MediaTypeCard(
+                    icon: entry.value.$1,
+                    label: entry.value.$2,
+                    unit: entry.value.$3,
+                    stats: map[entry.key],
+                    type: entry.key,
+                  ),
+              ],
+            ),
+            loading: () => const Column(
+              children: [
+                HeroSkeleton(height: 84),
+                SizedBox(height: 10),
+                HeroSkeleton(height: 84),
+              ],
+            ),
+            error: (e, _) => Text(
+              'Stats unavailable.',
+              style: HeroTokens.bodySmall.copyWith(color: h.muted),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MediaTypeCard extends ConsumerWidget {
+  const _MediaTypeCard({
+    required this.icon,
+    required this.label,
+    required this.unit,
+    required this.stats,
+    required this.type,
+  });
+
+  final IconData icon;
+  final String label;
+  final String unit;
+  final MediaTypeStats? stats;
+  final ItemType type;
+
+  String _hours(int minutes) {
+    if (minutes < 60) return '${minutes}m';
+    final h = minutes ~/ 60;
+    final m = minutes % 60;
+    return m == 0 ? '${h}h' : '${h}h ${m}m';
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
+    final s = stats;
+    final empty = s == null || s.isEmpty;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: h.surface,
+          borderRadius: BorderRadius.circular(HeroTokens.radiusCard),
+          border: Border.all(color: h.separator),
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: h.accentSoft,
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: Icon(icon, size: 19, color: h.accentSoftFg),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: HeroTokens.body.copyWith(
+                      color: h.foreground,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Text(
+                  empty ? 'No activity yet' : _hours(s.minutes),
+                  style: HeroTokens.body.copyWith(
+                    color: empty ? h.muted : h.foreground,
+                    fontWeight: FontWeight.w700,
+                    fontFeatures: [const FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+            ),
+            if (!empty) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  _metric(h, '${s.sessions}', 'sessions'),
+                  _metric(h, '${s.chaptersOrEpisodes}', unit),
+                  _metric(h, '${s.pagesRead}', 'pages'),
+                  _metric(h, '${s.itemsFinished}', 'finished'),
+                ],
+              ),
+              const SizedBox(height: 4),
+              _TopSeriesList(type: type),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _metric(HeroThemeData h, String value, String caption) {
+    return Expanded(
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: HeroTokens.body.copyWith(
+              color: h.foreground,
+              fontWeight: FontWeight.w700,
+              fontFeatures: [const FontFeature.tabularFigures()],
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            caption,
+            style: HeroTokens.caption.copyWith(color: h.muted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TopSeriesList extends ConsumerWidget {
+  const _TopSeriesList({required this.type});
+
+  final ItemType type;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
+    final top = ref.watch(statsTopSeriesProvider(type));
+    return top.maybeWhen(
+      data: (list) => list.isEmpty
+          ? const SizedBox.shrink()
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 8),
+                for (var i = 0; i < list.length; i++)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 18,
+                          child: Text(
+                            '${i + 1}',
+                            style: HeroTokens.caption.copyWith(
+                              color: h.muted,
+                              fontWeight: FontWeight.w700,
+                              fontFeatures: [
+                                const FontFeature.tabularFigures()
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            list[i].title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: HeroTokens.bodySmall
+                                .copyWith(color: h.foreground),
+                          ),
+                        ),
+                        Text(
+                          list[i].minutes < 60
+                              ? '${list[i].minutes}m'
+                              : '${list[i].minutes ~/ 60}h',
+                          style: HeroTokens.caption.copyWith(
+                            color: h.muted,
+                            fontFeatures: [const FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+      orElse: () => const SizedBox.shrink(),
     );
   }
 }

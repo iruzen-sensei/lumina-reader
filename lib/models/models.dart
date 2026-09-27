@@ -502,6 +502,56 @@ class UpdateItem {
 }
 
 /// A day in the activity heat-map.
+/// Per-media-type totals for the unified stats hub.
+class MediaTypeStats {
+  const MediaTypeStats({
+    required this.type,
+    required this.minutes,
+    required this.sessions,
+    required this.pagesRead,
+    required this.itemsFinished,
+    required this.chaptersOrEpisodes,
+  });
+
+  final ItemType type;
+  final int minutes;
+  final int sessions;
+  final int pagesRead;
+  final int itemsFinished;
+  final int chaptersOrEpisodes;
+
+  MediaTypeStats copyWith({
+    int? minutes,
+    int? sessions,
+    int? pagesRead,
+    int? itemsFinished,
+    int? chaptersOrEpisodes,
+  }) =>
+      MediaTypeStats(
+        type: type,
+        minutes: minutes ?? this.minutes,
+        sessions: sessions ?? this.sessions,
+        pagesRead: pagesRead ?? this.pagesRead,
+        itemsFinished: itemsFinished ?? this.itemsFinished,
+        chaptersOrEpisodes: chaptersOrEpisodes ?? this.chaptersOrEpisodes,
+      );
+
+  bool get isEmpty => minutes == 0 && sessions == 0 && chaptersOrEpisodes == 0;
+}
+
+/// A top series within one media type (by total minutes).
+class SeriesStat {
+  const SeriesStat({
+    required this.title,
+    required this.minutes,
+    this.thumbnailUrl,
+  });
+
+  final String title;
+  final String? thumbnailUrl;
+  final int minutes;
+}
+
 class StatDay {
   StatDay({required this.date, this.count = 0});
 

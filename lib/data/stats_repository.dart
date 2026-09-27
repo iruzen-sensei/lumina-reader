@@ -203,6 +203,112 @@ class StatsRepository {
   /// Current reading streak: consecutive days (ending today or yesterday)
   /// with at least one session. Freeze tokens are reported as 0 until the
   /// freeze mechanic is wired to a persisted counter.
+  /// Per-media-type breakdown for the unified stats hub. One entry per
+  /// item type with minutes / sessions / pages / chapters-or-episodes /
+  /// finished items, computed by joining sessions to their parent rows.
+  Future<List<dto.MediaTypeStats>> byType() async {
+    final sessions = await _isar.readingSessions.where().findAll();
+    final byManga = <int, List<db.ReadingSession>>{};
+    // IsarLink.load() REQUIRES an active transaction in Isar 3 — without
+    // one the await never settles (the golden stuck-skeleton bug).
+    await _isar.txn(() async {
+      for (final s in sessions) {
+        await s.manga.load();
+        final owner = s.manga.value?.id;
+        if (owner == null) continue;
+        byManga.putIfAbsent(owner, () => []).add(s);
+      }
+    });
+    final ids = byManga.keys.toList();
+    final mangas = await _isar.mangas.getAll(ids);
+    final typeOf = <int, db.ItemType>{};
+    for (var i = 0; i < ids.length; i++) {
+      typeOf[ids[i]] = mangas[i]?.itemType ?? db.ItemType.manga;
+    }
+
+    dto.MediaTypeStats statsFor(db.ItemType t) {
+      final sids = [
+        for (final e in byManga.entries)
+          if (typeOf[e.key] == t) ...e.value
+      ];
+      final minutes =
+          sids.fold<int>(0, (a, s) => a + s.durationSeconds) ~/ 60;
+      return dto.MediaTypeStats(
+        type: _itemTypeToDto(t),
+        minutes: minutes,
+        sessions: sids.length,
+        pagesRead: sids.fold<int>(0, (a, s) => a + s.pagesRead),
+        itemsFinished: 0,
+        chaptersOrEpisodes: 0,
+      );
+    }
+
+    final out = <dto.MediaTypeStats>[
+      statsFor(db.ItemType.anime),
+      statsFor(db.ItemType.manga),
+      statsFor(db.ItemType.novel),
+      statsFor(db.ItemType.book),
+    ];
+
+    // Finished items + chapters/episodes per type (from the library rows).
+    final allMangas = await _isar.mangas.where().findAll();
+    for (final m in allMangas) {
+      final dtoType = _itemTypeToDto(m.itemType);
+      for (var i = 0; i < out.length; i++) {
+        if (out[i].type != dtoType) continue;
+        if (m.isFinished) {
+          out[i] = out[i].copyWith(itemsFinished: out[i].itemsFinished + 1);
+        }
+      }
+    }
+    final chapters = await _isar.chapters.filter().isReadEqualTo(true).findAll();
+    await _isar.txn(() async {
+      for (final c in chapters) {
+        await c.manga.load();
+        final owner = c.manga.value?.id;
+        final t = owner == null ? null : typeOf[owner];
+        if (t == null) continue;
+        final dtoT = _itemTypeToDto(t);
+        for (var i = 0; i < out.length; i++) {
+          if (out[i].type == dtoT) {
+            out[i] = out[i].copyWith(
+                chaptersOrEpisodes: out[i].chaptersOrEpisodes + 1);
+          }
+        }
+      }
+    });
+    return out;
+  }
+
+  /// Top series by total minutes within one media type.
+  Future<List<dto.SeriesStat>> topSeries(db.ItemType type,
+      {int limit = 5}) async {
+    final sessions = await _isar.readingSessions.where().findAll();
+    final byManga = <int, int>{};
+    await _isar.txn(() async {
+      for (final s in sessions) {
+        await s.manga.load();
+        final owner = s.manga.value?.id;
+        if (owner == null) continue;
+        byManga[owner] = (byManga[owner] ?? 0) + s.durationSeconds;
+      }
+    });
+    final ids = byManga.keys.toList();
+    final mangas = await _isar.mangas.getAll(ids);
+    final out = <dto.SeriesStat>[];
+    for (var i = 0; i < ids.length; i++) {
+      final m = mangas[i];
+      if (m == null || m.itemType != type) continue;
+      out.add(dto.SeriesStat(
+        title: m.name,
+        thumbnailUrl: m.coverUrl,
+        minutes: (byManga[ids[i]] ?? 0) ~/ 60,
+      ));
+    }
+    out.sort((a, b) => b.minutes.compareTo(a.minutes));
+    return out.take(limit).toList();
+  }
+
   Future<StreakInfo> streak() async {
     final sessions = await _isar.readingSessions.where().findAll();
     if (sessions.isEmpty) {
@@ -328,6 +434,9 @@ class StatsRepository {
 }
 
 /// Plain streak result (mapped to the UI's StreakState by providers).
+dto.ItemType _itemTypeToDto(db.ItemType type) =>
+    dto.ItemType.values[type.index];
+
 class StreakInfo {
   const StreakInfo({
     required this.current,
