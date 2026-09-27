@@ -244,16 +244,45 @@ class _UpdateTileState extends ConsumerState<_UpdateTile> {
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
     final item = widget.item;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        // Open the reader / player for the new chapter / episode.
-        if (item.isAnime) {
-          context.push('/animeDetail/${item.mangaId}');
-        } else {
-          context.push('/mangaDetail/${item.mangaId}');
-        }
+    return Dismissible(
+      // watermelon.sh Card Swipe interaction: swipe the row right to mark
+      // read (accent check background), left to mark unread — the row
+      // animates back in place, no destructive dismissal.
+      key: ValueKey('update-${item.id}'),
+      direction: DismissDirection.horizontal,
+      background: _SwipeActionBackground(
+        alignment: Alignment.centerLeft,
+        color: h.success,
+        icon: _isRead ? Icons.visibility_outlined : Icons.check_rounded,
+        label: _isRead ? 'Mark unread' : 'Mark read',
+      ),
+      secondaryBackground: _SwipeActionBackground(
+        alignment: Alignment.centerRight,
+        color: h.accent,
+        icon: _isRead ? Icons.check_rounded : Icons.visibility_outlined,
+        label: _isRead ? 'Mark read' : 'Mark unread',
+      ),
+      onDismissed: (_) {}, // reserved for future destructive actions
+      confirmDismiss: (direction) async {
+        // Toggle read state WITHOUT removing the row.
+        final targetRead = direction == DismissDirection.startToEnd
+            ? !_isRead
+            : !_isRead; // both directions toggle; label reflects target
+        await ref
+            .read(updatesProvider.notifier)
+            .setRead(item.id, read: targetRead);
+        return false; // never actually dismiss
       },
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          // Open the reader / player for the new chapter / episode.
+          if (item.isAnime) {
+            context.push('/animeDetail/${item.mangaId}');
+          } else {
+            context.push('/mangaDetail/${item.mangaId}');
+          }
+        },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Row(
@@ -363,6 +392,7 @@ class _UpdateTileState extends ConsumerState<_UpdateTile> {
           ],
         ),
       ),
+      ),
     );
   }
 
@@ -452,5 +482,45 @@ class _UpdateTileState extends ConsumerState<_UpdateTile> {
     } finally {
       if (mounted) setState(() => _downloading = false);
     }
+  }
+}
+
+/// Swipe-action background (card-swipe pattern): tinted panel with icon +
+/// label sliding with the row.
+class _SwipeActionBackground extends StatelessWidget {
+  const _SwipeActionBackground({
+    required this.alignment,
+    required this.color,
+    required this.icon,
+    required this.label,
+  });
+
+  final Alignment alignment;
+  final Color color;
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: alignment,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 22),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: HeroTokens.caption.copyWith(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

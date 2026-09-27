@@ -23,6 +23,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/ui/lumina_ui.dart';
 import 'package:lumina_reader/core/ui/hero_motion.dart';
+import '../../core/ui/watermelon.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -52,7 +53,6 @@ class AnimeDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _AnimeDetailScreenState extends ConsumerState<AnimeDetailScreen> {
-  bool _descExpanded = false;
   bool _downloadingAll = false;
   bool _sortDescending = true; // newest first (Aniyomi default)
   bool _showDownloadedOnly = false;
@@ -95,15 +95,34 @@ class _AnimeDetailScreenState extends ConsumerState<AnimeDetailScreen> {
                 }
                 _openEpisode(manga, _nextUnread(manga.chapters));
               },
+              statusValue: manga.userStatus,
+              onStatusChanged: (v) => _setUserStatus(manga, v),
+              trackLinks: [
+                (
+                  'MAL',
+                  Icons.tv_rounded,
+                  'https://myanimelist.net/search/all?q='
+                      '${Uri.encodeComponent(manga.title)}'
+                ),
+                (
+                  'AniList',
+                  Icons.auto_awesome_rounded,
+                  'https://anilist.co/search/anime?search='
+                      '${Uri.encodeComponent(manga.title)}'
+                ),
+                (
+                  'Kitsu',
+                  Icons.pets_rounded,
+                  'https://kitsu.app/anime?text='
+                      '${Uri.encodeComponent(manga.title)}'
+                ),
+              ],
               onToggleLibrary: () => _toggleFavorite(manga),
-              onTrack: () => _showTrackSheet(manga),
             ),
           ),
           SliverToBoxAdapter(
             child: _SynopsisCard(
               text: manga.description,
-              expanded: _descExpanded,
-              onToggle: () => setState(() => _descExpanded = !_descExpanded),
             ),
           ),
           SliverToBoxAdapter(child: _GenreChips(genres: manga.genre)),
@@ -196,66 +215,21 @@ class _AnimeDetailScreenState extends ConsumerState<AnimeDetailScreen> {
     }
   }
 
-  /// Track sheet — opens the tracker search pages in the browser (honest,
-  /// working replacement for the previous snackbar-only stubs).
-  void _showTrackSheet(Manga manga) {
-    showHeroSheet<void>(
-      context: context,
-      title: 'Track this anime',
-      builder: (sheetContext) {
-        Future<void> open(String url) async {
-          final uri = Uri.tryParse(url);
-          if (uri == null ||
-              !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-            if (sheetContext.mounted) {
-              showSnack(ref, sheetContext, 'Could not open link');
-            }
-          }
-        }
-
-        final encoded = Uri.encodeComponent(manga.title);
-        return SafeArea(
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SizedBox(height: 4),
-                HeroListTile(
-                  leadingIcon: Icons.tv_rounded,
-                  title: 'MyAnimeList',
-                  subtitle: 'Open title page on MAL',
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    open('https://myanimelist.net/search/all?q=$encoded');
-                  },
-                  showChevron: true,
-                ),
-                HeroListTile(
-                  leadingIcon: Icons.auto_awesome_rounded,
-                  title: 'AniList',
-                  subtitle: 'Open title page on AniList',
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    open('https://anilist.co/search/anime?search=$encoded');
-                  },
-                  showChevron: true,
-                ),
-                HeroListTile(
-                  leadingIcon: Icons.live_tv_rounded,
-                  leadingColor: const Color(0xFF17C964),
-                  title: 'Kitsu',
-                  subtitle: 'Library & activity feed',
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    open('https://kitsu.app/anime?text=$encoded');
-                  },
-                  showChevron: true,
-                ),
-                const SizedBox(height: 12),
-              ],
-            ),
-          ),
-        );
+  /// Sets the user's watching status (Status Picker persistence):
+  /// 0 = Watching, 1 = Finished, 2 = Plan to watch.
+  Future<void> _setUserStatus(Manga manga, int status) async {
+    await ref
+        .read(data.libraryRepositoryProvider)
+        .setUserStatus(manga.id, status);
+    ref.invalidate(mangaDetailProvider(manga.id));
+    if (!mounted) return;
+    showSnack(
+      ref,
+      context,
+      switch (status) {
+        1 => 'Marked as finished',
+        2 => 'Saved to your plan',
+        _ => 'Marked as watching',
       },
     );
   }
@@ -599,19 +573,29 @@ class _ActionBlock extends StatelessWidget {
   const _ActionBlock({
     required this.continueLabel,
     required this.inLibrary,
+    required this.statusValue,
+    required this.onStatusChanged,
+    required this.trackLinks,
     required this.onContinue,
     required this.onToggleLibrary,
-    required this.onTrack,
   });
 
   final String continueLabel;
   final bool inLibrary;
+
+  /// 0 = Watching, 1 = Finished, 2 = Plan (Status Picker).
+  final int statusValue;
+  final ValueChanged<int> onStatusChanged;
+
+  /// (label, icon, url) tracker entries for the Split Actions fan-out.
+  final List<(String, IconData, String)> trackLinks;
+
   final VoidCallback onContinue;
   final VoidCallback onToggleLibrary;
-  final VoidCallback onTrack;
 
   @override
   Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 20, 0),
       child: Column(
@@ -641,18 +625,71 @@ class _ActionBlock extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: HeroButton(
-                    label: 'Track',
-                    icon: Icons.insights_outlined,
-                    variant: HeroButtonVariant.light,
-                    size: HeroButtonSize.md,
-                    onPressed: onTrack,
+              const SizedBox(width: 12),
+              // Track — watermelon.sh Split Actions fan-out.
+              // Aligned with the 34px pill next to it.
+              SizedBox(
+                height: 34,
+                child: Center(
+                  child: WmSplitActions(
+                    triggerIcon: Icons.insights_outlined,
+                    actions: [
+                      for (final (label, icon, url) in trackLinks)
+                        WmSplitAction(
+                          icon: icon,
+                          label: label,
+                          onTap: () async {
+                            final uri = Uri.tryParse(url);
+                            if (uri != null) {
+                              await launchUrl(uri,
+                                  mode: LaunchMode.externalApplication);
+                            }
+                          },
+                        ),
+                    ],
                   ),
                 ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Status Picker — watching-status setter.
+          Row(
+            children: [
+              Text(
+                'STATUS',
+                style: TextStyle(
+                  fontFamily: HeroTokens.fontSans,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.9,
+                  color: h.muted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          WmStatusPicker(
+            value: statusValue,
+            onChanged: onStatusChanged,
+            items: [
+              WmStatusItem(
+                id: 0,
+                icon: Icons.play_circle_outline_rounded,
+                name: 'Watching',
+                color: h.accent,
+              ),
+              WmStatusItem(
+                id: 1,
+                icon: Icons.check_circle_outline_rounded,
+                name: 'Finished',
+                color: h.success,
+              ),
+              WmStatusItem(
+                id: 2,
+                icon: Icons.schedule_rounded,
+                name: 'Plan to watch',
+                color: h.warning,
               ),
             ],
           ),
@@ -663,22 +700,14 @@ class _ActionBlock extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Synopsis card — collapsed to 4 lines with an accent read-more toggle.
+// Synopsis — watermelon.sh Expand Details (staggered spring expand,
+// chevron rotate, blur-in content).
 // ---------------------------------------------------------------------------
 
 class _SynopsisCard extends StatelessWidget {
-  const _SynopsisCard({
-    required this.text,
-    required this.expanded,
-    required this.onToggle,
-  });
-
-  /// Descriptions longer than this offer the "Read more" toggle.
-  static const int _longTextThreshold = 240;
+  const _SynopsisCard({required this.text});
 
   final String? text;
-  final bool expanded;
-  final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -686,35 +715,19 @@ class _SynopsisCard extends StatelessWidget {
     final clean = text?.trim() ?? '';
     if (clean.isEmpty) return const SizedBox.shrink();
 
-    final isLong = clean.length > _longTextThreshold;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 20, 0),
-      child: HeroCard(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              clean,
-              maxLines: expanded ? null : 4,
-              overflow: TextOverflow.ellipsis,
-              style: HeroTokens.body.copyWith(color: h.muted, height: 1.55),
-            ),
-            if (isLong) ...[
-              const SizedBox(height: 8),
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: onToggle,
-                child: Text(
-                  expanded ? 'Less' : 'Read more',
-                  style: HeroTokens.bodySmall.copyWith(
-                    color: h.accent,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ],
+      child: WmExpandDetails(
+        title: 'Synopsis',
+        collapsed: Text(
+          '${clean.substring(0, clean.length > 90 ? 90 : clean.length)}…',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: HeroTokens.bodySmall.copyWith(color: h.muted),
+        ),
+        expanded: Text(
+          clean,
+          style: HeroTokens.body.copyWith(color: h.muted, height: 1.55),
         ),
       ),
     );

@@ -317,6 +317,7 @@ class StatusChip extends StatelessWidget {
     this.color,
     this.selected = false,
     this.onTap,
+    this.onLongPress,
     this.icon,
   });
 
@@ -324,6 +325,7 @@ class StatusChip extends StatelessWidget {
   final Color? color;
   final bool selected;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final IconData? icon;
 
   @override
@@ -344,6 +346,7 @@ class StatusChip extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
+      onLongPress: onLongPress,
       child: AnimatedContainer(
         duration:
             heroAnimationsEnabled ? HeroTokens.motionColor : Duration.zero,

@@ -36,7 +36,10 @@ import '../modules/updates/updates_screen.dart';
 /// isar_generator 3.x).
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
-    initialLocation: '/library',
+    // The app opens on its FRONT PAGE — Anime (the Netflix-style home).
+    // Previously '/library', so the app launched on the second tab despite
+    // Anime being the first destination (user report: "opens on Library").
+    initialLocation: '/anime',
     routes: [
       ShellRoute(
         builder: (context, state, child) => MainScreen(child: child),
@@ -67,6 +70,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               initialSearch: state.uri.queryParameters['search'],
               initialGenre: state.uri.queryParameters['genre'],
               initialRow: state.uri.queryParameters['row'],
+              initialFormat: state.uri.queryParameters['format'],
             ),
           ),
           // Browse (all sources — manga + anime + novels)

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/ui/lumina_ui.dart';
+import '../../core/ui/watermelon.dart';
 
 /// App shell with the Lumina Noir navigation.
 ///
@@ -38,11 +39,6 @@ class MainScreen extends StatelessWidget {
       label: 'Explore',
     ),
     _NavDestination(
-      icon: Icons.update_outlined,
-      selectedIcon: Icons.update_rounded,
-      label: 'Updates',
-    ),
-    _NavDestination(
       icon: Icons.grid_view_outlined,
       selectedIcon: Icons.grid_view_rounded,
       label: 'More',
@@ -58,15 +54,14 @@ class MainScreen extends StatelessWidget {
       selectedIndex = 1;
     } else if (location.startsWith('/browse')) {
       selectedIndex = 2;
-    } else if (location.startsWith('/updates')) {
-      selectedIndex = 3;
     } else if (location.startsWith('/more') ||
         location.startsWith('/stats') ||
         location.startsWith('/notes') ||
         location.startsWith('/history') ||
         location.startsWith('/calendar') ||
-        location.startsWith('/downloads')) {
-      selectedIndex = 4;
+        location.startsWith('/downloads') ||
+        location.startsWith('/updates')) {
+      selectedIndex = 3;
     }
 
     // Wide OR LANDSCAPE phones get the navigation rail. Width alone missed
@@ -122,8 +117,6 @@ class MainScreen extends StatelessWidget {
       case 2:
         context.go('/browse');
       case 3:
-        context.go('/updates');
-      case 4:
         context.go('/more');
     }
   }
@@ -208,9 +201,19 @@ class _TabItem extends StatefulWidget {
 class _TabItemState extends State<_TabItem> {
   bool _pressed = false;
 
+  /// Dock selection pop: true for ~200ms after the tap lands — the item
+  /// scales to 1.3 and lifts, then settles (watermelon.sh Dock physics).
+  bool _popping = false;
+
   void _handleTap() {
     HapticFeedback.selectionClick();
     widget.onTap();
+    if (heroAnimationsEnabled) {
+      setState(() => _popping = true);
+      Future<void>.delayed(const Duration(milliseconds: 200), () {
+        if (mounted) setState(() => _popping = false);
+      });
+    }
   }
 
   @override
@@ -230,54 +233,87 @@ class _TabItemState extends State<_TabItem> {
         onTapCancel: () => setState(() => _pressed = false),
         onTap: _handleTap,
         child: AnimatedScale(
-          scale: _pressed ? 0.9 : 1.0,
+          // Dock pattern: press = 0.9 dip; selection pop = 1.3 bounce.
+          scale: _popping ? 1.3 : (_pressed ? 0.9 : 1.0),
           duration: heroAnimationsEnabled
-              ? HeroTokens.motionTransform
+              ? (_popping
+                  ? const Duration(milliseconds: 200)
+                  : HeroTokens.motionTransform)
               : Duration.zero,
-          curve: HeroTokens.spring,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Soft-white glow pill springs in behind the active icon
-              // (x.ai app-shell: active indicator = the white primary).
-              Stack(
-                alignment: Alignment.center,
-                children: [
-                  AnimatedScale(
-                    scale: active ? 1.0 : 0.0,
+          curve: _popping ? const WmBounceCurve() : HeroTokens.spring,
+          child: AnimatedSlide(
+            // Lift the icon while popping (dock magnification feel).
+            offset: Offset(0, _popping ? -0.08 : 0),
+            duration: heroAnimationsEnabled
+                ? const Duration(milliseconds: 200)
+                : Duration.zero,
+            curve: const WmBounceCurve(),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    AnimatedScale(
+                      scale: active ? 1.0 : 0.0,
+                      duration: heroAnimationsEnabled
+                          ? HeroTokens.motionTransform
+                          : Duration.zero,
+                      curve: HeroTokens.spring,
+                      child: Container(
+                        width: 48,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: h.accentSoft,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      active ? d.selectedIcon : d.icon,
+                      size: 23,
+                      color: active ? h.accent : h.muted,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                // Dock selection dot — fades/scales in under the active
+                // item (the source's indicator pattern).
+                AnimatedScale(
+                  scale: active ? 1.0 : 0.0,
+                  duration: heroAnimationsEnabled
+                      ? const Duration(milliseconds: 220)
+                      : Duration.zero,
+                  curve: const WmBounceCurve(),
+                  child: AnimatedOpacity(
+                    opacity: active ? 1 : 0,
                     duration: heroAnimationsEnabled
-                        ? HeroTokens.motionTransform
+                        ? const Duration(milliseconds: 180)
                         : Duration.zero,
-                    curve: HeroTokens.spring,
                     child: Container(
-                      width: 48,
-                      height: 30,
+                      width: 4,
+                      height: 4,
                       decoration: BoxDecoration(
-                        color: h.accentSoft,
-                        borderRadius: BorderRadius.circular(999),
+                        color: h.accent,
+                        shape: BoxShape.circle,
                       ),
                     ),
                   ),
-                  Icon(
-                    active ? d.selectedIcon : d.icon,
-                    size: 23,
-                    color: active ? h.accent : h.muted,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                d.label,
-                style: TextStyle(
-                  fontFamily: HeroTokens.fontSans,
-                  fontSize: 10,
-                  height: 1.1,
-                  letterSpacing: 0.06,
-                  fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                  color: active ? h.foreground : h.muted,
                 ),
-              ),
-            ],
+                const SizedBox(height: 2),
+                Text(
+                  d.label,
+                  style: TextStyle(
+                    fontFamily: HeroTokens.fontSans,
+                    fontSize: 10,
+                    height: 1.1,
+                    letterSpacing: 0.06,
+                    fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                    color: active ? h.foreground : h.muted,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

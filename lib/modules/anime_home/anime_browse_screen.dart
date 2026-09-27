@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/ui/lumina_ui.dart';
+import '../../core/ui/watermelon.dart';
 import '../../providers/providers.dart';
 import '../../services/anilist.dart';
 import '../anime_home/anime_home_screen.dart'
@@ -67,6 +68,24 @@ class AnimeBrowseFilters {
         status: clearStatus ? null : (status ?? this.status),
         sort: sort ?? this.sort,
       );
+
+  /// Value-equality: the family provider re-keys on this, so filter
+  /// changes must produce a non-equal instance AND identical filter sets
+  /// must stay equal (prevents redundant reloads).
+  @override
+  bool operator ==(Object other) =>
+      other is AnimeBrowseFilters &&
+      other.search == search &&
+      other.genre == genre &&
+      other.year == year &&
+      other.season == season &&
+      other.format == format &&
+      other.status == status &&
+      other.sort == sort;
+
+  @override
+  int get hashCode => Object.hash(
+      search, genre, year, season, format, status, sort);
 }
 
 /// Paginated browse results for the active filters.
@@ -144,18 +163,24 @@ class AnimeBrowseScreen extends ConsumerStatefulWidget {
     this.initialSearch,
     this.initialGenre,
     this.initialRow,
+    this.initialFormat,
   });
 
   final String? initialSearch;
   final String? initialGenre;
   final String? initialRow;
+  final String? initialFormat;
 
   @override
   ConsumerState<AnimeBrowseScreen> createState() => _AnimeBrowseScreenState();
 }
 
 class _AnimeBrowseScreenState extends ConsumerState<AnimeBrowseScreen> {
-  late final AnimeBrowseFilters _filters;
+  // NOTE: NOT `late final` — the filter state is reassigned on every chip
+  // tap. The previous `late final` threw LateInitializationError on the
+  // FIRST filter change, which surfaced as "the filter buttons are just
+  // for show" (the zone handler swallowed it and the UI never updated).
+  late AnimeBrowseFilters _filters;
 
   @override
   void initState() {
@@ -163,11 +188,13 @@ class _AnimeBrowseScreenState extends ConsumerState<AnimeBrowseScreen> {
     _filters = AnimeBrowseFilters(
       search: widget.initialSearch,
       genre: widget.initialGenre,
+      format: widget.initialFormat,
       sort: switch (widget.initialRow) {
         'Top 10 Anime' => 'SCORE_DESC',
         'All-Time Popular' => 'POPULARITY_DESC',
         'New This Season' => 'POPULARITY_DESC',
         'Coming Soon' => 'POPULARITY_DESC',
+        'Movies' => 'POPULARITY_DESC',
         _ => 'TRENDING_DESC',
       },
     );
@@ -295,7 +322,9 @@ class _AnimeBrowseScreenState extends ConsumerState<AnimeBrowseScreen> {
 }
 
 // ---------------------------------------------------------------------------
-// Quick filter chips bar
+// Quick filter bar — watermelon.sh Quick Option Pickers: compact pills
+// (Genre / Season / Sort) that pop a tray of options above with a 3D
+// bottom-origin tilt. Replaces the old 20-chip scrolling wall.
 // ---------------------------------------------------------------------------
 
 class _FilterBar extends StatelessWidget {
@@ -306,55 +335,76 @@ class _FilterBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const seasons = [
-      ('WINTER', 'Winter'),
-      ('SPRING', 'Spring'),
-      ('SUMMER', 'Summer'),
-      ('FALL', 'Fall'),
+    final now = DateTime.now();
+    final seasonOptions = <WmPickerOption<(String, int)>>[
+      WmPickerOption(
+          value: ('WINTER', now.year), label: 'Winter ${now.year}'),
+      WmPickerOption(
+          value: ('SPRING', now.year), label: 'Spring ${now.year}'),
+      WmPickerOption(value: ('SUMMER', now.year), label: 'Summer ${now.year}'),
+      WmPickerOption(value: ('FALL', now.year), label: 'Fall ${now.year}'),
+      WmPickerOption(
+          value: ('WINTER', now.year - 1), label: 'Winter ${now.year - 1}'),
+      WmPickerOption(
+          value: ('SPRING', now.year - 1), label: 'Spring ${now.year - 1}'),
+      WmPickerOption(
+          value: ('SUMMER', now.year - 1), label: 'Summer ${now.year - 1}'),
+      WmPickerOption(value: ('FALL', now.year - 1), label: 'Fall ${now.year - 1}'),
     ];
+    final currentSeason = (filters.season == null || filters.year == null)
+        ? null
+        : (filters.season!, filters.year!);
+
     return SizedBox(
-      height: 44,
+      height: 52,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         children: [
-          _chip(context, 'All', filters.genre == null,
-              () => onChanged(filters.copyWith(clearGenre: true))),
-          for (final g in AniListService.genres.take(10))
-            _chip(context, g, filters.genre == g,
-                () => onChanged(filters.copyWith(genre: g))),
+          WmQuickOptionPicker<String>(
+            hint: 'Genre',
+            trayAbove: false,
+            value: filters.genre ?? '',
+            options: [
+              const WmPickerOption(value: '', label: 'All genres', icon: Icons.apps_rounded),
+              for (final g in AniListService.genres)
+                WmPickerOption(value: g, label: g),
+            ],
+            onChanged: (v) => onChanged(
+                v.isEmpty ? filters.copyWith(clearGenre: true) : filters.copyWith(genre: v)),
+          ),
           const SizedBox(width: 8),
-          for (final (code, label) in seasons)
-            _chip(
-                context,
-                '$label ${DateTime.now().year}',
-                filters.season == code &&
-                    filters.year == DateTime.now().year,
-                () => onChanged(filters.copyWith(
-                    season: code, year: DateTime.now().year))),
+          WmQuickOptionPicker<(String, int)>(
+            hint: 'Season',
+            trayAbove: false,
+            value: currentSeason ?? ('', 0),
+            options: [
+              const WmPickerOption(value: ('', 0), label: 'Any season', icon: Icons.calendar_today_rounded),
+              ...seasonOptions,
+            ],
+            onChanged: (v) => onChanged(v.$1.isEmpty
+                ? filters.copyWith(clearSeason: true, clearYear: true)
+                : filters.copyWith(season: v.$1, year: v.$2)),
+          ),
+          const SizedBox(width: 8),
+          WmQuickOptionPicker<String>(
+            hint: 'Sort',
+            trayAbove: false,
+            value: filters.sort,
+            options: [
+              for (final e in AniListService.sortOptions.entries)
+                WmPickerOption(
+                    value: e.value,
+                    label: e.key,
+                    icon: e.value == 'SCORE_DESC'
+                        ? Icons.star_rounded
+                        : e.value == 'TRENDING_DESC'
+                            ? Icons.local_fire_department_rounded
+                            : Icons.sort_rounded),
+            ],
+            onChanged: (v) => onChanged(filters.copyWith(sort: v)),
+          ),
         ],
-      ),
-    );
-  }
-
-  Widget _chip(BuildContext context, String label, bool selected,
-      VoidCallback onTap) {
-    final h = HeroScope.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: ActionChip(
-        label: Text(label),
-        backgroundColor: selected ? kNetflixRed : h.surface,
-        labelStyle: TextStyle(
-          fontFamily: HeroTokens.fontSans,
-          fontSize: 12,
-          fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-          color: selected ? Colors.white : h.muted,
-        ),
-        side: BorderSide(
-            color: selected ? kNetflixRed : h.border,
-            width: selected ? 1.4 : 1),
-        onPressed: onTap,
       ),
     );
   }
@@ -401,10 +451,23 @@ class _FilterSheetState extends State<_FilterSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          HeroInput(
+          // watermelon.sh Predictive Text: the search input floats up to
+          // three prefix-completion chips (genres + common terms), tap to
+          // complete the word.
+          WmPredictiveInput(
             controller: _searchController,
             hint: 'Search titles…',
-            prefixIcon: Icons.search_rounded,
+            dictionary: [
+              ...AniListService.genres.map((g) => g.toLowerCase()),
+              ...const [
+                'adventure', 'action', 'comedy', 'romance', 'isekai',
+                'school', 'shounen', 'shoujo', 'seinen', 'slice',
+                'supernatural', 'sports', 'mecha', 'music', 'mystery',
+              ],
+            ],
+            onSubmitted: (v) {
+              setState(() => _f = _f.copyWith(search: v.trim()));
+            },
           ),
           const SizedBox(height: 16),
           _group('Sort', [

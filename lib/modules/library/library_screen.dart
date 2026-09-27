@@ -319,6 +319,21 @@ class _LibraryHeader extends StatelessWidget implements PreferredSizeWidget {
                     icon: Icons.file_upload_outlined,
                     onPressed: onImport,
                   ),
+                  // Updates bell — the feed moved off the bottom nav (it no
+                  // longer deserves a whole top-level page); the Library is
+                  // where new chapters land, so the bell lives here, with a
+                  // live unread badge.
+                  Consumer(builder: (context, ref, _) {
+                    final updates = ref.watch(updatesProvider);
+                    final unread = updates.where((u) => !u.isRead).length;
+                    return HeroIconButton(
+                      tooltip: 'Updates',
+                      icon: Icons.notifications_outlined,
+                      color: unread > 0 ? LuminaTheme.unreadColor : null,
+                      badgeCount: unread,
+                      onPressed: () => context.push('/updates'),
+                    );
+                  }),
                   HeroIconButton(
                     tooltip: 'Incognito mode',
                     icon: incognito
@@ -418,7 +433,7 @@ class _QuickBadge extends StatelessWidget {
   }
 }
 
-class _CategoryTabs extends StatelessWidget {
+class _CategoryTabs extends ConsumerWidget {
   const _CategoryTabs({
     required this.categories,
     required this.activeId,
@@ -430,7 +445,7 @@ class _CategoryTabs extends StatelessWidget {
   final ValueChanged<int> onSelect;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return SizedBox(
       height: 44,
       child: ListView.separated(
@@ -446,10 +461,71 @@ class _CategoryTabs extends StatelessWidget {
             selected: active,
             color: Color(c.color),
             onTap: () => onSelect(c.id),
+            // Edit Badge interaction (watermelon.sh): long-press a category
+            // tab to rename it inline — the pencil badge opens a sheet with
+            // the name pre-filled, focused and selected.
+            onLongPress: c.id == 0 ? null : () => _renameCategory(context, ref, c),
           );
         },
       ),
     );
+  }
+
+  Future<void> _renameCategory(
+      BuildContext context, WidgetRef ref, Category category) async {
+    final controller = TextEditingController(text: category.name);
+    final h = HeroScope.of(context);
+    await showHeroSheet<void>(
+      context: context,
+      title: 'Rename category',
+      builder: (sheetContext) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            HeroInput(
+              controller: controller,
+              autofocus: true,
+              hint: 'Category name',
+              prefixIcon: Icons.label_outline_rounded,
+              onSubmitted: (v) {
+                Navigator.pop(sheetContext);
+                ref.read(categoriesProvider.notifier).rename(category.id, v);
+              },
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                HeroButton(
+                  label: 'Cancel',
+                  variant: HeroButtonVariant.light,
+                  color: HeroColorRole.neutral,
+                  onPressed: () => Navigator.pop(sheetContext),
+                ),
+                const SizedBox(width: 12),
+                HeroButton(
+                  label: 'Rename',
+                  icon: Icons.edit_rounded,
+                  onPressed: () {
+                    Navigator.pop(sheetContext);
+                    ref
+                        .read(categoriesProvider.notifier)
+                        .rename(category.id, controller.text);
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Long-press any category tab to rename it.',
+              style: HeroTokens.caption.copyWith(color: h.muted),
+            ),
+          ],
+        );
+      },
+    );
+    controller.dispose();
   }
 }
 

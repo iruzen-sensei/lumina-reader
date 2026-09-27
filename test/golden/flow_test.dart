@@ -10,8 +10,11 @@
 //   * filter sheet opens and changes the visible set
 
 import 'package:lumina_reader/core/ui/lumina_ui.dart';
-import 'package:lumina_reader/providers/providers.dart' show LibraryMediaType;
+import 'package:lumina_reader/providers/providers.dart'
+    show LibraryMediaType;
+import 'package:lumina_reader/router/router.dart' show routerProvider;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lumina_reader/modules/anime_home/anime_home_screen.dart';
 import 'package:lumina_reader/modules/library/library_screen.dart';
 import 'package:lumina_reader/modules/manga/manga_detail_screen.dart';
 import 'package:lumina_reader/modules/shared/widgets.dart' show BookCover;
@@ -26,6 +29,15 @@ void main() {
     });
 
     final c = await bootApp(tester);
+    await flush(tester, rounds: 10);
+
+    // 0. The app opens on its FRONT PAGE — Anime (the previous build
+    //    opened on Library despite Anime being the first tab).
+    expect(find.byType(AnimeHomeScreen), findsOneWidget);
+    expect(find.byType(LibraryScreen), findsNothing);
+
+    // 0b. Navigate to the Library tab (index 1 in the dock).
+    c.read(routerProvider).go('/library');
     await flush(tester, rounds: 10);
 
     // 1. Library renders seeded manga with covers + titles.
@@ -62,6 +74,7 @@ void main() {
   testWidgets('flow: filter sheet changes the media filter', (tester) async {
     // The shared Isar from the previous test is reused (single-open rule).
     final c = await bootApp(tester, warmUp: true);
+    c.read(routerProvider).go('/library');
     await flush(tester, rounds: 8);
 
     // The segmented control is present with all four media options.

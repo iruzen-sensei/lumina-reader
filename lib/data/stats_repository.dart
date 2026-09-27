@@ -206,6 +206,10 @@ class StatsRepository {
   /// Per-media-type breakdown for the unified stats hub. One entry per
   /// item type with minutes / sessions / pages / chapters-or-episodes /
   /// finished items, computed by joining sessions to their parent rows.
+  ///
+  /// The type lookup is built from ALL library rows (not just rows with
+  /// sessions) so read chapters of e.g. novels-without-recorded-sessions
+  /// still attribute to the novel card.
   Future<List<dto.MediaTypeStats>> byType() async {
     final sessions = await _isar.readingSessions.where().findAll();
     final byManga = <int, List<db.ReadingSession>>{};
@@ -219,11 +223,14 @@ class StatsRepository {
         byManga.putIfAbsent(owner, () => []).add(s);
       }
     });
-    final ids = byManga.keys.toList();
-    final mangas = await _isar.mangas.getAll(ids);
+
+    // Type of EVERY library row (chapters can belong to rows that never
+    // recorded a session — they must still count).
+    final allMangas = await _isar.mangas.where().findAll();
     final typeOf = <int, db.ItemType>{};
-    for (var i = 0; i < ids.length; i++) {
-      typeOf[ids[i]] = mangas[i]?.itemType ?? db.ItemType.manga;
+    for (final m in allMangas) {
+      final mid = m.id;
+      if (mid != null) typeOf[mid] = m.itemType;
     }
 
     dto.MediaTypeStats statsFor(db.ItemType t) {
@@ -250,17 +257,18 @@ class StatsRepository {
       statsFor(db.ItemType.book),
     ];
 
-    // Finished items + chapters/episodes per type (from the library rows).
-    final allMangas = await _isar.mangas.where().findAll();
+    // Finished items per type (from the library rows).
     for (final m in allMangas) {
+      if (!m.isFinished) continue;
       final dtoType = _itemTypeToDto(m.itemType);
       for (var i = 0; i < out.length; i++) {
-        if (out[i].type != dtoType) continue;
-        if (m.isFinished) {
+        if (out[i].type == dtoType) {
           out[i] = out[i].copyWith(itemsFinished: out[i].itemsFinished + 1);
         }
       }
     }
+
+    // Read chapters / watched episodes per type.
     final chapters = await _isar.chapters.filter().isReadEqualTo(true).findAll();
     await _isar.txn(() async {
       for (final c in chapters) {

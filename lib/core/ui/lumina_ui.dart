@@ -1236,6 +1236,7 @@ class HeroIconButton extends StatefulWidget {
     this.color,
     this.variant = HeroColorRole.neutral,
     this.backgroundColor,
+    this.badgeCount = 0,
   });
 
   final IconData icon;
@@ -1246,6 +1247,11 @@ class HeroIconButton extends StatefulWidget {
   final Color? color;
   final HeroColorRole variant;
   final Color? backgroundColor;
+
+  /// Small notification badge (top-right dot with a count). 0 = hidden;
+  /// counts above 99 render "99+". Used for the Library updates bell and
+  /// the More-screen Updates tile.
+  final int badgeCount;
 
   @override
   State<HeroIconButton> createState() => _HeroIconButtonState();
@@ -1286,6 +1292,49 @@ class _HeroIconButtonState extends State<HeroIconButton> {
       ),
     );
 
+    // Unread-count badge: a compact accent pill pinned to the icon's
+    // top-right. AnimatedSwitcher so count changes pop rather than jump.
+    final badged = widget.badgeCount > 0
+        ? Stack(
+            clipBehavior: Clip.none,
+            children: [
+              btn,
+              Positioned(
+                top: -2,
+                right: -4,
+                child: AnimatedSwitcher(
+                  duration: heroAnimationsEnabled
+                      ? HeroTokens.motionColor
+                      : Duration.zero,
+                  child: Container(
+                    key: ValueKey(widget.badgeCount),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    constraints: const BoxConstraints(minWidth: 15),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: h.accent,
+                      borderRadius: BorderRadius.circular(HeroTokens.radiusChip),
+                      border: Border.all(color: h.background, width: 1.5),
+                    ),
+                    child: Text(
+                      widget.badgeCount > 99 ? '99+' : '${widget.badgeCount}',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: HeroTokens.fontSans,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w600,
+                        color: h.accentFg,
+                        height: 1.25,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          )
+        : btn;
+
     Widget result = MouseRegion(
       cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
       onEnter: (_) => setState(() => _hovered = true),
@@ -1296,7 +1345,7 @@ class _HeroIconButtonState extends State<HeroIconButton> {
         onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
         onTapCancel: enabled ? () => setState(() => _pressed = false) : null,
         onTap: enabled ? widget.onPressed : null,
-        child: Center(child: btn),
+        child: Center(child: badged),
       ),
     );
 

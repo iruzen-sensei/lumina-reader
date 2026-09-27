@@ -3,13 +3,14 @@
 //
 // ANIME HOME — the app's front page, structured like a streaming service:
 //
-//   * Netflix-red hero banner (the #1 trending show with Play / Info)
+//   * Morphing Discovery Bar (watermelon.sh) — the search button that
+//     morphs open + quick category pills
+//   * Auto-advancing hero carousel (top trending, swipeable, indicators)
 //   * Continue Watching rail (real watch progress, resume one tap away)
 //   * My List rail (the user's anime library)
 //   * Trending Now / New This Season / Top 10 (numbered) / All-Time
 //     Popular / Coming Soon rails (AniList GraphQL)
-//   * Genre chips + full filter sheet (genre, year, season, format,
-//     status, sort) feeding a paginated browse grid
+//   * Genre chips feeding the paginated browse grid
 //
 // Accent note: this screen deliberately uses Netflix crimson (#E50914)
 // for its primary actions — everywhere else the app stays Lumina Noir.
@@ -21,6 +22,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/ui/lumina_ui.dart';
+import '../../core/ui/watermelon.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -79,7 +81,6 @@ final continueWatchingProvider =
   Future<List<ContinueWatchingItem>> load() async {
     final history = await repo.getHistory();
     final latestByManga = <int, HistoryEntry>{};
-    // (null-safety lint satisfaction: history rows are non-null)
     for (final hh in history) {
       if (!hh.isAnime) continue;
       final id = hh.mangaId;
@@ -126,6 +127,10 @@ class _AnimeHomeScreenState extends ConsumerState<AnimeHomeScreen> {
     final h = HeroScope.of(context);
     final trending = ref.watch(animeTrendingProvider);
 
+    // Full-feed outage: the hero error card carries the message, rows
+    // collapse instead of stacking five redundant error captions.
+    final feedDown = trending.hasError;
+
     return Scaffold(
       backgroundColor: h.background,
       body: SafeArea(
@@ -140,25 +145,50 @@ class _AnimeHomeScreenState extends ConsumerState<AnimeHomeScreen> {
                 'Anime',
                 style: HeroTokens.display.copyWith(color: h.foreground),
               ),
-              actions: [
-                HeroIconButton(
-                  tooltip: 'Search anime',
-                  icon: Icons.search_rounded,
-                  onPressed: () => _openSearch(context),
-                ),
-                HeroIconButton(
-                  tooltip: 'Browse by filters',
-                  icon: Icons.tune_rounded,
-                  onPressed: () => context.push('/animeBrowse'),
-                ),
-                const SizedBox(width: 8),
-              ],
             ),
-            // Hero banner — the #1 trending title.
+            // Morphing Discovery Bar — the search button (watermelon.sh):
+            // collapsed = search pill + quick category pills; expanded =
+            // morphs into a live search field with a close circle.
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                child: WmDiscoveryBar(
+                  accent: kNetflixRed,
+                  searchHint: 'Search anime…',
+                  onSearch: (q) => context.push(
+                      '/animeBrowse?search=${Uri.encodeComponent(q)}'),
+                  categories: [
+                    WmDiscoveryCategory(
+                      icon: Icons.local_fire_department_rounded,
+                      label: 'Trending',
+                      onTap: () => context.push('/animeBrowse?row=Trending'),
+                    ),
+                    WmDiscoveryCategory(
+                      icon: Icons.workspace_premium_rounded,
+                      label: 'Top 10',
+                      onTap: () => context.push('/animeBrowse?row=Top 10'),
+                    ),
+                    WmDiscoveryCategory(
+                      icon: Icons.movie_rounded,
+                      label: 'Movies',
+                      onTap: () => context
+                          .push('/animeBrowse?row=Movies&format=MOVIE'),
+                    ),
+                    WmDiscoveryCategory(
+                      icon: Icons.schedule_rounded,
+                      label: 'New Season',
+                      onTap: () =>
+                          context.push('/animeBrowse?row=New This Season'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // Hero carousel — top trending, auto-advancing + swipeable.
             trending.when(
               data: (items) => items.isEmpty
                   ? const SliverToBoxAdapter(child: SizedBox.shrink())
-                  : SliverToBoxAdapter(child: _HeroBanner(anime: items.first)),
+                  : SliverToBoxAdapter(child: _HeroCarousel(anime: items)),
               loading: () => const SliverToBoxAdapter(
                 child: Padding(
                   padding: EdgeInsets.all(16),
@@ -182,19 +212,23 @@ class _AnimeHomeScreenState extends ConsumerState<AnimeHomeScreen> {
             _AniListRow(
               title: 'New This Season',
               provider: animeSeasonalProvider,
+              hideOnError: feedDown,
             ),
             _AniListRow(
               title: 'Top 10 Anime',
               provider: animeTopProvider,
               numbered: true,
+              hideOnError: feedDown,
             ),
             _AniListRow(
               title: 'All-Time Popular',
               provider: animePopularProvider,
+              hideOnError: feedDown,
             ),
             _AniListRow(
               title: 'Coming Soon',
               provider: animeUpcomingProvider,
+              hideOnError: feedDown,
             ),
             // Genre chips
             const _GenreSection(),
@@ -205,64 +239,118 @@ class _AnimeHomeScreenState extends ConsumerState<AnimeHomeScreen> {
       ),
     );
   }
+}
 
-  void _openSearch(BuildContext context) {
-    final controller = TextEditingController();
-    showHeroSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheetContext) {
-        final h = HeroScope.of(sheetContext);
-        return Padding(
-          padding: EdgeInsets.fromLTRB(20, 0, 20,
-              MediaQuery.of(sheetContext).viewInsets.bottom + 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              HeroInput(
-                controller: controller,
-                autofocus: true,
-                hint: 'Search AniList…',
-                prefixIcon: Icons.search_rounded,
-                onSubmitted: (v) {
-                  Navigator.pop(sheetContext);
-                  if (v.trim().isNotEmpty) {
-                    context.push(
-                        '/animeBrowse?search=${Uri.encodeComponent(v.trim())}');
-                  }
-                },
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Search across thousands of shows on AniList.',
-                style: HeroTokens.bodySmall.copyWith(color: h.muted),
-              ),
-            ],
+// ---------------------------------------------------------------------------
+// Hero carousel (watermelon.sh carousel-slider pattern: auto-advance,
+// swipe, animated indicators; parallax on the backdrop)
+// ---------------------------------------------------------------------------
+
+class _HeroCarousel extends ConsumerStatefulWidget {
+  const _HeroCarousel({required this.anime});
+
+  final List<AniListAnime> anime;
+
+  @override
+  ConsumerState<_HeroCarousel> createState() => _HeroCarouselState();
+}
+
+class _HeroCarouselState extends ConsumerState<_HeroCarousel> {
+  final _page = PageController(viewportFraction: 0.92);
+  Timer? _auto;
+  int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _startAuto();
+  }
+
+  void _startAuto() {
+    _auto?.cancel();
+    if (!heroAnimationsEnabled) return;
+    _auto = Timer.periodic(const Duration(seconds: 6), (_) {
+      if (!mounted || widget.anime.length < 2) return;
+      final next = (_index + 1) % widget.anime.length;
+      _page.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 620),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _auto?.cancel();
+    _page.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
+    final shows = widget.anime.take(5).toList();
+
+    return Column(
+      children: [
+        SizedBox(
+          height: 236,
+          child: PageView.builder(
+            controller: _page,
+            itemCount: shows.length,
+            onPageChanged: (i) => setState(() => _index = i),
+            itemBuilder: (context, i) {
+              final anime = shows[i];
+              final active = i == _index;
+              return AnimatedScale(
+                scale: heroAnimationsEnabled ? (active ? 1.0 : 0.94) : 1.0,
+                duration: const Duration(milliseconds: 380),
+                curve: Curves.easeOutCubic,
+                child: _HeroCard(anime: anime, rank: i + 1),
+              );
+            },
           ),
-        );
-      },
+        ),
+        const SizedBox(height: 10),
+        // Animated indicator dots (current = stretched + Netflix red).
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            for (var i = 0; i < shows.length; i++)
+              AnimatedContainer(
+                duration: heroAnimationsEnabled
+                    ? const Duration(milliseconds: 260)
+                    : Duration.zero,
+                curve: Curves.easeOutCubic,
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: i == _index ? 18 : 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: i == _index ? kNetflixRed : h.border,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+          ],
+        ),
+      ],
     );
   }
 }
 
-// ---------------------------------------------------------------------------
-// Hero banner
-// ---------------------------------------------------------------------------
-
-class _HeroBanner extends ConsumerWidget {
-  const _HeroBanner({required this.anime});
+class _HeroCard extends ConsumerWidget {
+  const _HeroCard({required this.anime, required this.rank});
 
   final AniListAnime anime;
+  final int rank;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
       child: HeroScaleTap(
         onTap: () => openAniListEntry(context, ref, anime),
         child: Container(
-          height: 230,
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(HeroTokens.radiusCard),
@@ -274,8 +362,18 @@ class _HeroBanner extends ConsumerWidget {
                 Image.network(
                   anime.bannerUrl ?? anime.coverUrl!,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                ),
+                  frameBuilder: (context, child, frame, wasSync) => wasSync
+                      ? child
+                      : AnimatedOpacity(
+                          opacity: frame == null ? 0 : 1,
+                          duration: const Duration(milliseconds: 280),
+                          child: child,
+                        ),
+                  errorBuilder: (_, __, ___) =>
+                      const ColoredBox(color: Color(0xFF1C1C1E)),
+                )
+              else
+                const ColoredBox(color: Color(0xFF1C1C1E)),
               DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -296,9 +394,11 @@ class _HeroBanner extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Spacer(),
-                    const Text(
-                      '#1 IN TRENDING TODAY',
-                      style: TextStyle(
+                    Text(
+                      rank == 1
+                          ? '#1 IN TRENDING TODAY'
+                          : 'TRENDING #$rank TODAY',
+                      style: const TextStyle(
                         fontFamily: HeroTokens.fontSans,
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
@@ -313,7 +413,7 @@ class _HeroBanner extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                       style: HeroTokens.display.copyWith(
                         color: Colors.white,
-                        fontSize: 26,
+                        fontSize: 24,
                         height: 1.1,
                       ),
                     ),
@@ -329,25 +429,18 @@ class _HeroBanner extends ConsumerWidget {
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: kNetflixRed,
-                            foregroundColor: Colors.white,
-                          ),
-                          onPressed: () => openAniListEntry(context, ref, anime),
-                          icon: const Icon(Icons.play_arrow_rounded),
-                          label: const Text('Play'),
+                        _HeroAction(
+                          onTap: () => openAniListEntry(context, ref, anime),
+                          icon: Icons.play_arrow_rounded,
+                          label: 'Play',
+                          filled: true,
                         ),
                         const SizedBox(width: 8),
-                        FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            backgroundColor:
-                                Colors.white.withValues(alpha: 0.16),
-                            foregroundColor: Colors.white,
-                          ),
-                          onPressed: () => openAniListEntry(context, ref, anime),
-                          icon: const Icon(Icons.info_outline_rounded),
-                          label: const Text('Info'),
+                        _HeroAction(
+                          onTap: () => openAniListEntry(context, ref, anime),
+                          icon: Icons.info_outline_rounded,
+                          label: 'Info',
+                          filled: false,
                         ),
                       ],
                     ),
@@ -369,6 +462,50 @@ class _HeroBanner extends ConsumerWidget {
       if (anime.episodes != null) '${anime.episodes} eps',
     ];
     return parts.join('  •  ');
+  }
+}
+
+class _HeroAction extends StatelessWidget {
+  const _HeroAction(
+      {required this.onTap,
+      required this.icon,
+      required this.label,
+      required this.filled});
+
+  final VoidCallback onTap;
+  final IconData icon;
+  final String label;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    return HeroScaleTap(
+      onTap: onTap,
+      child: Container(
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: filled ? kNetflixRed : Colors.white.withValues(alpha: 0.16),
+          borderRadius: BorderRadius.circular(HeroTokens.radiusButton),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 20, color: Colors.white),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: const TextStyle(
+                fontFamily: HeroTokens.fontSans,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -511,7 +648,7 @@ class _ContinueCard extends StatelessWidget {
               clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(HeroTokens.radiusCard),
-                color: h.surface,
+                color: h.surface2,
               ),
               child: Stack(
                 fit: StackFit.expand,
@@ -519,7 +656,15 @@ class _ContinueCard extends StatelessWidget {
                   if ((m.thumbnailUrl ?? '').isNotEmpty)
                     Image.network(m.thumbnailUrl!,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+                        frameBuilder: (context, child, frame, wasSync) => wasSync
+                            ? child
+                            : AnimatedOpacity(
+                                opacity: frame == null ? 0 : 1,
+                                duration: const Duration(milliseconds: 260),
+                                child: child,
+                              ),
+                        errorBuilder: (_, __, ___) =>
+                            const SizedBox.shrink()),
                   Center(
                     child: Container(
                       width: 40,
@@ -536,12 +681,14 @@ class _ContinueCard extends StatelessWidget {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    child: LinearProgressIndicator(
-                      value: item.progress.clamp(0.0, 1.0),
-                      minHeight: 3,
-                      backgroundColor: Colors.white.withValues(alpha: 0.25),
-                      valueColor:
-                          const AlwaysStoppedAnimation(kNetflixRed),
+                    child: ClipRRect(
+                      child: LinearProgressIndicator(
+                        value: item.progress.clamp(0.0, 1.0),
+                        minHeight: 3,
+                        backgroundColor: Colors.white.withValues(alpha: 0.25),
+                        valueColor:
+                            const AlwaysStoppedAnimation(kNetflixRed),
+                      ),
                     ),
                   ),
                 ],
@@ -611,16 +758,25 @@ class _AniListRow extends ConsumerWidget {
     required this.title,
     required this.provider,
     this.numbered = false,
+    this.hideOnError = false,
   });
 
   final String title;
   final AutoDisposeFutureProvider<List<AniListAnime>> provider;
   final bool numbered;
 
+  /// When the whole AniList feed is down (hero errored), rows collapse
+  /// silently instead of stacking redundant error captions — the hero
+  /// error card carries the message + retry.
+  final bool hideOnError;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final h = HeroScope.of(context);
     final items = ref.watch(provider);
+    if (hideOnError && items.hasError) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
     return SliverMainAxisGroup(
       slivers: [
         SliverToBoxAdapter(
@@ -633,7 +789,7 @@ class _AniListRow extends ConsumerWidget {
         items.when(
           data: (list) => SliverToBoxAdapter(
             child: SizedBox(
-              height: numbered ? 210 : 196,
+              height: numbered ? 210 : 214,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -678,7 +834,8 @@ class _AniListRow extends ConsumerWidget {
   }
 }
 
-/// Standard portrait poster card.
+/// Standard portrait poster card: cover with fade-in, score badge, two-line
+/// title + muted meta line (format · year).
 class _PosterCard extends ConsumerWidget {
   const _PosterCard({required this.anime});
 
@@ -700,13 +857,64 @@ class _PosterCard extends ConsumerWidget {
               clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(HeroTokens.radiusCard),
-                color: h.surface,
+                color: h.surface2,
               ),
-              child: (anime.coverUrl ?? '').isNotEmpty
-                  ? Image.network(anime.coverUrl!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink())
-                  : const SizedBox.shrink(),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  (anime.coverUrl ?? '').isNotEmpty
+                      ? Image.network(anime.coverUrl!,
+                          fit: BoxFit.cover,
+                          frameBuilder: (context, child, frame, wasSync) => wasSync
+                              ? child
+                              : AnimatedOpacity(
+                                  opacity: frame == null ? 0 : 1,
+                                  duration: const Duration(milliseconds: 260),
+                                  child: child,
+                                ),
+                          errorBuilder: (_, __, ___) =>
+                              const SizedBox.shrink())
+                      : const SizedBox.shrink(),
+                  // Score badge (bottom-left, over the gradient).
+                  if (anime.averageScore != null)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.black.withValues(alpha: 0.0),
+                              Colors.black.withValues(alpha: 0.75),
+                            ],
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 14, 8, 6),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.star_rounded,
+                                  size: 12, color: Colors.amber),
+                              const SizedBox(width: 3),
+                              Text(
+                                '${anime.averageScore}%',
+                                style: const TextStyle(
+                                  fontFamily: HeroTokens.fontSans,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
             const SizedBox(height: 8),
             Text(
@@ -719,6 +927,20 @@ class _PosterCard extends ConsumerWidget {
                 height: 1.2,
               ),
             ),
+            if (anime.seasonYear != null)
+              Text(
+                [
+                  if (anime.format != null) anime.format!,
+                  '${anime.seasonYear}',
+                ].join(' · '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: HeroTokens.caption.copyWith(
+                  color: h.muted,
+                  fontSize: 11,
+                  height: 1.2,
+                ),
+              ),
           ],
         ),
       ),
@@ -770,12 +992,20 @@ class _NumberedCard extends ConsumerWidget {
                 clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(HeroTokens.radiusCard),
-                  color: h.surface,
+                  color: h.surface2,
                 ),
                 child: (anime.coverUrl ?? '').isNotEmpty
                     ? Image.network(anime.coverUrl!,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const SizedBox.shrink())
+                        frameBuilder: (context, child, frame, wasSync) => wasSync
+                            ? child
+                            : AnimatedOpacity(
+                                opacity: frame == null ? 0 : 1,
+                                duration: const Duration(milliseconds: 260),
+                                child: child,
+                              ),
+                        errorBuilder: (_, __, ___) =>
+                            const SizedBox.shrink())
                     : const SizedBox.shrink(),
               ),
             ),

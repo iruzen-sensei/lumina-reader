@@ -145,6 +145,7 @@ class Manga {
     this.unreadCount = 0,
     this.totalChapters = 0,
     this.lastChapterRead = 0,
+    this.isFinished = false,
     this.sourceError,
   });
 
@@ -168,6 +169,10 @@ class Manga {
   int unreadCount;
   int totalChapters;
   double lastChapterRead;
+
+  /// The user's "Finished" flag (db Manga.isFinished) — drives the Status
+  /// Picker's Finished state and the Library Finished filter.
+  bool isFinished;
 
   /// When the metadata loaded but the chapter/episode list failed (e.g.
   /// provider unreachable), the partial error text — the detail screen
@@ -207,10 +212,19 @@ class Manga {
         unreadCount: unreadCount,
         totalChapters: totalChapters,
         lastChapterRead: lastChapterRead,
+        isFinished: isFinished,
         sourceError: sourceError,
       );
 
   int get readCount => totalChapters - unreadCount;
+
+  /// The user's status for the Status Picker:
+  ///   1 = Finished, 2 = Plan to read/watch, 0 = Reading.
+  int get userStatus {
+    if (isFinished) return 1;
+    if (readCount == 0) return 2;
+    return 0;
+  }
 
   double get progress {
     if (totalChapters == 0) return 0;

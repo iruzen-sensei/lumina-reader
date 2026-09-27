@@ -86,11 +86,16 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                     showChevron: true,
                     onTap: () => context.push('/stats'),
                   ),
+                  // Updates feed — no longer a bottom-nav tab (the user
+                  // rightly questioned a whole page for it): reachable from
+                  // here and from the Library header bell. Trailing badge =
+                  // live unread count.
                   HeroListTile(
                     leadingIcon: Icons.new_releases_outlined,
                     title: 'Updates',
                     subtitle: 'New chapters & episodes',
                     showChevron: true,
+                    trailing: _UnreadUpdatesBadge(),
                     onTap: () => context.push('/updates'),
                   ),
                   HeroListTile(
@@ -346,6 +351,37 @@ class _ProfileCard extends ConsumerWidget {
             onPressed: () => context.push('/stats'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Live unread-updates badge for the Updates tile: count of update rows
+/// not yet read. Pops with a soft spring when the count changes; hidden
+/// entirely when there is nothing new (no empty red dot noise).
+class _UnreadUpdatesBadge extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final h = HeroScope.of(context);
+    final updates = ref.watch(updatesProvider);
+    final unread = updates.where((u) => !u.isRead).length;
+    if (unread == 0) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: h.accent,
+        borderRadius: BorderRadius.circular(HeroTokens.radiusChip),
+      ),
+      constraints: const BoxConstraints(minWidth: 20),
+      child: Text(
+        unread > 99 ? '99+' : '$unread',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontFamily: HeroTokens.fontSans,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: h.accentFg,
+        ),
       ),
     );
   }

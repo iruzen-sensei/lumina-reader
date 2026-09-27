@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme.dart';
 import '../../core/ui/lumina_ui.dart';
+import '../../core/ui/watermelon.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -195,72 +196,37 @@ class _StreakCard extends ConsumerWidget {
   }
 }
 
-class _GoalEditorTile extends ConsumerStatefulWidget {
+class _GoalEditorTile extends ConsumerWidget {
   const _GoalEditorTile({required this.goal});
   final Goal goal;
 
   @override
-  ConsumerState<_GoalEditorTile> createState() => _GoalEditorTileState();
-}
-
-class _GoalEditorTileState extends ConsumerState<_GoalEditorTile> {
-  late final TextEditingController _controller =
-      TextEditingController(text: '${widget.goal.target}');
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final h = HeroScope.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 20, 8),
-      child: Row(
+      padding: const EdgeInsets.fromLTRB(16, 4, 20, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.goal.label,
-                  style: HeroTokens.body.copyWith(
-                    color: h.foreground,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                Text(
-                  '${widget.goal.current} / ${widget.goal.target} ${widget.goal.unit}',
-                  style: HeroTokens.caption.copyWith(color: h.muted),
-                ),
-              ],
-            ),
+          Text(
+            '${goal.current} / ${goal.target} ${goal.unit}',
+            style: HeroTokens.caption.copyWith(color: h.muted),
           ),
-          SizedBox(
-            width: 96,
-            child: HeroInput(
-              controller: _controller,
-              keyboardType: TextInputType.number,
-            ),
-          ),
-          const SizedBox(width: 8),
-          HeroButton(
-            label: 'Save',
-            size: HeroButtonSize.sm,
-            variant: HeroButtonVariant.light,
-            onPressed: () async {
-              final value = int.tryParse(_controller.text.trim());
-              if (value == null || value <= 0) {
-                showSnack(ref, context, 'Enter a positive number');
-                return;
-              }
+          const SizedBox(height: 6),
+          // watermelon.sh Split To Edit: the target value pill splits open
+          // into an inline numeric editor (focus + select on expand,
+          // Enter saves / X cancels) — replacing the old 96px input + Save
+          // button row.
+          WmSplitToEdit(
+            label: goal.label,
+            value: goal.target,
+            unit: goal.unit,
+            onSave: (v) async {
               await ref
                   .read(data.statsRepositoryProvider)
-                  .setGoalTarget(widget.goal.id, value);
+                  .setGoalTarget(goal.id, v);
               if (context.mounted) {
-                showSnack(ref, context, 'Goal updated to $value');
+                showSnack(ref, context, 'Goal updated to $v');
               }
             },
           ),

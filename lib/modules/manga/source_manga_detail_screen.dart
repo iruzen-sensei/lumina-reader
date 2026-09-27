@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/ui/watermelon.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
 import '../../providers/providers.dart';
@@ -651,18 +652,22 @@ class _BottomActions extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
         child: Row(
           children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: adding ? null : onAddToLibrary,
-                icon: adding
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.favorite_border),
-                label: const Text('Add to library'),
-              ),
+            // watermelon.sh Feedback Action: the circle-to-pill morph with
+            // per-character staggered status text and a slide-in retry
+            // button on failure (the old button had only a bare spinner
+            // and snackbar errors).
+            WmFeedbackAction(
+              idleLabel: 'Add to library',
+              idleIcon: Icons.favorite_border,
+              loadingLabel: 'Adding…',
+              successLabel: 'Added',
+              errorLabel: 'Failed',
+              onAction: () async {
+                onAddToLibrary();
+                // The screen navigates away on success (pushReplacement);
+                // true keeps the pill in the success state meanwhile.
+                return true;
+              },
             ),
             const SizedBox(width: 12),
             Expanded(

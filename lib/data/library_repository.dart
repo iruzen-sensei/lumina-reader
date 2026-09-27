@@ -369,6 +369,30 @@ class LibraryRepository {
     });
   }
 
+  /// Sets the user's reading/watching status for a library row — the
+  /// Status Picker's persistence (watermelon.sh pattern).
+  ///   0 = Reading  (in progress, un-finishes the row)
+  ///   1 = Finished (isFinished = true — feeds the stats finished counter
+  ///                 and the Library "Finished" filter)
+  ///   2 = Plan to read (keeps the row in the library, untouched — the
+  ///                 display-only state shown when nothing is read yet)
+  Future<void> setUserStatus(int mangaId, int status) async {
+    await _isar.writeTxn(() async {
+      final m = await _isar.mangas.get(mangaId);
+      if (m == null) return;
+      switch (status) {
+        case 1:
+          m.isFinished = true;
+        case 2:
+          m.isFinished = false;
+        default:
+          m.isFinished = false;
+          m.lastReadAt ??= DateTime.now();
+      }
+      await _isar.mangas.put(m);
+    });
+  }
+
   /// Upserts the chapter list for a manga from an extension's detail result.
   /// Preserves read/download progress on chapters that already exist
   /// (matched by URL).
@@ -416,6 +440,30 @@ class LibraryRepository {
     final cats = await _isar.categorys.where().sortByPosition().findAll();
     if (cats.isEmpty) return const [];
     return cats.map(map.categoryToDto).toList();
+  }
+
+  /// Renames a category (the Edit Badge interaction on the Library tabs).
+  /// Renaming re-tags every member row (the db stores the category NAME on
+  /// each manga row) and preserves position/color/type.
+  Future<void> renameCategory(int categoryId, String newName) async {
+    final trimmed = newName.trim();
+    if (trimmed.isEmpty) return;
+    await _isar.writeTxn(() async {
+      final cat = await _isar.categorys.get(categoryId);
+      if (cat == null) return;
+      final oldName = cat.name;
+      cat.name = trimmed;
+      await _isar.categorys.put(cat);
+      // Re-tag member rows that still carry the old name.
+      final members = await _isar.mangas
+          .filter()
+          .categoryEqualTo(oldName)
+          .findAll();
+      for (final m in members) {
+        m.category = trimmed;
+        await _isar.mangas.put(m);
+      }
+    });
   }
 
   /// Seeds the default categories on first run and returns them.

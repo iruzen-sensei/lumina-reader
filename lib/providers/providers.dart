@@ -468,6 +468,12 @@ class CategoriesNotifier extends StateNotifier<List<Category>> {
     }
   }
 
+  /// Renames a category (Edit Badge interaction).
+  Future<void> rename(int categoryId, String newName) async {
+    await _repo.renameCategory(categoryId, newName);
+    await _reload();
+  }
+
   @override
   void dispose() {
     _sub?.cancel();

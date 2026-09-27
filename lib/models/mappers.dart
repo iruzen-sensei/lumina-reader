@@ -106,6 +106,7 @@ dto.Manga mangaToDto(
     unreadCount: unread,
     totalChapters: dtoChapters.length,
     lastChapterRead: lastRead,
+    isFinished: m.isFinished,
   );
 }
 

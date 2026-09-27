@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,18 +22,30 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../../core/theme.dart';
+import '../../../core/ui/lumina_ui.dart';
+import '../../../core/ui/watermelon.dart';
 import '../../../data/providers.dart' as data;
 import '../../../models/models.dart' hide SubtitleTrack;
 import '../../../providers/providers.dart' hide SubtitleTrack;
 import '../../shared/widgets.dart';
 
-/// The anime player screen.
+/// The anime player screen — a professional, gesture-driven playback
+/// surface built on [media_kit]:
 ///
-/// Built on top of [media_kit]'s [Video] widget, this screen layers a custom
-/// Material 3 control overlay on top of the video surface: play/pause, a
-/// draggable seekbar with buffered indication, volume, a quality selector, a
-/// subtitle selector, an AniSkip button that jumps past openings/endings,
-/// picture-in-picture, playback speed and prev/next episode navigation.
+///   * Gestures: single-tap toggles controls, double-tap sides seek ±10s
+///     (with animated indicators), horizontal drag scrubs, vertical drag
+///     on the right half adjusts volume with a HUD.
+///   * Seekbar: drag-to-scrub with a floating timestamp bubble, buffered
+///     indication, and commit-on-release (no seek storms while dragging).
+///   * Controls: animated play/pause, prev/next episode, an episode
+///     picker sheet, playback speed, quality + subtitle selectors, AniSkip
+///     skip OP/ED, screen lock, and Picture-in-Picture (auto-PiP when the
+///     user leaves the app while playing — the native MainActivity handles
+///     the Android side).
+///   * Secondary controls live in a watermelon.sh Extended Toolbar: the
+///     primary set slides out and the extended set slides in.
+///   * Progress memory: debounced watch-position persistence + a final
+///     flush on dispose, resume-on-reopen, history/stats recording.
 class AnimePlayerScreen extends ConsumerStatefulWidget {
   const AnimePlayerScreen({
     super.key,
@@ -48,7 +61,7 @@ class AnimePlayerScreen extends ConsumerStatefulWidget {
 }
 
 class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final Player _player;
   late final VideoController _controller;
   late final List<StreamSubscription<dynamic>> _subs;
@@ -59,7 +72,11 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
   Duration _buffered = Duration.zero;
-  double _volume = 1.0;
+
+  /// media_kit volume is 0.0–100.0. The previous code treated it as 0–1,
+  /// so playback ran at 1% volume — effectively SILENT (the "audio is
+  /// broken" bug). Everything here is on the 0–100 scale.
+  double _volume = 100.0;
   double _speed = 1.0;
   int _qualityIndex = 0;
   int _subtitleIndex = 0;
@@ -67,42 +84,51 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
   SkipRange? _activeSkip;
   StreamSubscription<Duration>? _positionSub;
 
-  // ---- Playback failure state (surfaced as an in-player retry card) ----
-  /// Last fatal player error (open failure / mpv stream error). Non-null
-  /// swaps the infinite spinner for an error card with a Retry button —
-  /// previously a dead stream left the spinner forever.
+  /// Picture-in-Picture state (Android; auto-PiP when the user leaves the
+  /// app mid-playback — driven by the native MainActivity channel).
+  bool _inPip = false;
+  static const _pipChannel = MethodChannel('lumina/pip');
+
+  /// Controls lock (landscape one-hand use): when locked, all overlay
+  /// controls are suppressed except the lock button itself.
+  bool _locked = false;
+
+  // ---- Gesture state ----
+  /// Horizontal drag scrub preview: target position while dragging.
+  Duration _scrubTarget = Duration.zero;
+  bool _scrubbing = false;
+
+  /// Double-tap seek feedback (side, direction, active).
+  int _doubleTapSide = 0; // -1 left, 1 right, 0 none
+
+  /// Vertical volume drag: start volume + drag delta → HUD.
+  double _volumeDragStart = 0;
+  bool _volumeDragging = false;
+
+  // ---- Playback failure state ----
   String? _playerError;
 
   /// One-shot resume target: applied when the duration stream first reports
   /// a real duration (seeking before mpv knows the duration is a no-op).
   int? _pendingResumeSeconds;
 
-  // ---- Watch-progress persistence (mirrors the manga reader's _flush) ----
+  // ---- Watch-progress persistence ----
   DateTime _sessionStart = DateTime.now();
   Timer? _progressSaver;
   bool _completedHandled = false;
   bool _incognito = false;
 
-  /// Nullable: assigned by the async _loadEpisode resolve after the first
-  /// frame — every access must be guarded (the previous `late` variant
-  /// crashed the overlay build with LateInitializationError on first open).
   Chapter? _episode;
-
   Manga? _manga;
   bool _notFound = false;
 
-  /// Episode the player is currently bound to. Differs from
-  /// [widget.episodeId] after a next/prev switch; the build watch follows
-  /// this so the auto-open logic targets the CURRENT episode's sources.
   late int _currentEpisodeId = widget.episodeId;
-
-  /// Episode id whose sources were already opened — prevents re-opening on
-  /// every rebuild while still allowing a fresh open after a switch.
   int? _openedEpisodeId;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _player = Player(configuration: const PlayerConfiguration());
     _controller = VideoController(_player);
     _loadEpisode();
@@ -116,29 +142,28 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
         _applyPendingResume(d);
       }),
       _player.stream.buffering.listen((b) {
-        // Buffering must never clear the error card — a failed open sets
-        // _playerError and the spinner would otherwise fight the card.
         if (mounted && _playerError == null) setState(() => _isLoading = b);
       }),
       _player.stream.buffer.listen((d) {
         if (mounted) setState(() => _buffered = d);
       }),
       _player.stream.volume.listen((v) {
-        if (mounted) setState(() => _volume = v);
+        if (mounted) setState(() => _volume = v.clamp(0.0, 100.0));
+      }),
+      _player.stream.playing.listen((playing) {
+        if (mounted) setState(() {}); // play/pause icon refresh
+        // Auto-PiP: only ask the OS to shrink when actually playing.
+        if (Platform.isAndroid) {
+          _pipChannel.invokeMethod(
+              'setAutoOnLeave', {'enabled': playing && !_inPip});
+        }
       }),
       _player.stream.completed.listen((completed) {
         if (completed && mounted) {
-          showSnack(ref, context, 'Episode finished');
-          // REAL completion: mark watched + persist history/stats
-          // (previously the player never recorded anything, so the anime
-          // library's watched checkmarks and Continue-watching could never
-          // come from actually watching an episode).
           _handleEpisodeComplete();
+          _autoNext();
         }
       }),
-      // mpv-level failures (dead URL, 403 from the CDN, unsupported
-      // format): previously NOTHING subscribed to these, so a failed open
-      // left the buffering spinner on screen forever with no explanation.
       _player.stream.error.listen((e) {
         debugPrint('media_kit error: $e');
         if (!mounted) return;
@@ -149,13 +174,40 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
         });
       }),
     ];
+    _pipChannel.setMethodCallHandler((call) async {
+      if (call.method == 'pipChanged' && mounted) {
+        setState(() => _inPip = (call.arguments as bool?) ?? false);
+      }
+    });
     _scheduleHide();
     _incognito = ref.read(incognitoModeProvider);
     _sessionStart = DateTime.now();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
-  /// Debounced progress write — at most one DB write every 5 s while
-  /// playing (mirrors the manga reader's throttled saveChapterProgress).
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    if (Platform.isAndroid) {
+      _pipChannel.invokeMethod('setAutoOnLeave', {'enabled': false});
+    }
+    _hideTimer?.cancel();
+    _positionSub?.cancel();
+    _progressSaver?.cancel();
+    unawaited(_flushProgress());
+    _recordPartialWatchSession();
+    for (final s in _subs) {
+      s.cancel();
+    }
+    _player.dispose();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    super.dispose();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Progress / history / stats
+  // ---------------------------------------------------------------------------
+
   void _scheduleProgressSave() {
     _progressSaver?.cancel();
     _progressSaver = Timer(const Duration(seconds: 5), _flushProgress);
@@ -166,7 +218,6 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     if (episode == null || _incognito) return;
     if (_duration.inMilliseconds <= 0) return;
     final seconds = _position.inSeconds;
-    // Skip meaningless writes (nothing watched yet).
     if (seconds <= 0) return;
     try {
       await ref.read(data.libraryRepositoryProvider).saveChapterProgress(
@@ -180,7 +231,6 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     }
   }
 
-  /// Marks the episode watched and records history + a stats session.
   Future<void> _handleEpisodeComplete() async {
     final episode = _episode;
     final manga = _manga;
@@ -216,6 +266,29 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     }
   }
 
+  void _recordPartialWatchSession() {
+    if (_incognito || _completedHandled) return;
+    final manga = _manga;
+    final episode = _episode;
+    if (manga == null || episode == null) return;
+    final watched = DateTime.now().difference(_sessionStart).inSeconds;
+    if (watched < 30) return;
+    unawaited(() async {
+      try {
+        await ref.read(data.statsRepositoryProvider).recordSession(
+              mangaId: manga.id,
+              chapterId: episode.id,
+              pagesRead: 0,
+              durationSeconds: watched.clamp(1, 60 * 60 * 3),
+            );
+      } catch (_) {}
+    }());
+  }
+
+  // ---------------------------------------------------------------------------
+  // Episode + stream loading
+  // ---------------------------------------------------------------------------
+
   Future<void> _loadEpisode() async {
     final repo = ref.read(data.libraryRepositoryProvider);
     final (manga, episode) = await repo.resolveChapter(widget.episodeId);
@@ -228,10 +301,8 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
       _manga = manga;
       _episode = episode;
     });
-    // _openVideo is driven by the build method once video sources arrive.
   }
 
-  /// Called from build when sources are available (and not yet opened).
   void _tryOpenVideo(EpisodeMediaState media) {
     if (_notFound || media.sources.isEmpty) return;
     if (_openedEpisodeId == _currentEpisodeId) return;
@@ -239,16 +310,10 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     _openVideo();
   }
 
-  /// Applies the saved watch position once the player reports a real
-  /// duration — seeking before mpv knows the media length silently does
-  /// nothing (the old code seeked immediately after open, when the
-  /// duration was still 0, so resume NEVER worked).
   void _applyPendingResume(Duration duration) {
     final target = _pendingResumeSeconds;
     if (target == null || duration.inSeconds <= 0) return;
     _pendingResumeSeconds = null;
-    // Skip when the position is within the last 30 s (episode effectively
-    // finished — restart from the top instead of resuming the credits).
     if (target <= 10 || target >= duration.inSeconds - 30) return;
     unawaited(_player.seek(Duration(seconds: target)));
   }
@@ -256,7 +321,7 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
   Future<void> _openVideo() async {
     final media = ref.read(videoSourcesProvider(_currentEpisodeId));
     if (media.sources.isEmpty) return;
-    final quality = media.sources.first;
+    final quality = media.sources[_qualityIndex.clamp(0, media.sources.length - 1)];
     try {
       _playerError = null;
       await _player.open(Media(quality.url, httpHeaders: quality.headers));
@@ -277,8 +342,6 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     _maybeStartAniSkipWatch();
   }
 
-  /// Retry after a playback failure — reloads the episode's sources from
-  /// the provider (a fresh signed URL / a different edge) and re-opens.
   Future<void> _retryOpen() async {
     setState(() {
       _playerError = null;
@@ -291,9 +354,6 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     _tryOpenVideo(ref.read(videoSourcesProvider(_currentEpisodeId)));
   }
 
-  /// Applies the persisted "Default subtitle" preference (Settings →
-  /// Player) — previously the option was stored but never consumed, so
-  /// every episode started with subtitles off regardless of the choice.
   void _applyDefaultSubtitle() {
     final pref = ref.read(appSettingsProvider).defaultSubtitle;
     if (pref == 'Off') return;
@@ -310,61 +370,18 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     }
   }
 
-  /// Queues the REAL resume: jump to the saved watch position when it is
-  /// meaningful (previously every open restarted at 0:00 even mid-episode).
   void _queueResumeFromSavedPosition() {
     final episode = _episode;
     if (episode == null) return;
     final saved = episode.lastPageRead; // seconds watched
     if (saved <= 10) return;
     _pendingResumeSeconds = saved;
-    // Duration may already be known (quality switch / re-open).
     _applyPendingResume(_duration);
   }
 
-  @override
-  void dispose() {
-    _hideTimer?.cancel();
-    _positionSub?.cancel();
-    _progressSaver?.cancel();
-    // Flush the final watch position so Continue-watching resumes here.
-    unawaited(_flushProgress());
-    _recordPartialWatchSession();
-    for (final s in _subs) {
-      s.cancel();
-    }
-    _player.dispose();
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    // NOTE: no portrait lock here — a lock in dispose() previously froze
-    // the WHOLE app in portrait after leaving the player (nothing ever
-    // restored all orientations), which users read as "rotation is broken".
-    super.dispose();
-  }
-
-  /// Records a stats session for a PARTIAL watch on exit (the previous
-  /// behaviour only recorded a session when the video played to the very
-  /// end — closing the player 90% through three episodes moved NOTHING in
-  /// the stats). Duration-only, clamped, never for incognito sessions.
-  void _recordPartialWatchSession() {
-    if (_incognito || _completedHandled) return;
-    final manga = _manga;
-    final episode = _episode;
-    if (manga == null || episode == null) return;
-    final watched = DateTime.now().difference(_sessionStart).inSeconds;
-    if (watched < 30) return;
-    unawaited(() async {
-      try {
-        await ref.read(data.statsRepositoryProvider).recordSession(
-              mangaId: manga.id,
-              chapterId: episode.id,
-              pagesRead: 0,
-              durationSeconds: watched.clamp(1, 60 * 60 * 3),
-            );
-      } catch (_) {
-        // Best-effort stats — never block teardown.
-      }
-    }());
-  }
+  // ---------------------------------------------------------------------------
+  // Controls / gestures
+  // ---------------------------------------------------------------------------
 
   void _toggleControls() {
     setState(() => _controlsVisible = !_controlsVisible);
@@ -378,7 +395,7 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
   void _scheduleHide() {
     _hideTimer?.cancel();
     _hideTimer = Timer(const Duration(seconds: 4), () {
-      if (mounted && !_seeking) {
+      if (mounted && !_seeking && !_scrubbing) {
         setState(() => _controlsVisible = false);
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
       }
@@ -386,8 +403,16 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
   }
 
   Future<void> _seekTo(Duration position) async {
-    await _player.seek(position);
-    if (mounted) setState(() => _position = position);
+    // Duration has no clamp() — bound manually (and never into the void
+    // before the duration is known).
+    var target = position;
+    if (target < Duration.zero) target = Duration.zero;
+    final max = _duration > Duration.zero
+        ? _duration
+        : const Duration(days: 1);
+    if (target > max) target = max;
+    await _player.seek(target);
+    if (mounted) setState(() => _position = target);
   }
 
   Future<void> _togglePlay() async {
@@ -396,8 +421,9 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
   }
 
   Future<void> _setVolume(double v) async {
-    await _player.setVolume(v);
-    setState(() => _volume = v);
+    final nv = v.clamp(0.0, 100.0);
+    await _player.setVolume(nv);
+    setState(() => _volume = nv);
   }
 
   Future<void> _setSpeed(double s) async {
@@ -406,8 +432,17 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     setState(() {});
   }
 
-  /// Maps the persisted default-quality label (e.g. '720p') to an index
-  /// in the available sources; 0 when nothing matches.
+  /// Double-tap on the left/right third seeks ∓/±10s with an animated
+  /// indicator (YouTube/Netflix pattern).
+  Future<void> _doubleTapSeek(int side) async {
+    setState(() => _doubleTapSide = side);
+    await _seekTo(_position + Duration(seconds: side * 10));
+    Future<void>.delayed(const Duration(milliseconds: 650), () {
+      if (mounted) setState(() => _doubleTapSide = 0);
+    });
+    _scheduleHide();
+  }
+
   int _defaultQualityIndex(List<VideoQuality> sources) {
     final pref = ref.read(appSettingsProvider).defaultVideoQuality;
     if (pref == 'Auto') return 0;
@@ -418,7 +453,7 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
   }
 
   Future<void> _setQuality(int index) async {
-    final sources = ref.read(videoSourcesProvider(widget.episodeId)).sources;
+    final sources = ref.read(videoSourcesProvider(_currentEpisodeId)).sources;
     if (index < 0 || index >= sources.length) return;
     final wasPlaying = _player.state.playing;
     final pos = _position;
@@ -446,11 +481,8 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
 
   Future<void> _setSubtitle(int index) async {
     setState(() => _subtitleIndex = index);
-    final tracks = ref.read(subtitleTracksProvider(widget.episodeId));
+    final tracks = ref.read(subtitleTracksProvider(_currentEpisodeId));
     if (index >= 0 && index < tracks.length && tracks[index].url.isNotEmpty) {
-      // media_kit loads external subtitle tracks via the platform-specific API.
-      // The setSubtitleTrack call is intentionally wrapped so a missing native
-      // binding (e.g. on desktop test harnesses) does not crash the UI.
       try {
         await _player.setSubtitleTrack(
           SubtitleTrack.uri(tracks[index].url, title: tracks[index].label),
@@ -464,10 +496,8 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
   }
 
   void _maybeStartAniSkipWatch() {
-    // Honour Settings -> Player -> AniSkip: when disabled, no skip button
-    // is ever surfaced (the toggle previously had no effect at all).
     if (!ref.read(appSettingsProvider).aniSkipEnabled) return;
-    final ranges = ref.read(aniSkipProvider(widget.episodeId));
+    final ranges = ref.read(aniSkipProvider(_currentEpisodeId));
     if (ranges.isEmpty) return;
     _positionSub?.cancel();
     _positionSub = _player.stream.position.listen((pos) {
@@ -488,13 +518,13 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
   }
 
   Future<void> _skipOp() async {
-    final ranges = ref.read(aniSkipProvider(widget.episodeId));
+    final ranges = ref.read(aniSkipProvider(_currentEpisodeId));
     final op = ranges.where((r) => r.type == 'op').firstOrNull;
     if (op != null) await _seekTo(op.end);
   }
 
   Future<void> _skipEd() async {
-    final ranges = ref.read(aniSkipProvider(widget.episodeId));
+    final ranges = ref.read(aniSkipProvider(_currentEpisodeId));
     final ed = ranges.where((r) => r.type == 'ed').firstOrNull;
     if (ed != null) {
       await _seekTo(ed.start);
@@ -527,9 +557,20 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     await _switchToEpisode(manga.chapters[idx + 1]);
   }
 
-  /// Loads the target episode's sources (awaiting the async notifier — the
-  /// old code read the provider synchronously so it ALWAYS saw the empty
-  /// initial state and refused to switch), then rebinds the player.
+  /// Auto-advance to the next episode when one finishes (binge flow).
+  void _autoNext() {
+    Future<void>.delayed(const Duration(milliseconds: 900), () {
+      if (!mounted) return;
+      final manga = _manga;
+      final episode = _episode;
+      if (manga == null || episode == null) return;
+      final idx = manga.chapters.indexWhere((c) => c.id == episode.id);
+      if (idx > 0) {
+        _switchToEpisode(manga.chapters[idx - 1]);
+      }
+    });
+  }
+
   Future<void> _switchToEpisode(Chapter target) async {
     showSnack(ref, context, 'Loading ${target.name}…');
     final notifier = ref.read(videoSourcesProvider(target.id).notifier);
@@ -537,8 +578,6 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     if (!mounted) return;
     var media = ref.read(videoSourcesProvider(target.id));
     if (media.loading) {
-      // Reload resets to the loading phase; wait for the notifier to
-      // settle so we do not bind against a stale/empty list.
       await Future<void>.delayed(const Duration(milliseconds: 150));
       if (!mounted) return;
     }
@@ -557,8 +596,6 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
       _currentEpisodeId = target.id;
       _isLoading = true;
       _playerError = null;
-      // First open honours the persisted default quality (Settings ->
-      // Player); episode switches keep the user's in-session choice.
       if (_qualityIndex == 0) {
         _qualityIndex = _defaultQualityIndex(media.sources);
       }
@@ -584,6 +621,24 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     _maybeStartAniSkipWatch();
   }
 
+  Future<void> _enterPip() async {
+    if (!Platform.isAndroid) {
+      showSnack(ref, context, 'Picture-in-Picture needs Android');
+      return;
+    }
+    try {
+      await _pipChannel.invokeMethod('enter');
+    } catch (_) {
+      if (mounted) {
+        showSnack(ref, context, 'Picture-in-Picture is unavailable');
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Build
+  // ---------------------------------------------------------------------------
+
   @override
   Widget build(BuildContext context) {
     if (_notFound) {
@@ -599,8 +654,6 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
       );
     }
 
-    // Open the video as soon as the (auto-loaded) sources arrive for the
-    // episode the player is currently bound to.
     final media = ref.watch(videoSourcesProvider(_currentEpisodeId));
     if (media.sources.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -610,141 +663,349 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: OrientationBuilder(
-        builder: (context, orientation) {
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: _toggleControls,
-                child: Center(
-                  child: SizedBox(
-                    width: orientation == Orientation.landscape
-                        ? double.infinity
-                        : MediaQuery.of(context).size.width,
-                    child: Video(
-                      controller: _controller,
-                      fit: BoxFit.contain,
-                      // `NoVideoControls` is `const null` in media_kit_video
-                      // (inferred `dynamic`, rejected by strict-casts) — pass
-                      // `null` directly; same effect: no built-in controls.
-                      controls: null,
-                    ),
-                  ),
-                ),
+      body: _PlayerGestures(
+        // Gesture layer UNDER the controls overlay: taps on visible control
+        // buttons hit the buttons (they are front-most in the Stack), taps
+        // on the video hit this layer.
+        onSingleTap: _locked ? _revealLockUi : _toggleControls,
+        onDoubleTapSide: (side) {
+          if (side != 0) _doubleTapSeek(side);
+        },
+        onHorizontalDragStart: () {
+          setState(() {
+            _scrubbing = true;
+            _scrubTarget = _position;
+          });
+          _hideTimer?.cancel();
+        },
+        onHorizontalDragUpdate: (dx) {
+          // ~1.2 screen widths = full seek span (comfortable precision).
+          final width = MediaQuery.of(context).size.width;
+          final span =
+              _duration.inMilliseconds.toDouble().clamp(1, double.infinity);
+          final delta = dx / (width * 1.2) * span;
+          setState(() {
+            _scrubTarget = Duration(
+                milliseconds:
+                    (_scrubTarget.inMilliseconds + delta).clamp(0, span).round());
+          });
+        },
+        onHorizontalDragEnd: () {
+          final target = _scrubTarget;
+          setState(() => _scrubbing = false);
+          unawaited(_seekTo(target));
+          _scheduleHide();
+        },
+        onVerticalDragStart: () {
+          setState(() {
+            _volumeDragging = true;
+            _volumeDragStart = _volume;
+          });
+          _hideTimer?.cancel();
+        },
+        onVerticalDragUpdate: (dy) {
+          // Full height drag = 0→100% volume (right-half drags only).
+          final height = MediaQuery.of(context).size.height;
+          _setVolume(_volumeDragStart - dy / height * 100);
+        },
+        onVerticalDragEnd: () {
+          setState(() => _volumeDragging = false);
+          _scheduleHide();
+        },
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Center(
+              child: Video(
+                controller: _controller,
+                fit: BoxFit.contain,
+                controls: null,
               ),
-              if (_isLoading && _playerError == null)
-                const Center(child: CircularProgressIndicator()),
-              if (_playerError != null ||
-                  (!media.loading && media.sources.isEmpty))
-                _PlayerErrorCard(
-                  message: _playerError ??
-                      media.error ??
-                      'No stream available for this episode.',
-                  onRetry: _retryOpen,
-                ),
-              if (_activeSkip != null)
-                _SkipButton(range: _activeSkip!, onSkip: _skipCurrent),
-              if (_controlsVisible) _buildOverlay(),
-            ],
-          );
+            ),
+            if (_isLoading && _playerError == null && !_inPip)
+              const Center(child: CircularProgressIndicator()),
+            if (_playerError != null ||
+                (!media.loading && media.sources.isEmpty))
+              _PlayerErrorCard(
+                message: _playerError ??
+                    media.error ??
+                    'No stream available for this episode.',
+                onRetry: _retryOpen,
+              ),
+            // Indicators — purely visual, never intercept touches.
+            IgnorePointer(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  _DoubleTapIndicator(side: _doubleTapSide),
+                  if (_volumeDragging) _VolumeHud(volume: _volume),
+                  if (_scrubbing)
+                    _ScrubBubble(target: _scrubTarget, duration: _duration),
+                ],
+              ),
+            ),
+            if (_activeSkip != null && !_locked)
+              _SkipButton(range: _activeSkip!, onSkip: _skipCurrent),
+            // Controls overlay — ON TOP of the gesture layer so its
+            // buttons always win the gesture arena.
+            if (_controlsVisible && !_inPip)
+              ..._buildOverlay(),
+            if (_locked && !_inPip) _buildLockBadge(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _revealLockUi() {
+    // Tapping the screen while locked only reveals the lock button.
+    setState(() => _controlsVisible = true);
+    _scheduleHide();
+  }
+
+  Widget _buildLockBadge() {
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 12,
+      right: 16,
+      child: _PlayerIconButton(
+        icon: Icons.lock_rounded,
+        onTap: () {
+          setState(() {
+            _locked = false;
+            _controlsVisible = true;
+          });
+          _scheduleHide();
         },
       ),
     );
   }
 
-  Widget _buildOverlay() {
-    final manga = _manga;
-    return Stack(
-      children: [
+  List<Widget> _buildOverlay() {
+    if (_locked) {
+      // While locked: only the top bar title + the unlock button.
+      return [
         _GradientTop(
-          title: manga?.title ?? '',
+          title: _manga?.title ?? '',
           subtitle: _episode?.name ?? '',
           onBack: () => Navigator.maybePop(context),
+          locked: true,
+          onUnlock: () => setState(() {
+            _locked = false;
+            _controlsVisible = true;
+          }),
         ),
-        // Center play/pause button
-        Center(
+      ];
+    }
+    return [
+      _GradientTop(
+        title: _manga?.title ?? '',
+        subtitle: _episode?.name ?? '',
+        onBack: () => Navigator.maybePop(context),
+        onLock: () => setState(() {
+          _locked = true;
+          _controlsVisible = false;
+        }),
+        onPip: _enterPip,
+      ),
+      Center(
+        child: AnimatedSwitcher(
+          duration: heroAnimationsEnabled
+              ? const Duration(milliseconds: 200)
+              : Duration.zero,
+          switchInCurve: Curves.easeOutBack,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, anim) => ScaleTransition(
+            scale: anim,
+            child: FadeTransition(opacity: anim, child: child),
+          ),
           child: IconButton(
+            key: ValueKey(_player.state.playing),
             iconSize: 64,
             icon: Icon(
               _player.state.playing
                   ? Icons.pause_circle_filled
                   : Icons.play_circle_fill,
-              color: Colors.white.withValues(alpha: 0.9),
+              color: Colors.white.withValues(alpha: 0.92),
             ),
             onPressed: _togglePlay,
           ),
         ),
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          child: _GradientBottom(
-            position: _position,
-            duration: _duration,
-            buffered: _buffered,
-            volume: _volume,
-            speed: _speed,
-            qualityLabel: _qualityLabel(),
-            subtitleLabel: _subtitleLabel(),
-            onSeek: (d) => _seekTo(d),
-            onSeekStart: () {
-              _seeking = true;
-              _hideTimer?.cancel();
+      ),
+      Positioned(
+        left: 0,
+        right: 0,
+        bottom: 0,
+        child: _GradientBottom(
+          playing: _player.state.playing,
+          position: _position,
+          duration: _duration,
+          buffered: _buffered,
+          volume: _volume,
+          speed: _speed,
+          qualityLabel: _qualityLabel(),
+          subtitleLabel: _subtitleLabel(),
+          onSeek: (d) => _seekTo(d),
+          onSeekStart: () {
+            _seeking = true;
+            _hideTimer?.cancel();
+          },
+          onSeekEnd: () {
+            _seeking = false;
+            _scheduleHide();
+          },
+          onPlayPause: _togglePlay,
+          onPrevEpisode: _prevEpisode,
+          onNextEpisode: _nextEpisode,
+          onVolume: _setVolume,
+          onSpeed: _setSpeed,
+          onQuality: () => _showSelector(
+            title: 'Quality',
+            items: ref
+                .read(videoSourcesProvider(_currentEpisodeId))
+                .sources
+                .map((q) => q.label)
+                .toList(),
+            selectedIndex: _qualityIndex,
+            onSelect: (i) {
+              _setQuality(i);
+              Navigator.pop(context);
             },
-            onSeekEnd: () {
-              _seeking = false;
-              _scheduleHide();
-            },
-            onPlayPause: _togglePlay,
-            onPrevEpisode: _prevEpisode,
-            onNextEpisode: _nextEpisode,
-            onVolume: _setVolume,
-            onSpeed: _setSpeed,
-            onQuality: () => _showSelector(
-              title: 'Quality',
-              items: ref
-                  .read(videoSourcesProvider(widget.episodeId))
-                  .sources
-                  .map((q) => q.label)
-                  .toList(),
-              selectedIndex: _qualityIndex,
-              onSelect: (i) {
-                _setQuality(i);
-                Navigator.pop(context);
-              },
-            ),
-            onSubtitles: () => _showSelector(
-              title: 'Subtitles',
-              items: ref
-                  .read(subtitleTracksProvider(widget.episodeId))
-                  .map((s) => s.label)
-                  .toList(),
-              selectedIndex: _subtitleIndex,
-              onSelect: (i) {
-                _setSubtitle(i);
-                Navigator.pop(context);
-              },
-            ),
-            onAniSkip: _skipOp,
-            onAniSkipEd: _skipEd,
           ),
+          onSubtitles: () => _showSelector(
+            title: 'Subtitles',
+            items: ref
+                .read(subtitleTracksProvider(_currentEpisodeId))
+                .map((s) => s.label)
+                .toList(),
+            selectedIndex: _subtitleIndex,
+            onSelect: (i) {
+              _setSubtitle(i);
+              Navigator.pop(context);
+            },
+          ),
+          onEpisodes: _showEpisodeSheet,
+          onAniSkip: _skipOp,
+          onAniSkipEd: _skipEd,
+          onPip: _enterPip,
+          onLock: () => setState(() {
+            _locked = true;
+            _controlsVisible = false;
+          }),
         ),
-      ],
-    );
+      ),
+    ];
   }
 
   String _qualityLabel() {
-    final sources = ref.read(videoSourcesProvider(widget.episodeId)).sources;
+    final sources = ref.read(videoSourcesProvider(_currentEpisodeId)).sources;
     if (sources.isEmpty || _qualityIndex >= sources.length) return 'Auto';
     return sources[_qualityIndex].label;
   }
 
   String _subtitleLabel() {
-    final tracks = ref.read(subtitleTracksProvider(widget.episodeId));
+    final tracks = ref.read(subtitleTracksProvider(_currentEpisodeId));
     if (tracks.isEmpty || _subtitleIndex >= tracks.length) return 'Off';
     return tracks[_subtitleIndex].label;
+  }
+
+  void _showEpisodeSheet() {
+    final manga = _manga;
+    if (manga == null) return;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.black87,
+      showDragHandle: true,
+      isScrollControlled: true,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.7,
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 4, 20, 8),
+                child: Text(
+                  'Episodes',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700),
+                ),
+              ),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.only(bottom: 16),
+                  itemCount: manga.chapters.length,
+                  itemBuilder: (context, i) {
+                    final ch = manga.chapters[i];
+                    final current = ch.id == _currentEpisodeId;
+                    final watched = ch.isRead;
+                    final progress =
+                        ch.totalPages > 0 ? ch.lastPageRead / ch.totalPages : 0.0;
+                    return ListTile(
+                      dense: true,
+                      selected: current,
+                      selectedColor: LuminaTheme.seed,
+                      leading: watched
+                          ? const Icon(Icons.check_circle_rounded,
+                              color: Colors.white54, size: 20)
+                          : progress > 0.05
+                              ? Icon(Icons.play_circle_fill_rounded,
+                                  color: Colors.white.withValues(alpha: 0.85),
+                                  size: 20)
+                              : const Icon(Icons.circle_outlined,
+                                  color: Colors.white30, size: 16),
+                      title: Text(
+                        ch.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: current
+                              ? Colors.white
+                              : Colors.white.withValues(alpha: 0.85),
+                          fontWeight:
+                              current ? FontWeight.w700 : FontWeight.w500,
+                          fontSize: 14,
+                        ),
+                      ),
+                      trailing: current
+                          ? const Icon(Icons.graphic_eq_rounded,
+                              color: Colors.white70, size: 18)
+                          : progress > 0.05 && progress < 1
+                              ? SizedBox(
+                                  width: 42,
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(3),
+                                    child: LinearProgressIndicator(
+                                      value: progress.clamp(0.0, 1.0),
+                                      minHeight: 3,
+                                      backgroundColor: Colors.white24,
+                                      valueColor:
+                                          const AlwaysStoppedAnimation(
+                                              Colors.white70),
+                                    ),
+                                  ),
+                                )
+                              : null,
+                      onTap: current
+                          ? null
+                          : () {
+                              Navigator.pop(sheetContext);
+                              _switchToEpisode(ch);
+                            },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   void _showSelector({
@@ -757,17 +1018,12 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
       context: context,
       backgroundColor: Colors.black87,
       showDragHandle: true,
-      // Landscape-safe: bottom sheets cap at 9/16 of screen height; a bare
-      // Column of RadioListTiles overflows that cap when the phone is
-      // tilted (viewport height ~360dp). Scroll + hard cap fixes it.
       isScrollControlled: true,
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.85,
       ),
       builder: (context) {
         return SafeArea(
-          // Flutter 3.32+: group value / change handling moved from each
-          // RadioListTile to the [RadioGroup] ancestor.
           child: RadioGroup<int>(
             groupValue: selectedIndex,
             onChanged: (v) => onSelect(v ?? 0),
@@ -801,16 +1057,315 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
   }
 }
 
+// ---------------------------------------------------------------------------
+// Gesture layer — sits above the video, below the controls:
+//   * single tap → toggle controls
+//   * double tap (left/right third) → seek -10s / +10s with ripple
+//   * horizontal drag → scrub preview (commit on release)
+//   * vertical drag (right half) → volume with HUD
+// ---------------------------------------------------------------------------
+
+class _PlayerGestures extends StatefulWidget {
+  const _PlayerGestures({
+    required this.child,
+    required this.onSingleTap,
+    required this.onDoubleTapSide,
+    required this.onHorizontalDragStart,
+    required this.onHorizontalDragUpdate,
+    required this.onHorizontalDragEnd,
+    required this.onVerticalDragStart,
+    required this.onVerticalDragUpdate,
+    required this.onVerticalDragEnd,
+  });
+
+  final Widget child;
+  final VoidCallback onSingleTap;
+  final ValueChanged<int> onDoubleTapSide;
+  final VoidCallback onHorizontalDragStart;
+  final ValueChanged<double> onHorizontalDragUpdate;
+  final VoidCallback onHorizontalDragEnd;
+  final VoidCallback onVerticalDragStart;
+  final ValueChanged<double> onVerticalDragUpdate;
+  final VoidCallback onVerticalDragEnd;
+
+  @override
+  State<_PlayerGestures> createState() => _PlayerGesturesState();
+}
+
+class _PlayerGesturesState extends State<_PlayerGestures> {
+  Offset? _dragStart;
+  Offset? _lastPosition;
+  bool _horizontal = false;
+  bool _vertical = false;
+  bool _rightHalf = false;
+  int _doubleSide = 0;
+
+  void _reset() {
+    _dragStart = null;
+    _lastPosition = null;
+    _horizontal = false;
+    _vertical = false;
+    _rightHalf = false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      // Single tap toggles controls; double tap on the outer thirds seeks
+      // ±10s. Flutter's built-in tap disambiguation handles the delay —
+      // no manual timers (and no missed taps on control buttons, which
+      // live ABOVE this layer in the Stack and win the arena themselves).
+      onTap: widget.onSingleTap,
+      onDoubleTapDown: (d) {
+        _doubleSide = d.globalPosition.dx < size.width / 3
+            ? -1
+            : d.globalPosition.dx > size.width * 2 / 3
+                ? 1
+                : 0;
+      },
+      onDoubleTap: () {
+        widget.onDoubleTapSide(_doubleSide);
+        _doubleSide = 0;
+      },
+      onPanStart: (d) {
+        _reset();
+        _dragStart = d.globalPosition;
+        _lastPosition = d.globalPosition;
+        _rightHalf = d.globalPosition.dx > size.width / 2;
+      },
+      onPanUpdate: (d) {
+        final start = _dragStart;
+        final last = _lastPosition;
+        if (start == null || last == null) return;
+        final dx = d.globalPosition.dx - start.dx;
+        final dy = d.globalPosition.dy - start.dy;
+        if (!_horizontal && !_vertical) {
+          // Direction lock after 12px. Vertical volume drags only start on
+          // the right half (the left half stays free for future brightness).
+          if (dx.abs() > 12 && dx.abs() >= dy.abs()) {
+            _horizontal = true;
+            widget.onHorizontalDragStart();
+          } else if (dy.abs() > 12 && dy.abs() > dx.abs() && _rightHalf) {
+            _vertical = true;
+            widget.onVerticalDragStart();
+          }
+        }
+        if (_horizontal) {
+          widget.onHorizontalDragUpdate(d.globalPosition.dx - last.dx);
+        } else if (_vertical) {
+          widget.onVerticalDragUpdate(d.globalPosition.dy - start.dy);
+        }
+        _lastPosition = d.globalPosition;
+      },
+      onPanEnd: (_) {
+        if (_horizontal) {
+          widget.onHorizontalDragEnd();
+        } else if (_vertical) {
+          widget.onVerticalDragEnd();
+        }
+        _reset();
+      },
+      onPanCancel: () {
+        if (_horizontal) {
+          widget.onHorizontalDragEnd();
+        } else if (_vertical) {
+          widget.onVerticalDragEnd();
+        }
+        _reset();
+      },
+      child: widget.child,
+    );
+  }
+}
+
+/// The animated ±10s ripple indicator (YouTube style): a dark circle with
+/// the replay/forward icon that pops + fades on the tapped side.
+class _DoubleTapIndicator extends StatelessWidget {
+  const _DoubleTapIndicator({required this.side});
+
+  final int side; // -1 left, 0 none, 1 right
+
+  @override
+  Widget build(BuildContext context) {
+    final show = side != 0;
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 240),
+      switchInCurve: Curves.easeOutBack,
+      switchOutCurve: Curves.easeIn,
+      transitionBuilder: (child, anim) => ScaleTransition(
+        scale: anim,
+        child: FadeTransition(opacity: anim, child: child),
+      ),
+      child: show
+          ? Align(
+              key: const ValueKey('ripple'),
+              alignment:
+                  side < 0 ? Alignment.centerLeft : Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 42),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        side < 0
+                            ? Icons.replay_10_rounded
+                            : Icons.forward_10_rounded,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                      Text(
+                        '${side < 0 ? '-' : '+'}10s',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          : const SizedBox.shrink(),
+    );
+  }
+}
+
+/// Volume HUD shown while vertically dragging (right half): icon + level
+/// bar, floats on the right edge.
+class _VolumeHud extends StatelessWidget {
+  const _VolumeHud({required this.volume});
+
+  final double volume; // 0..100
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 18),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                volume <= 1
+                    ? Icons.volume_off_rounded
+                    : volume < 50
+                        ? Icons.volume_down_rounded
+                        : Icons.volume_up_rounded,
+                color: Colors.white,
+                size: 22,
+              ),
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: SizedBox(
+                  width: 4,
+                  height: 96,
+                  child: LinearProgressIndicator(
+                    value: (volume / 100).clamp(0.0, 1.0),
+                    minHeight: 96,
+                    backgroundColor: Colors.white24,
+                    valueColor:
+                        const AlwaysStoppedAnimation(Colors.white),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                '${volume.round()}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Scrub preview bubble: target timestamp + delta while dragging.
+class _ScrubBubble extends StatelessWidget {
+  const _ScrubBubble({required this.target, required this.duration});
+
+  final Duration target;
+  final Duration duration;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.72),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              formatDuration(target),
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  fontFeatures: [FontFeature.tabularFigures()]),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              duration > Duration.zero
+                  ? 'of ${formatDuration(duration)}'
+                  : 'seek',
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.6), fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Overlay chrome
+// ---------------------------------------------------------------------------
+
 class _GradientTop extends StatelessWidget {
   const _GradientTop({
     required this.title,
     required this.subtitle,
     required this.onBack,
+    this.onLock,
+    this.onUnlock,
+    this.onPip,
+    this.locked = false,
   });
 
   final String title;
   final String subtitle;
   final VoidCallback onBack;
+  final VoidCallback? onLock;
+  final VoidCallback? onUnlock;
+  final VoidCallback? onPip;
+  final bool locked;
 
   @override
   Widget build(BuildContext context) {
@@ -854,6 +1409,18 @@ class _GradientTop extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (locked && onUnlock != null)
+                  _PlayerIconButton(
+                      icon: Icons.lock_rounded, onTap: onUnlock!)
+                else ...[
+                  if (onPip != null)
+                    _PlayerIconButton(
+                        icon: Icons.picture_in_picture_alt_rounded,
+                        onTap: onPip!),
+                  if (onLock != null)
+                    _PlayerIconButton(
+                        icon: Icons.lock_outline_rounded, onTap: onLock!),
+                ],
               ],
             ),
           ),
@@ -863,8 +1430,55 @@ class _GradientTop extends StatelessWidget {
   }
 }
 
-class _GradientBottom extends StatelessWidget {
+class _PlayerIconButton extends StatefulWidget {
+  const _PlayerIconButton({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  State<_PlayerIconButton> createState() => _PlayerIconButtonState();
+}
+
+class _PlayerIconButtonState extends State<_PlayerIconButton> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: _pressed ? 0.88 : 1,
+        duration: const Duration(milliseconds: 140),
+        curve: Curves.easeOutCubic,
+        child: Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.12),
+            shape: BoxShape.circle,
+          ),
+          child:
+              Icon(widget.icon, size: 19, color: Colors.white.withValues(alpha: 0.92)),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Bottom bar: professional seekbar (scrub bubble + commit-on-release +
+// buffered track) and the watermelon.sh Extended Toolbar secondary row
+// (speed / quality / subtitles slide out — episodes / PiP / lock / skip
+// OP-ED slide in).
+// ---------------------------------------------------------------------------
+
+class _GradientBottom extends StatefulWidget {
   const _GradientBottom({
+    required this.playing,
     required this.position,
     required this.duration,
     required this.buffered,
@@ -882,10 +1496,14 @@ class _GradientBottom extends StatelessWidget {
     required this.onSpeed,
     required this.onQuality,
     required this.onSubtitles,
+    required this.onEpisodes,
     required this.onAniSkip,
     required this.onAniSkipEd,
+    required this.onPip,
+    required this.onLock,
   });
 
+  final bool playing;
   final Duration position;
   final Duration duration;
   final Duration buffered;
@@ -903,13 +1521,33 @@ class _GradientBottom extends StatelessWidget {
   final ValueChanged<double> onSpeed;
   final VoidCallback onQuality;
   final VoidCallback onSubtitles;
+  final VoidCallback onEpisodes;
   final VoidCallback onAniSkip;
   final VoidCallback onAniSkipEd;
+  final VoidCallback onPip;
+  final VoidCallback onLock;
+
+  @override
+  State<_GradientBottom> createState() => _GradientBottomState();
+}
+
+class _GradientBottomState extends State<_GradientBottom> {
+  double? _dragValue;
+  bool _dragging = false;
 
   @override
   Widget build(BuildContext context) {
-    final total =
-        duration.inMilliseconds.toDouble().clamp(1, double.infinity).toDouble();
+    final total = widget.duration.inMilliseconds
+        .toDouble()
+        .clamp(1, double.infinity)
+        .toDouble();
+    final shown = _dragging
+        ? (_dragValue ?? 0)
+        : widget.position.inMilliseconds
+            .toDouble()
+            .clamp(0.0, total)
+            .toDouble();
+
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -921,171 +1559,212 @@ class _GradientBottom extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 24, 12, 8),
+          padding: const EdgeInsets.fromLTRB(12, 26, 12, 8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Seek bar with buffered indicator
-              Row(
-                children: [
-                  Text(formatDuration(position),
-                      style:
-                          const TextStyle(color: Colors.white, fontSize: 12)),
-                  Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        return Stack(
-                          alignment: Alignment.centerLeft,
-                          children: [
-                            // buffered track
-                            Positioned(
-                              left: 0,
-                              right: 0,
-                              top: 0,
-                              bottom: 0,
-                              child: Center(
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(4),
-                                  child: LinearProgressIndicator(
-                                    value: buffered.inMilliseconds
-                                            .toDouble()
-                                            .clamp(0, total) /
-                                        total,
-                                    minHeight: 4,
-                                    backgroundColor: Colors.white24,
-                                    valueColor: const AlwaysStoppedAnimation(
-                                        Colors.white38),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Slider(
-                              value: position.inMilliseconds
-                                  .toDouble()
-                                  .clamp(0, total)
-                                  .toDouble(),
-                              min: 0,
-                              max: total,
-                              onChangeStart: (_) => onSeekStart(),
-                              onChanged: (v) =>
-                                  onSeek(Duration(milliseconds: v.round())),
-                              onChangeEnd: (_) => onSeekEnd(),
-                              activeColor:
-                                  Theme.of(context).colorScheme.primary,
-                              inactiveColor: Colors.transparent,
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
-                  Text(formatDuration(duration),
-                      style:
-                          const TextStyle(color: Colors.white, fontSize: 12)),
-                ],
-              ),
-              const SizedBox(height: 4),
-              // Main control row
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              // ---- Seek row with timestamp bubble while dragging ----
+              Stack(
+                clipBehavior: Clip.none,
                 children: [
                   Row(
                     children: [
-                      IconButton(
-                        tooltip: 'Previous episode',
-                        icon: const Icon(Icons.skip_previous,
-                            color: Colors.white),
-                        onPressed: onPrevEpisode,
-                      ),
-                      IconButton(
-                        tooltip: 'Rewind 10s',
-                        icon: const Icon(Icons.replay_10, color: Colors.white),
-                        onPressed: () =>
-                            onSeek(position - const Duration(seconds: 10)),
-                      ),
-                      IconButton(
-                        iconSize: 36,
-                        icon: const Icon(Icons.play_arrow, color: Colors.white),
-                        onPressed: onPlayPause,
-                      ),
-                      IconButton(
-                        tooltip: 'Forward 10s',
-                        icon: const Icon(Icons.forward_10, color: Colors.white),
-                        onPressed: () =>
-                            onSeek(position + const Duration(seconds: 10)),
-                      ),
-                      IconButton(
-                        tooltip: 'Next episode',
-                        icon: const Icon(Icons.skip_next, color: Colors.white),
-                        onPressed: onNextEpisode,
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      // Volume
-                      IconButton(
-                        tooltip: 'Volume',
-                        icon: Icon(
-                            volume <= 0
-                                ? Icons.volume_off
-                                : volume < 0.5
-                                    ? Icons.volume_down
-                                    : Icons.volume_up,
-                            color: Colors.white),
-                        onPressed: () => onVolume(volume > 0 ? 0 : 1),
-                      ),
-                      SizedBox(
-                        width: 70,
-                        child: Slider(
-                          value: volume,
-                          min: 0,
-                          max: 1,
-                          onChanged: onVolume,
-                          activeColor: Colors.white,
-                          inactiveColor: Colors.white24,
+                      Text(formatDuration(_dragging
+                          ? Duration(milliseconds: _dragValue?.round() ?? 0)
+                          : widget.position),
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontFeatures: [FontFeature.tabularFigures()])),
+                      Expanded(
+                        child: _ScrubBar(
+                          value: shown / total,
+                          buffered:
+              widget.buffered.inMilliseconds.toDouble().clamp(0, total) /
+                                  total,
+                          onDragStart: () {
+                            setState(() {
+                              _dragging = true;
+                              _dragValue = shown.toDouble();
+                            });
+                            widget.onSeekStart();
+                          },
+                          onDragUpdate: (fraction) {
+                            setState(() => _dragValue = fraction * total);
+                          },
+                          onDragEnd: (fraction) {
+                            setState(() => _dragging = false);
+                            widget.onSeekEnd();
+                            widget.onSeek(
+                                Duration(milliseconds: (fraction * total).round()));
+                          },
                         ),
                       ),
+                      Text(formatDuration(widget.duration),
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontFeatures: [FontFeature.tabularFigures()])),
                     ],
+                  ),
+                  // Floating bubble above the thumb while scrubbing.
+                  if (_dragging)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 26,
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.8),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            formatDuration(Duration(
+                                milliseconds: _dragValue?.round() ?? 0)),
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                fontFeatures: [FontFeature.tabularFigures()]),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              // ---- Main control row ----
+              Row(
+                children: [
+                  IconButton(
+                    tooltip: 'Previous episode',
+                    icon: const Icon(Icons.skip_previous, color: Colors.white),
+                    onPressed: widget.onPrevEpisode,
+                  ),
+                  IconButton(
+                    tooltip: 'Rewind 10s',
+                    icon: const Icon(Icons.replay_10, color: Colors.white),
+                    onPressed: () => widget.onSeek(
+                        widget.position - const Duration(seconds: 10)),
+                  ),
+                  const SizedBox(width: 4),
+                  GestureDetector(
+                    onTap: widget.onPlayPause,
+                    child: Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.14),
+                        shape: BoxShape.circle,
+                      ),
+                      child: AnimatedSwitcher(
+                        duration: heroAnimationsEnabled
+                            ? const Duration(milliseconds: 180)
+                            : Duration.zero,
+                        transitionBuilder: (child, anim) => ScaleTransition(
+                          scale: anim,
+                          child: child,
+                        ),
+                        child: Icon(
+                          widget.playing
+                              ? Icons.pause
+                              : Icons.play_arrow,
+                          key: ValueKey(widget.playing),
+                          color: Colors.white,
+                          size: 34,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    tooltip: 'Forward 10s',
+                    icon: const Icon(Icons.forward_10, color: Colors.white),
+                    onPressed: () => widget.onSeek(
+                        widget.position + const Duration(seconds: 10)),
+                  ),
+                  IconButton(
+                    tooltip: 'Next episode',
+                    icon: const Icon(Icons.skip_next, color: Colors.white),
+                    onPressed: widget.onNextEpisode,
+                  ),
+                  const Spacer(),
+                  // Volume (0–100 scale; media_kit contract).
+                  Icon(
+                    widget.volume <= 1
+                        ? Icons.volume_off
+                        : widget.volume < 50
+                            ? Icons.volume_down
+                            : Icons.volume_up,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                  SizedBox(
+                    width: 70,
+                    child: Slider(
+                      value: widget.volume.clamp(0.0, 100.0).toDouble(),
+                      min: 0,
+                      max: 100,
+                      onChanged: widget.onVolume,
+                      activeColor: Colors.white,
+                      inactiveColor: Colors.white24,
+                    ),
                   ),
                 ],
               ),
-              // Secondary row: speed, quality, subtitles, AniSkip
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    _PillButton(
-                      label: '${speed}x',
-                      icon: Icons.speed,
-                      onPressed: () => _showSpeedSheet(context),
+              const SizedBox(height: 2),
+              // ---- Secondary row: the Extended Toolbar ----
+              Row(
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: WmExtendedToolbar(
+                        primary: [
+                          WmToolItem(
+                              icon: Icons.speed_rounded,
+                              label: 'Speed ${widget.speed}x',
+                              active: widget.speed != 1.0,
+                              onTap: () =>
+                                  _showSpeedSheet(context, widget.speed, widget.onSpeed)),
+                          WmToolItem(
+                              icon: Icons.hd_outlined,
+                              label: widget.qualityLabel,
+                              onTap: widget.onQuality),
+                          WmToolItem(
+                              icon: Icons.subtitles_outlined,
+                              label: widget.subtitleLabel,
+                              onTap: widget.onSubtitles),
+                        ],
+                        secondary: [
+                          WmToolItem(
+                              icon: Icons.list_rounded,
+                              label: 'Episodes',
+                              onTap: widget.onEpisodes),
+                          WmToolItem(
+                              icon: Icons.picture_in_picture_alt_rounded,
+                              label: 'PiP',
+                              onTap: widget.onPip),
+                          WmToolItem(
+                              icon: Icons.lock_outline_rounded,
+                              label: 'Lock',
+                              onTap: widget.onLock),
+                          WmToolItem(
+                              icon: Icons.fast_forward_rounded,
+                              label: 'Skip OP',
+                              onTap: widget.onAniSkip),
+                          WmToolItem(
+                              icon: Icons.fast_rewind_rounded,
+                              label: 'Skip ED',
+                              onTap: widget.onAniSkipEd),
+                        ],
+                      ),
                     ),
-                    const SizedBox(width: 8),
-                    _PillButton(
-                      label: qualityLabel,
-                      icon: Icons.hd_outlined,
-                      onPressed: onQuality,
-                    ),
-                    const SizedBox(width: 8),
-                    _PillButton(
-                      label: subtitleLabel,
-                      icon: Icons.subtitles_outlined,
-                      onPressed: onSubtitles,
-                    ),
-                    const SizedBox(width: 8),
-                    _PillButton(
-                      label: 'Skip OP',
-                      icon: Icons.fast_forward,
-                      onPressed: onAniSkip,
-                    ),
-                    const SizedBox(width: 8),
-                    _PillButton(
-                      label: 'Skip ED',
-                      icon: Icons.fast_rewind,
-                      onPressed: onAniSkipEd,
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -1094,41 +1773,51 @@ class _GradientBottom extends StatelessWidget {
     );
   }
 
-  void _showSpeedSheet(BuildContext context) {
+  void _showSpeedSheet(
+      BuildContext context, double current, ValueChanged<double> onSpeed) {
     const speeds = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.black87,
       showDragHandle: true,
+      isScrollControlled: true,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.5,
+      ),
       builder: (context) {
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text('Playback speed',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold)),
-              ),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: speeds
-                    .map((s) => ChoiceChip(
-                          label: Text('${s}x'),
-                          selected: s == speed,
-                          onSelected: (_) {
-                            onSpeed(s);
-                            Navigator.pop(context);
-                          },
-                        ))
-                    .toList(),
-              ),
-              const SizedBox(height: 16),
-            ],
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('Playback speed',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold)),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: speeds
+                        .map((s) => ChoiceChip(
+                              label: Text('${s}x'),
+                              selected: s == current,
+                              onSelected: (_) {
+                                onSpeed(s);
+                                Navigator.pop(context);
+                              },
+                            ))
+                        .toList(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
           ),
         );
       },
@@ -1136,36 +1825,134 @@ class _GradientBottom extends StatelessWidget {
   }
 }
 
-class _PillButton extends StatelessWidget {
-  const _PillButton({
-    required this.label,
-    required this.icon,
-    required this.onPressed,
+/// The scrub bar: a fat translucent track with buffered fill + a draggable
+/// thumb. Drag events are normalized to fractions; the PARENT commits the
+/// seek on release (no seek-storms while dragging HLS).
+class _ScrubBar extends StatefulWidget {
+  const _ScrubBar({
+    required this.value,
+    required this.buffered,
+    required this.onDragStart,
+    required this.onDragUpdate,
+    required this.onDragEnd,
   });
 
-  final String label;
-  final IconData icon;
-  final VoidCallback onPressed;
+  final double value; // 0..1 current
+  final double buffered; // 0..1 buffered
+  final VoidCallback onDragStart;
+  final ValueChanged<double> onDragUpdate;
+  final ValueChanged<double> onDragEnd;
+
+  @override
+  State<_ScrubBar> createState() => _ScrubBarState();
+}
+
+class _ScrubBarState extends State<_ScrubBar> {
+  bool _dragging = false;
+  double? _dragFraction;
+
+  double _fraction(Offset local, BoxConstraints c) =>
+      (local.dx / c.maxWidth).clamp(0.0, 1.0);
 
   @override
   Widget build(BuildContext context) {
-    return OutlinedButton.icon(
-      style: OutlinedButton.styleFrom(
-        foregroundColor: Colors.white,
-        side: const BorderSide(color: Colors.white38),
-        shape: const StadiumBorder(side: BorderSide(color: Colors.white38)),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      ),
-      onPressed: onPressed,
-      icon: Icon(icon, size: 16),
-      label: Text(label, style: const TextStyle(fontSize: 12)),
-    );
+    return LayoutBuilder(builder: (context, constraints) {
+      final fraction = _dragging ? (_dragFraction ?? widget.value) : widget.value;
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragStart: (d) {
+          setState(() {
+            _dragging = true;
+            _dragFraction =
+                _fraction(d.localPosition, constraints);
+          });
+          widget.onDragStart();
+          widget.onDragUpdate(_dragFraction!);
+        },
+        onHorizontalDragUpdate: (d) {
+          setState(() =>
+              _dragFraction = _fraction(d.localPosition, constraints));
+          widget.onDragUpdate(_dragFraction!);
+        },
+        onHorizontalDragEnd: (_) {
+          final f = _dragFraction ?? widget.value;
+          setState(() => _dragging = false);
+          widget.onDragEnd(f);
+        },
+        onHorizontalDragCancel: () {
+          setState(() => _dragging = false);
+          widget.onDragEnd(widget.value);
+        },
+        onTapDown: (d) {
+          final f = _fraction(d.localPosition, constraints);
+          widget.onDragStart();
+          widget.onDragEnd(f);
+        },
+        child: Container(
+          height: 26,
+          alignment: Alignment.center,
+          child: Stack(
+            alignment: Alignment.centerLeft,
+            children: [
+              // Track
+              Container(
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // Buffered fill
+              FractionallySizedBox(
+                widthFactor: widget.buffered.clamp(0.0, 1.0),
+                child: Container(
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white38,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              // Progress fill
+              FractionallySizedBox(
+                widthFactor: fraction.clamp(0.0, 1.0),
+                child: Container(
+                  height: _dragging ? 5 : 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              // Thumb (grows on grab — Material 3 scrub pattern)
+              Positioned(
+                left: (fraction.clamp(0.0, 1.0)) *
+                    (constraints.maxWidth - 14),
+                child: Container(
+                  width: _dragging ? 14 : 12,
+                  height: _dragging ? 14 : 12,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.4),
+                        blurRadius: 4,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    });
   }
 }
 
 /// Playback-failure card: replaces the eternal buffering spinner with the
-/// actual reason + a Retry action. (Before this, a dead stream showed a
-/// spinner forever and the only hint was `adb logcat`.)
+/// actual reason + a Retry action.
 class _PlayerErrorCard extends StatelessWidget {
   const _PlayerErrorCard({required this.message, required this.onRetry});
 
@@ -1217,7 +2004,7 @@ class _SkipButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Positioned(
-      bottom: 120,
+      bottom: 130,
       right: 16,
       child: Material(
         color: LuminaTheme.seed,
