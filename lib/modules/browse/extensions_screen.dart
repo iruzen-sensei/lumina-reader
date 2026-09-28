@@ -597,10 +597,17 @@ class _ExtensionTileState extends ConsumerState<_ExtensionTile> {
     }
     // Repo extension that was uninstalled/disabled — reinstall stays
     // available from its catalog row (builtins never reach this branch).
+    // Stateful install button: disabled + "Installing…" while the APK
+    // downloads (progress streams into the subtitle), so a tap always
+    // gets visible feedback and can't double-fire.
     return HeroButton(
-      label: hasUpdate ? 'Update' : 'Install',
+      label: _busy
+          ? (hasUpdate ? 'Updating…' : 'Installing…')
+          : (hasUpdate ? 'Update' : 'Install'),
       size: HeroButtonSize.sm,
-      onPressed: () async {
+      onPressed: _busy
+          ? null
+          : () async {
         setState(() {
           _busy = true;
           _error = null;
@@ -611,7 +618,7 @@ class _ExtensionTileState extends ConsumerState<_ExtensionTile> {
               .read(data.extensionRepoServiceProvider)
               .install(idString, onProgress: (done, total) {
             if (!mounted) return;
-            final mb = (int n) => (n / (1024 * 1024)).toStringAsFixed(1);
+            String mb(int n) => (n / (1024 * 1024)).toStringAsFixed(1);
             setState(() => _progress = total != null && total > 0
                 ? '${mb(done)} / ${mb(total)} MB'
                 : '${mb(done)} MB');

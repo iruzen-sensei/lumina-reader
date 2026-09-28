@@ -10,11 +10,13 @@
 //   * filter sheet opens and changes the visible set
 
 import 'package:lumina_reader/core/ui/watermelon.dart';
+import 'package:flutter/material.dart' show TextField;
 import 'package:lumina_reader/providers/providers.dart'
     show LibraryMediaType;
 import 'package:lumina_reader/router/router.dart' show routerProvider;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumina_reader/modules/anime_home/anime_home_screen.dart';
+import 'package:lumina_reader/modules/notes/notes_screen.dart';
 import 'package:lumina_reader/modules/library/library_screen.dart';
 import 'package:lumina_reader/modules/manga/manga_detail_screen.dart';
 import 'package:lumina_reader/modules/shared/widgets.dart' show BookCover;
@@ -97,6 +99,39 @@ void main() {
     await tester.tap(find.text('All').last);
     await flush(tester, rounds: 6);
     expect(find.text('Blade of the Immortal Wind'), findsWidgets);
+
+    // ignore: unnecessary_statements
+    c;
+  }, timeout: const Timeout(Duration(minutes: 6)));
+
+  testWidgets('flow: notes — Expand Details composer creates a note',
+      (tester) async {
+    // The shared Isar from the previous tests is reused (single-open rule).
+    final c = await bootApp(tester, warmUp: true);
+    c.read(routerProvider).go('/notes');
+    await flush(tester, rounds: 8);
+
+    // The fixture seeds 4 long notes (ellipsized in their cards); the
+    // collapsed watermelon.sh Expand Details band sits above the list.
+    expect(find.text('New note'), findsOneWidget);
+    expect(find.byType(NotesScreen), findsOneWidget);
+
+    // Tap the band header → the composer springs open in place — the
+    // user-requested Expand Details create-note flow.
+    await tester.tap(find.text('New note'));
+    await flush(tester, rounds: 4);
+    expect(find.text('Write your note…'), findsOneWidget);
+
+    // Type into the composer field (NOT the "Search notes…" field).
+    final composerField = find.byWidgetPredicate((w) =>
+        w is TextField &&
+        (w.decoration?.hintText ?? '').contains('Write your note'));
+    await tester.enterText(composerField, 'Frieren deserves S2');
+
+    // Save → the new card goes live at the head of the list.
+    await tester.tap(find.text('Save note'));
+    await flush(tester, rounds: 10);
+    expect(find.text('Frieren deserves S2'), findsOneWidget);
 
     // ignore: unnecessary_statements
     c;

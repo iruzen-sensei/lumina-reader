@@ -127,7 +127,7 @@ class _SourceMangaDetailScreenState
       bottomNavigationBar: detail.maybeWhen(
         data: (manga) => _BottomActions(
           manga: manga,
-          isAnime: isAnime,
+          isAnime: seed.isAnime,
           adding: _adding,
           onAddToLibrary: () => _addToLibrary(manga),
           onStart: () => _startFirst(manga),
@@ -539,7 +539,6 @@ class _EpisodeSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final h = HeroScope.of(context);
     final isAnime = manga.isAnime;
     final unit = isAnime ? 'episode' : 'chapter';
     if (manga.chapters.isEmpty) {
@@ -569,7 +568,7 @@ class _EpisodeSection extends StatelessWidget {
           context: context,
           icon: Icons.inbox_outlined,
           title: 'No ${unit}s found',
-          subtitle: 'This source returned an empty ${unit} list for '
+          subtitle: 'This source returned an empty $unit list for '
               '"${manga.title}".',
         ),
       );
@@ -718,7 +717,6 @@ class _BottomActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final h = HeroScope.of(context);
     final empty = manga.chapters.isEmpty;
     return SafeArea(
       child: Padding(

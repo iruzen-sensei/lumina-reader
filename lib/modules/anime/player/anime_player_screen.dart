@@ -1722,7 +1722,7 @@ class _GradientBottomState extends State<_GradientBottom> {
                       style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.7),
                           fontSize: 12,
-                          fontFeatures: [
+                          fontFeatures: const [
                             FontFeature.tabularFigures()
                           ])),
                 ],
@@ -1804,9 +1804,6 @@ class _GradientBottomState extends State<_GradientBottom> {
                     ),
                   ),
                 ],
-              ),
-                  ),
-                ),
               ),
             ],
           ),

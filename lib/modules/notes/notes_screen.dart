@@ -298,31 +298,32 @@ class _BookFilterRow extends ConsumerWidget {
     if (bookIds.isEmpty) return const SizedBox.shrink();
     final allNotes = ref.watch(notesProvider);
     final selectedBook = ref.watch(notesBookFilterProvider);
-    return SizedBox(
+    // Apple-style soft edge fade instead of a hard cutoff; HeroChip in the
+    // filter variant (unselected = neutral, selected = accent-soft).
+    return HeroFadedRail(
       height: 44,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        itemCount: bookIds.length + 1,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (context, i) {
-          if (i == 0) {
-            return StatusChip(
-              label: 'All books',
-              selected: selectedBook == null,
-              onTap: () =>
-                  ref.read(notesBookFilterProvider.notifier).state = null,
-            );
-          }
-          final id = bookIds[i - 1];
-          final title = allNotes.firstWhere((n) => n.mangaId == id).mangaTitle;
-          return StatusChip(
-            label: title,
-            selected: selectedBook == id,
-            onTap: () => ref.read(notesBookFilterProvider.notifier).state = id,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      itemCount: bookIds.length + 1,
+      separatorBuilder: (_, __) => const SizedBox(width: 8),
+      itemBuilder: (context, i) {
+        if (i == 0) {
+          return HeroChip(
+            label: 'All books',
+            selected: selectedBook == null,
+            variant: HeroChipVariant.outlineText,
+            onTap: () =>
+                ref.read(notesBookFilterProvider.notifier).state = null,
           );
-        },
-      ),
+        }
+        final id = bookIds[i - 1];
+        final title = allNotes.firstWhere((n) => n.mangaId == id).mangaTitle;
+        return HeroChip(
+          label: title,
+          selected: selectedBook == id,
+          variant: HeroChipVariant.outlineText,
+          onTap: () => ref.read(notesBookFilterProvider.notifier).state = id,
+        );
+      },
     );
   }
 }

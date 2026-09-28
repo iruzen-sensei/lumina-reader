@@ -365,7 +365,6 @@ class _FilterRail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final h = HeroScope.of(context);
     final now = DateTime.now();
     final seasonOptions = <WmPickerOption<(String, int)>>[
       WmPickerOption(

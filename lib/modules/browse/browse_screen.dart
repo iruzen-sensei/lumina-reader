@@ -1105,35 +1105,31 @@ class _SourceSearchRow extends ConsumerWidget {
                 ),
               );
             }
-            return SizedBox(
+            // Apple-style soft edge fade instead of a hard cutoff at
+            // the screen edges.
+            return HeroFadedRail(
               height: 170,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                itemCount: items.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 12),
-                itemBuilder: (context, i) => BookCover(
-                  manga: items[i],
-                  onTap: () {
-                    Navigator.pop(context);
-                    openSourceManga(context, ref, items[i]);
-                  },
-                ),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              itemCount: items.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (context, i) => BookCover(
+                manga: items[i],
+                onTap: () {
+                  Navigator.pop(context);
+                  openSourceManga(context, ref, items[i]);
+                },
               ),
             );
           },
           // Cover-shaped shimmer tiles instead of a bare spinner.
-          loading: () => SizedBox(
+          loading: () => HeroFadedRail(
             height: 170,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              itemCount: 3,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
-              itemBuilder: (_, __) => const HeroSkeleton(
-                width: 110,
-                height: 160,
-              ),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            itemCount: 3,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (_, __) => const HeroSkeleton(
+              width: 110,
+              height: 160,
             ),
           ),
           error: (_, __) => Padding(

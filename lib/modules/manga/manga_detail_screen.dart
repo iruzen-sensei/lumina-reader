@@ -743,8 +743,8 @@ class _ActionBlock extends StatelessWidget {
                     ],
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: 16),
           // Status Picker — the app's first READING-STATUS SETTER (there
