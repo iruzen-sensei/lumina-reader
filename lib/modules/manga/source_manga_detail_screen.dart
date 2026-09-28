@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/ui/lumina_ui.dart';
 import '../../core/ui/watermelon.dart';
 import '../../data/providers.dart' as data;
 import '../../models/models.dart';
@@ -32,16 +33,22 @@ import '../shared/widgets.dart';
 /// landed on /mangaDetail/0 → library lookup → "Not found". Tapping a cover
 /// showed nothing but the error state — the "only covers, no content" bug.
 ///
+/// The screen serves ALL THREE media types through one pipeline and adapts
+/// its copy to the entry: anime entries say "Start watching" / "Episodes",
+/// manga say "Start reading" / "Chapters" (the old build said "Start
+/// reading" + a book icon on anime entries straight from the Netflix-style
+/// home hero — the exact report that started this rewrite).
+///
 /// Flow implemented here (mirrors Tachiyomi / Mangayomi):
 ///   1. Seed the header instantly from the browse DTO (title + cover).
 ///   2. Fetch the authoritative detail + chapter list through
 ///      [sourceMangaDetailProvider] → ExtensionCoordinator.detail().
 ///   3. "Add to library" persists manga + chapters and continues into the
-///      full [MangaDetailScreen] (downloads, tracking, history all work
-///      from the persisted id).
-///   4. Tapping a chapter auto-adds to library (with chapters) and opens
-///      the reader with the PERSISTED chapter id — deep links and progress
-///      tracking only work on persisted rows.
+///      full detail screen (downloads, tracking, history all work from
+///      the persisted id).
+///   4. Tapping an episode auto-adds to library (with episodes) and opens
+///      the player/reader with the PERSISTED chapter id — deep links and
+///      progress tracking only work on persisted rows.
 class SourceMangaDetailScreen extends ConsumerStatefulWidget {
   const SourceMangaDetailScreen({super.key, required this.manga});
 
@@ -57,7 +64,6 @@ class SourceMangaDetailScreen extends ConsumerStatefulWidget {
 
 class _SourceMangaDetailScreenState
     extends ConsumerState<SourceMangaDetailScreen> {
-  bool _descExpanded = false;
   bool _adding = false;
 
   @override
@@ -87,13 +93,10 @@ class _SourceMangaDetailScreenState
             child: _PreviewHeader(
               seed: seed,
               detail: detail,
-              descExpanded: _descExpanded,
-              onToggleDesc: () =>
-                  setState(() => _descExpanded = !_descExpanded),
             ),
           ),
           detail.when(
-            data: (manga) => _ChaptersSection(
+            data: (manga) => _EpisodeSection(
               manga: manga,
               onOpen: (chapter) => _openChapter(manga, chapter),
               onRetry: () => ref.invalidate(
@@ -124,9 +127,10 @@ class _SourceMangaDetailScreenState
       bottomNavigationBar: detail.maybeWhen(
         data: (manga) => _BottomActions(
           manga: manga,
+          isAnime: isAnime,
           adding: _adding,
           onAddToLibrary: () => _addToLibrary(manga),
-          onStartReading: () => _startReading(manga),
+          onStart: () => _startFirst(manga),
         ),
         orElse: () => null,
       ),
@@ -152,7 +156,8 @@ class _SourceMangaDetailScreenState
       showSnack(ref, context, 'Added to library');
       // go_router's context.pushReplacement returns void (unlike
       // router.pushReplacement) — fire-and-forget navigation.
-      context.pushReplacement('/mangaDetail/$id');
+      context.pushReplacement(
+          detail.isAnime ? '/animeDetail/$id' : '/mangaDetail/$id');
     } catch (e) {
       if (mounted) showSnack(ref, context, 'Could not add: $e');
     } finally {
@@ -160,18 +165,21 @@ class _SourceMangaDetailScreenState
     }
   }
 
-  /// Opens a chapter — the entry is auto-added to the library first so the
-  /// reader receives a real chapter id (progress, history and deep links
-  /// only work on persisted rows). The preview is replaced by the full
-  /// detail screen under the reader, so back-navigation lands on the real
-  /// library entry (favorite / downloads / tracking all live there).
+  /// Opens an episode/chapter — the entry is auto-added to the library
+  /// first so the reader receives a real chapter id (progress, history and
+  /// deep links only work on persisted rows). The preview is replaced by
+  /// the full detail screen under the player/reader, so back-navigation
+  /// lands on the real library entry (favorite / downloads / tracking all
+  /// live there).
   Future<void> _openChapter(Manga detail, Chapter chapter) async {
     if (_adding) return;
     setState(() => _adding = true);
     try {
       final persisted = await _ensureInLibrary(detail);
       if (persisted == null) {
-        if (mounted) showSnack(ref, context, 'Could not open chapter');
+        if (mounted) {
+          showSnack(ref, context, 'Could not open ${_unitWord(detail)}');
+        }
         return;
       }
       final persistedChapter = persisted.chapters.firstWhere(
@@ -194,22 +202,28 @@ class _SourceMangaDetailScreenState
               ? '/novelReader/${persistedChapter.id}'
               : '/reader/${persistedChapter.id}'));
     } catch (e) {
-      if (mounted) showSnack(ref, context, 'Could not open chapter: $e');
+      if (mounted) {
+        showSnack(ref, context, 'Could not open ${_unitWord(detail)}: $e');
+      }
     } finally {
       if (mounted) setState(() => _adding = false);
     }
   }
 
-  Future<void> _startReading(Manga detail) async {
+  /// "Start watching" / "Start reading" — the FIRST unit chronologically
+  /// (chapters sort newest-first in the coordinator).
+  Future<void> _startFirst(Manga detail) async {
     if (detail.chapters.isEmpty) {
-      showSnack(ref, context, 'No chapters available from this source');
+      showSnack(
+          ref, context, 'No ${_unitWord(detail)}s available from this source');
       return;
     }
-    // Chapters sort newest-first in the coordinator; "start reading" means
-    // the FIRST chapter chronologically (lowest number).
-    final first = [...detail.chapters]..sort((a, b) => a.number.compareTo(b.number));
+    final first = [...detail.chapters]
+      ..sort((a, b) => a.number.compareTo(b.number));
     await _openChapter(detail, first.first);
   }
+
+  String _unitWord(Manga m) => m.isAnime ? 'episode' : 'chapter';
 
   /// Upserts the detail into the library and returns the refreshed row
   /// (with persisted chapter ids), or null on failure.
@@ -306,41 +320,41 @@ class _PreviewAppBar extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Header — cover thumb, title, author, status, source chip, description.
+// Header — cover thumb, title, author, status, source chip, synopsis
+// (watermelon.sh Expand Details — same component as the full detail
+// screens, so preview and library detail feel like one app).
 // ---------------------------------------------------------------------------
 
 class _PreviewHeader extends ConsumerWidget {
   const _PreviewHeader({
     required this.seed,
     required this.detail,
-    required this.descExpanded,
-    required this.onToggleDesc,
   });
 
   final Manga seed;
   final AsyncValue<Manga> detail;
-  final bool descExpanded;
-  final VoidCallback onToggleDesc;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
+    final h = HeroScope.of(context);
     final manga = detail.maybeWhen(
       data: (m) => m,
       orElse: () => seed,
     );
     final loading = detail.isLoading;
+    final isAnime = seed.isAnime;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 20, 0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Cover thumb — 2:3 poster for anime, book crop for manga.
               ClipRRect(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(HeroTokens.radiusCard),
                 child: SizedBox(
                   width: 110,
                   height: 160,
@@ -349,13 +363,23 @@ class _PreviewHeader extends ConsumerWidget {
                           manga.thumbnailUrl!,
                           fit: BoxFit.cover,
                           errorBuilder: (_, __, ___) => Container(
-                            color: theme.colorScheme.surfaceContainerHighest,
-                            child: const Icon(Icons.menu_book, size: 36),
+                            color: h.surface2,
+                            child: Icon(
+                              isAnime
+                                  ? Icons.movie_outlined
+                                  : Icons.menu_book,
+                              size: 36,
+                              color: h.muted,
+                            ),
                           ),
                         )
                       : Container(
-                          color: theme.colorScheme.surfaceContainerHighest,
-                          child: const Icon(Icons.menu_book, size: 36),
+                          color: h.surface2,
+                          child: Icon(
+                            isAnime ? Icons.movie_outlined : Icons.menu_book,
+                            size: 36,
+                            color: h.muted,
+                          ),
                         ),
                 ),
               ),
@@ -366,8 +390,12 @@ class _PreviewHeader extends ConsumerWidget {
                   children: [
                     Text(
                       manga.title,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold, height: 1.2),
+                      style: HeroTokens.title.copyWith(
+                        color: h.foreground,
+                        fontWeight: FontWeight.w700,
+                        height: 1.2,
+                        fontSize: 20,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     if (manga.author != null && manga.author!.isNotEmpty)
@@ -377,13 +405,12 @@ class _PreviewHeader extends ConsumerWidget {
                     Row(
                       children: [
                         Icon(Icons.star_rounded,
-                            size: 18, color: theme.colorScheme.primary),
+                            size: 18, color: h.accent),
                         const SizedBox(width: 4),
                         Text(
                           manga.status.label,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
+                          style: HeroTokens.bodySmall
+                              .copyWith(color: h.muted),
                         ),
                       ],
                     ),
@@ -400,11 +427,10 @@ class _PreviewHeader extends ConsumerWidget {
                             break;
                           }
                         }
-                        return Chip(
-                          label:
-                              Text(name, style: theme.textTheme.labelSmall),
-                          visualDensity: VisualDensity.compact,
-                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        return HeroChip(
+                          label: name,
+                          small: true,
+                          color: HeroColorRole.neutral,
                         );
                       },
                     ),
@@ -416,14 +442,17 @@ class _PreviewHeader extends ConsumerWidget {
           if (manga.genre.isNotEmpty) ...[
             const SizedBox(height: 12),
             Wrap(
-              spacing: 6,
-              runSpacing: 6,
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                for (final tag in manga.genre.take(8))
-                  Chip(
-                    label: Text(tag, style: theme.textTheme.labelSmall),
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                for (final tag in manga.genre
+                    .where((g) => !RegExp(r'^(anilist|mal):\d+$')
+                        .hasMatch(g.trim()))
+                    .take(8))
+                  HeroChip(
+                    label: tag,
+                    small: true,
+                    color: HeroColorRole.accent,
                   ),
               ],
             ),
@@ -434,24 +463,39 @@ class _PreviewHeader extends ConsumerWidget {
               children: [
                 inlineLoader(context, size: 16),
                 const SizedBox(width: 12),
-                Text('Loading details and chapters…',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant)),
+                Text(
+                  'Loading details and ${isAnime ? 'episodes' : 'chapters'}…',
+                  style: HeroTokens.bodySmall.copyWith(color: h.muted),
+                ),
               ],
             ),
           ],
           if (manga.description != null &&
               manga.description!.trim().isNotEmpty) ...[
             const SizedBox(height: 12),
-            _Description(
-              text: manga.description!,
-              expanded: descExpanded,
-              onToggle: onToggleDesc,
+            WmExpandDetails(
+              title: 'Synopsis',
+              collapsed: Text(
+                _collapse(manga.description!),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: HeroTokens.bodySmall.copyWith(color: h.muted),
+              ),
+              expanded: Text(
+                manga.description!.trim(),
+                style:
+                    HeroTokens.body.copyWith(color: h.muted, height: 1.55),
+              ),
             ),
           ],
         ],
       ),
     );
+  }
+
+  String _collapse(String text) {
+    final t = text.trim();
+    return '${t.substring(0, t.length > 90 ? 90 : t.length)}…';
   }
 
   Widget _metaLine(BuildContext context, IconData icon, String text) {
@@ -459,16 +503,15 @@ class _PreviewHeader extends ConsumerWidget {
       padding: const EdgeInsets.only(bottom: 2),
       child: Row(
         children: [
-          Icon(icon,
-              size: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          Icon(icon, size: 14, color: HeroScope.of(context).muted),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               text,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+              style: HeroTokens.bodySmall
+                  .copyWith(color: HeroScope.of(context).muted),
             ),
           ),
         ],
@@ -477,58 +520,14 @@ class _PreviewHeader extends ConsumerWidget {
   }
 }
 
-class _Description extends StatelessWidget {
-  const _Description({
-    required this.text,
-    required this.expanded,
-    required this.onToggle,
-  });
-
-  final String text;
-  final bool expanded;
-  final VoidCallback onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Synopsis',
-          style: Theme.of(context)
-              .textTheme
-              .titleSmall
-              ?.copyWith(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          text.trim(),
-          maxLines: expanded ? null : 4,
-          overflow: expanded ? TextOverflow.visible : TextOverflow.ellipsis,
-          style: Theme.of(context)
-              .textTheme
-              .bodyMedium
-              ?.copyWith(height: 1.5),
-        ),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton(
-            onPressed: onToggle,
-            child: Text(expanded ? 'Show less' : 'Show more'),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 // ---------------------------------------------------------------------------
-// Chapter list (preview — no per-chapter download buttons until the entry
-// is persisted; downloads live in the full detail screen).
+// Episode / chapter list (preview — no per-unit download buttons until the
+// entry is persisted; downloads live in the full detail screen).
+// Number-tile rows, identical grammar to the full anime detail screen.
 // ---------------------------------------------------------------------------
 
-class _ChaptersSection extends StatelessWidget {
-  const _ChaptersSection({
+class _EpisodeSection extends StatelessWidget {
+  const _EpisodeSection({
     required this.manga,
     required this.onOpen,
     this.onRetry,
@@ -540,7 +539,9 @@ class _ChaptersSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final h = HeroScope.of(context);
+    final isAnime = manga.isAnime;
+    final unit = isAnime ? 'episode' : 'chapter';
     if (manga.chapters.isEmpty) {
       // Distinguish "provider failed" (metadata loaded but the episode
       // scrape died — show the retry affordance) from a genuinely empty
@@ -567,8 +568,8 @@ class _ChaptersSection extends StatelessWidget {
         child: emptyState(
           context: context,
           icon: Icons.inbox_outlined,
-          title: 'No chapters found',
-          subtitle: 'This source returned an empty chapter list for '
+          title: 'No ${unit}s found',
+          subtitle: 'This source returned an empty ${unit} list for '
               '"${manga.title}".',
         ),
       );
@@ -578,44 +579,112 @@ class _ChaptersSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 20, 20, 8),
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
             child: Text(
-              '${manga.chapters.length} chapters',
-              style: theme.textTheme
-                  .titleSmall
-                  ?.copyWith(fontWeight: FontWeight.bold),
+              '${manga.chapters.length} ${unit}s',
+              style: HeroTokens.title.copyWith(fontWeight: FontWeight.w700),
             ),
           ),
           for (final chapter in manga.chapters)
-            ListTile(
-              dense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-              title: Text(
-                chapter.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: chapter.scanlator != null
-                  ? Text(
-                      chapter.scanlator!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall,
-                    )
-                  : null,
-              trailing: chapter.dateUploaded != null
-                  ? Text(
-                      _shortDate(chapter.dateUploaded!),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant),
-                    )
-                  : null,
-              onTap: () => onOpen(chapter),
+            _UnitRow(
+              chapter: chapter,
+              isAnime: isAnime,
+              onOpen: () => onOpen(chapter),
             ),
         ],
       ),
     );
   }
+}
+
+class _UnitRow extends StatelessWidget {
+  const _UnitRow({
+    required this.chapter,
+    required this.isAnime,
+    required this.onOpen,
+  });
+
+  final Chapter chapter;
+  final bool isAnime;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
+    return InkWell(
+      onTap: onOpen,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            // Number tile — play glyph for anime, page glyph for manga.
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: h.accentSoft,
+                borderRadius: BorderRadius.circular(11),
+              ),
+              alignment: Alignment.center,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  _formatNumber(chapter.number),
+                  style: HeroTokens.caption.copyWith(
+                    color: h.accentSoftFg,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    chapter.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: HeroTokens.body.copyWith(
+                      color: h.foreground,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
+                    ),
+                  ),
+                  if (chapter.scanlator != null ||
+                      chapter.dateUploaded != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      [
+                        if (chapter.scanlator != null &&
+                            chapter.scanlator!.trim().isNotEmpty)
+                          chapter.scanlator!,
+                        if (chapter.dateUploaded != null)
+                          _shortDate(chapter.dateUploaded!),
+                      ].join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: HeroTokens.caption.copyWith(color: h.muted),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              isAnime ? Icons.play_arrow_rounded : Icons.chevron_right_rounded,
+              size: 22,
+              color: h.muted,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatNumber(double n) =>
+      n == n.truncateToDouble() ? n.toStringAsFixed(0) : n.toString();
 
   String _shortDate(DateTime d) {
     final now = DateTime.now();
@@ -628,25 +697,29 @@ class _ChaptersSection extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Bottom action bar — Add to library / Start reading.
+// Bottom action bar — Add to library (watermelon.sh Feedback Action) +
+// Start watching / Start reading (media-aware copy + icon).
 // ---------------------------------------------------------------------------
 
 class _BottomActions extends StatelessWidget {
   const _BottomActions({
     required this.manga,
+    required this.isAnime,
     required this.adding,
     required this.onAddToLibrary,
-    required this.onStartReading,
+    required this.onStart,
   });
 
   final Manga manga;
+  final bool isAnime;
   final bool adding;
   final VoidCallback onAddToLibrary;
-  final VoidCallback onStartReading;
+  final VoidCallback onStart;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final h = HeroScope.of(context);
+    final empty = manga.chapters.isEmpty;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
@@ -672,15 +745,16 @@ class _BottomActions extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               flex: 2,
-              child: FilledButton.icon(
-                onPressed: adding ? null : onStartReading,
-                icon: const Icon(Icons.menu_book_outlined),
-                label: Text(
-                  manga.chapters.isEmpty ? 'No chapters' : 'Start reading',
-                ),
-                style: FilledButton.styleFrom(
-                  backgroundColor: theme.colorScheme.primary,
-                ),
+              child: HeroButton(
+                label: empty
+                    ? (isAnime ? 'No episodes' : 'No chapters')
+                    : (isAnime ? 'Start watching' : 'Start reading'),
+                icon: isAnime
+                    ? Icons.play_arrow_rounded
+                    : Icons.menu_book_outlined,
+                variant: empty ? HeroButtonVariant.soft : HeroButtonVariant.solid,
+                color: empty ? HeroColorRole.neutral : HeroColorRole.accent,
+                onPressed: adding || empty ? null : onStart,
               ),
             ),
           ],

@@ -597,7 +597,7 @@ class _ActionBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 20, 0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -608,29 +608,30 @@ class _ActionBlock extends StatelessWidget {
             size: HeroButtonSize.md,
             onPressed: onContinue,
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: HeroButton(
-                    label: inLibrary ? 'In Library' : 'Add to Library',
-                    icon: inLibrary
-                        ? Icons.bookmark_rounded
-                        : Icons.bookmark_border_rounded,
-                    variant: HeroButtonVariant.soft,
-                    size: HeroButtonSize.md,
-                    onPressed: onToggleLibrary,
+          const SizedBox(height: 12),
+          // Secondary row — BOTH actions exactly 44px tall, baseline
+          // aligned (the old mixed 34px/40px row read as broken).
+          SizedBox(
+            height: 44,
+            child: Row(
+              children: [
+                Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: HeroButton(
+                      label: inLibrary ? 'In Library' : 'Add to Library',
+                      icon: inLibrary
+                          ? Icons.bookmark_rounded
+                          : Icons.bookmark_border_rounded,
+                      variant: HeroButtonVariant.soft,
+                      size: HeroButtonSize.md,
+                      onPressed: onToggleLibrary,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              // Track — watermelon.sh Split Actions fan-out.
-              // Aligned with the 34px pill next to it.
-              SizedBox(
-                height: 34,
-                child: Center(
+                const SizedBox(width: 12),
+                // Track — watermelon.sh Split Actions fan-out.
+                Center(
                   child: WmSplitActions(
                     triggerIcon: Icons.insights_outlined,
                     actions: [
@@ -649,26 +650,13 @@ class _ActionBlock extends StatelessWidget {
                     ],
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-          const SizedBox(height: 12),
-          // Status Picker — watching-status setter.
-          Row(
-            children: [
-              Text(
-                'STATUS',
-                style: TextStyle(
-                  fontFamily: HeroTokens.fontSans,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.9,
-                  color: h.muted,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 16),
+          // Status Picker — watching-status setter. The pill is
+          // self-explanatory ("Watching ▾"); the old uppercase caption
+          // label above it added noise, not hierarchy.
           WmStatusPicker(
             value: statusValue,
             onChanged: onStatusChanged,
@@ -716,7 +704,7 @@ class _SynopsisCard extends StatelessWidget {
     if (clean.isEmpty) return const SizedBox.shrink();
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 20, 0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: WmExpandDetails(
         title: 'Synopsis',
         collapsed: Text(
@@ -753,7 +741,7 @@ class _GenreChips extends StatelessWidget {
         .toList(growable: false);
     if (visible.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 20, 0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: Wrap(
         spacing: 8,
         runSpacing: 8,
@@ -783,7 +771,7 @@ class _MetaChips extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 20, 0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: Wrap(
         spacing: 8,
         runSpacing: 8,
@@ -854,7 +842,7 @@ class _NextAiringCardState extends State<_NextAiringCard> {
     final hasAired = remaining.isNegative;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 20, 0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: HeroCard(
         padding: const EdgeInsets.all(16),
         variant: HeroCardVariant.secondary,
@@ -925,7 +913,7 @@ class _AniSkipBanner extends ConsumerWidget {
     final ranges = ref.watch(aniSkipProvider(animeId));
     if (ranges.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 20, 0),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: Wrap(
         spacing: 8,
         runSpacing: 8,

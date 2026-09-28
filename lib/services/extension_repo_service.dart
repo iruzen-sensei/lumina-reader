@@ -34,6 +34,7 @@
 // ignore_for_file: avoid_dynamic_calls
 
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
@@ -169,7 +170,16 @@ class ExtensionRepoService {
   http.Client? _client;
   http.Client get _http => _client ??= MClient.httpClient(
         useLogger: false,
-        timeout: const Duration(seconds: 15),
+        timeout: const Duration(seconds: 30),
+      );
+
+  /// Long-haul client for extension DOWNLOADS (APKs run 1-25 MB; the old
+  /// shared 15s client aborted mid-download on real mobile networks —
+  /// THE "can't install keiyoushi/anime extensions" root cause).
+  http.Client? _downloadClient;
+  http.Client get _dl => _downloadClient ??= MClient.httpClient(
+        useLogger: false,
+        timeout: const Duration(minutes: 3),
       );
 
   // -----------------------------------------------------------------------
@@ -624,8 +634,14 @@ class ExtensionRepoService {
 
   /// Installs an extension. For template rows this is a flag flip; for JS
   /// extensions the source code is fetched; for APK extensions the APK is
-  /// downloaded (base64 into the row, exactly like upstream Mangayomi).
-  Future<void> install(String idString) async {
+  /// downloaded with REAL PROGRESS (base64 into the row, exactly like
+  /// upstream Mangayomi).
+  ///
+  /// [onProgress] receives (bytesDownloaded, totalBytes) during the
+  /// download so the UI can show honest progress instead of an eternal
+  /// spinner.
+  Future<void> install(String idString,
+      {void Function(int downloaded, int? total)? onProgress}) async {
     final row = await _isar.sources
         .filter()
         .idStringEqualTo(idString)
@@ -638,12 +654,9 @@ class ExtensionRepoService {
       if ((row.sourceCode == null || row.sourceCode!.isEmpty) &&
           codeUrl != null &&
           codeUrl.isNotEmpty) {
-        final res = await _http.get(Uri.parse(codeUrl));
-        if (res.statusCode != 200) {
-          throw Exception('Could not download extension code '
-              '(HTTP ${res.statusCode}).');
-        }
-        row.sourceCode = utf8.decode(res.bodyBytes);
+        final bytes = await _download(codeUrl,
+            maxBytes: 4 * 1024 * 1024, onProgress: onProgress);
+        row.sourceCode = utf8.decode(bytes);
       }
     }
 
@@ -656,15 +669,9 @@ class ExtensionRepoService {
       if ((row.sourceCode == null || row.sourceCode!.isEmpty || hasUpdate) &&
           apkUrl != null &&
           apkUrl.isNotEmpty) {
-        final res = await _http.get(Uri.parse(apkUrl));
-        if (res.statusCode != 200) {
-          throw Exception('Could not download extension APK '
-              '(HTTP ${res.statusCode}).');
-        }
-        if (res.bodyBytes.length > 80 * 1024 * 1024) {
-          throw Exception('Extension APK is larger than 80 MB — refusing.');
-        }
-        row.sourceCode = base64Encode(res.bodyBytes);
+        final bytes = await _download(apkUrl,
+            maxBytes: 80 * 1024 * 1024, onProgress: onProgress);
+        row.sourceCode = base64Encode(bytes);
         row.version = row.versionLast ?? row.version;
       }
     }
@@ -674,6 +681,47 @@ class ExtensionRepoService {
       row.added = true;
       await _isar.sources.put(row);
     });
+  }
+
+  /// Streams a download through the long-haul client with byte progress.
+  /// Retries once on transient failure (mobile networks).
+  Future<Uint8List> _download(
+    String url, {
+    required int maxBytes,
+    void Function(int downloaded, int? total)? onProgress,
+  }) async {
+    Object? lastError;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final req = http.Request('GET', Uri.parse(url));
+        final res = await _dl.send(req);
+        if (res.statusCode != 200) {
+          throw Exception('HTTP ${res.statusCode} for $url');
+        }
+        final total = res.contentLength;
+        if (total != null && total > maxBytes) {
+          throw Exception('Download larger than ${maxBytes ~/ (1024 * 1024)} MB'
+              ' — refusing.');
+        }
+        final builder = BytesBuilder(copy: false);
+        var received = 0;
+        await for (final chunk in res.stream) {
+          received += chunk.length;
+          if (received > maxBytes) {
+            throw Exception('Download exceeded ${maxBytes ~/ (1024 * 1024)} MB'
+                ' — refusing.');
+          }
+          builder.add(chunk);
+          onProgress?.call(received, total);
+        }
+        return builder.takeBytes();
+      } catch (e) {
+        lastError = e;
+        // Only retry when nothing meaningful was received yet — a 90%
+        // download that dies should restart from zero, not double-fail.
+      }
+    }
+    throw Exception('Could not download extension ($url): $lastError');
   }
 
   Future<void> uninstall(String idString) async {
@@ -718,5 +766,7 @@ class ExtensionRepoService {
   void dispose() {
     _client?.close();
     _client = null;
+    _downloadClient?.close();
+    _downloadClient = null;
   }
 }

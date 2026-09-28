@@ -419,6 +419,11 @@ class _ExtensionTileState extends ConsumerState<_ExtensionTile> {
   bool _busy = false;
   String? _error;
 
+  /// Live download progress, e.g. "3.2 / 8.1 MB" — an honest indicator
+  /// for the multi-MB keiyoushi/aniyomi APKs (the old bare spinner looked
+  /// frozen and users reported installs as broken).
+  String? _progress;
+
   bool get _supported =>
       widget.isBuiltin ||
       // Central truth: templates, MangaDex variants, JS extensions and
@@ -444,6 +449,7 @@ class _ExtensionTileState extends ConsumerState<_ExtensionTile> {
         ? '${entry.lang} • v${entry.version} • built-in'
         : '$kind • ${entry.lang} • v${entry.version}'
             '${hasUpdate ? ' • v${entry.versionLast} available' : ''}'
+            '${_progress != null ? ' • $_progress' : ''}'
             '${_error != null ? ' • $_error' : ''}';
     return HeroListTile(
       leading: _iconTile(h),
@@ -598,21 +604,34 @@ class _ExtensionTileState extends ConsumerState<_ExtensionTile> {
         setState(() {
           _busy = true;
           _error = null;
+          _progress = null;
         });
         try {
           await ref
               .read(data.extensionRepoServiceProvider)
-              .install(idString);
+              .install(idString, onProgress: (done, total) {
+            if (!mounted) return;
+            final mb = (int n) => (n / (1024 * 1024)).toStringAsFixed(1);
+            setState(() => _progress = total != null && total > 0
+                ? '${mb(done)} / ${mb(total)} MB'
+                : '${mb(done)} MB');
+          });
         } catch (e) {
           if (mounted) {
             setState(() {
               _busy = false;
+              _progress = null;
               _error = e.toString().replaceFirst('Exception: ', '');
             });
           }
           return;
         }
-        if (mounted) setState(() => _busy = false);
+        if (mounted) {
+          setState(() {
+            _busy = false;
+            _progress = null;
+          });
+        }
       },
     );
   }

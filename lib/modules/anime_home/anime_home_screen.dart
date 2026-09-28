@@ -152,13 +152,22 @@ class _AnimeHomeScreenState extends ConsumerState<AnimeHomeScreen> {
             ),
             // Morphing Discovery Bar — the search button (watermelon.sh):
             // collapsed = search pill + quick category pills; expanded =
-            // morphs into a live search field with a close circle.
+            // morphs into a live search field with predictive completions
+            // + a close circle.
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
                 child: WmDiscoveryBar(
                   accent: kNetflixRed,
                   searchHint: 'Search anime…',
+                  suggestionDictionary: [
+                    ...AniListService.genres.map((g) => g.toLowerCase()),
+                    ...const [
+                      'adventure', 'action', 'comedy', 'romance', 'isekai',
+                      'school', 'shounen', 'shoujo', 'seinen', 'slice',
+                      'supernatural', 'sports', 'mecha', 'music', 'mystery',
+                    ],
+                  ],
                   onSearch: (q) => context.push(
                       '/animeBrowse?search=${Uri.encodeComponent(q)}'),
                   categories: [
@@ -183,6 +192,15 @@ class _AnimeHomeScreenState extends ConsumerState<AnimeHomeScreen> {
                       label: 'New Season',
                       onTap: () =>
                           context.push('/animeBrowse?row=New This Season'),
+                    ),
+                    // The ONE genre entry point — genre-name button walls
+                    // were removed (redundant with the browse filter
+                    // picker); this opens Browse where Genre lives in the
+                    // Quick Option Picker rail.
+                    WmDiscoveryCategory(
+                      icon: Icons.grid_view_rounded,
+                      label: 'Genres',
+                      onTap: () => context.push('/animeBrowse'),
                     ),
                   ],
                 ),
@@ -229,6 +247,8 @@ class _AnimeHomeScreenState extends ConsumerState<AnimeHomeScreen> {
               provider: animePopularProvider,
               hideOnError: feedDown,
             ),
+            // Coming Soon rail — genres live in the browse filter picker
+            // now; the redundant genre-name chip wall is gone.
             _AniListRow(
               title: 'Coming Soon',
               provider: animeUpcomingProvider,
@@ -572,7 +592,7 @@ class _RowHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 18, 12, 10),
+      padding: const EdgeInsets.fromLTRB(16, 18, 12, 10),
       child: Row(
         children: [
           Expanded(
@@ -612,15 +632,11 @@ class _ContinueWatchingSection extends ConsumerWidget {
         const SliverToBoxAdapter(
             child: _RowHeader(title: 'Continue Watching')),
         SliverToBoxAdapter(
-          child: SizedBox(
+          child: HeroFadedRail(
             height: 168,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: items.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
-              itemBuilder: (context, i) => _ContinueCard(item: items[i]),
-            ),
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (context, i) => _ContinueCard(item: items[i]),
           ),
         ),
       ],
@@ -735,18 +751,14 @@ class _MyListSection extends ConsumerWidget {
           ),
         ),
         SliverToBoxAdapter(
-          child: SizedBox(
+          child: HeroFadedRail(
             height: 208,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: list.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
-              itemBuilder: (context, i) => BookCover(
-                manga: list[i],
-                width: 120,
-                onTap: () => context.push('/animeDetail/${list[i].id}'),
-              ),
+            itemCount: list.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (context, i) => BookCover(
+              manga: list[i],
+              width: 120,
+              onTap: () => context.push('/animeDetail/${list[i].id}'),
             ),
           ),
         ),
@@ -790,21 +802,17 @@ class _AniListRow extends ConsumerWidget {
         ),
         items.when(
           data: (list) => SliverToBoxAdapter(
-            child: SizedBox(
+            child: HeroFadedRail(
               height: numbered ? 210 : 214,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: list.length,
-                separatorBuilder: (_, __) =>
-                    SizedBox(width: numbered ? 4 : 10),
-                itemBuilder: (context, i) {
-                  final anime = list[i];
-                  return numbered
-                      ? _NumberedCard(rank: i + 1, anime: anime)
-                      : _PosterCard(anime: anime);
-                },
-              ),
+              itemCount: list.length,
+              separatorBuilder: (_, __) =>
+                  SizedBox(width: numbered ? 4 : 10),
+              itemBuilder: (context, i) {
+                final anime = list[i];
+                return numbered
+                    ? _NumberedCard(rank: i + 1, anime: anime)
+                    : _PosterCard(anime: anime);
+              },
             ),
           ),
           loading: () => const SliverToBoxAdapter(

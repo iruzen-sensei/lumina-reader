@@ -60,6 +60,10 @@ class AnimePlayerScreen extends ConsumerStatefulWidget {
   ConsumerState<AnimePlayerScreen> createState() => _AnimePlayerScreenState();
 }
 
+/// Netflix player accent — the anime tab's crimson, consistent with the
+/// browse/home surfaces.
+const Color _kPlayerAccent = Color(0xFFE50914);
+
 class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final Player _player;
@@ -545,18 +549,6 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     await _switchToEpisode(manga.chapters[idx - 1]);
   }
 
-  Future<void> _prevEpisode() async {
-    final manga = _manga;
-    final episode = _episode;
-    if (manga == null || episode == null) return;
-    final idx = manga.chapters.indexWhere((c) => c.id == episode.id);
-    if (idx >= manga.chapters.length - 1) {
-      showSnack(ref, context, 'No previous episode');
-      return;
-    }
-    await _switchToEpisode(manga.chapters[idx + 1]);
-  }
-
   /// Auto-advance to the next episode when one finishes (binge flow).
   void _autoNext() {
     Future<void>.delayed(const Duration(milliseconds: 900), () {
@@ -801,34 +793,16 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
         title: _manga?.title ?? '',
         subtitle: _episode?.name ?? '',
         onBack: () => Navigator.maybePop(context),
-        onLock: () => setState(() {
-          _locked = true;
-          _controlsVisible = false;
-        }),
-        onPip: _enterPip,
       ),
+      // Netflix center cluster: rewind-10 | play/pause | forward-10.
       Center(
-        child: AnimatedSwitcher(
-          duration: heroAnimationsEnabled
-              ? const Duration(milliseconds: 200)
-              : Duration.zero,
-          switchInCurve: Curves.easeOutBack,
-          switchOutCurve: Curves.easeInCubic,
-          transitionBuilder: (child, anim) => ScaleTransition(
-            scale: anim,
-            child: FadeTransition(opacity: anim, child: child),
-          ),
-          child: IconButton(
-            key: ValueKey(_player.state.playing),
-            iconSize: 64,
-            icon: Icon(
-              _player.state.playing
-                  ? Icons.pause_circle_filled
-                  : Icons.play_circle_fill,
-              color: Colors.white.withValues(alpha: 0.92),
-            ),
-            onPressed: _togglePlay,
-          ),
+        child: _CenterCluster(
+          playing: _player.state.playing,
+          onPlayPause: _togglePlay,
+          onRewind: () =>
+              _seekTo(_position - const Duration(seconds: 10)),
+          onForward: () =>
+              _seekTo(_position + const Duration(seconds: 10)),
         ),
       ),
       Positioned(
@@ -836,11 +810,9 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
         right: 0,
         bottom: 0,
         child: _GradientBottom(
-          playing: _player.state.playing,
           position: _position,
           duration: _duration,
           buffered: _buffered,
-          volume: _volume,
           speed: _speed,
           qualityLabel: _qualityLabel(),
           subtitleLabel: _subtitleLabel(),
@@ -853,10 +825,6 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
             _seeking = false;
             _scheduleHide();
           },
-          onPlayPause: _togglePlay,
-          onPrevEpisode: _prevEpisode,
-          onNextEpisode: _nextEpisode,
-          onVolume: _setVolume,
           onSpeed: _setSpeed,
           onQuality: () => _showSelector(
             title: 'Quality',
@@ -884,6 +852,7 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
             },
           ),
           onEpisodes: _showEpisodeSheet,
+          onNextEpisode: _nextEpisode,
           onAniSkip: _skipOp,
           onAniSkipEd: _skipEd,
           onPip: _enterPip,
@@ -1353,18 +1322,14 @@ class _GradientTop extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.onBack,
-    this.onLock,
     this.onUnlock,
-    this.onPip,
     this.locked = false,
   });
 
   final String title;
   final String subtitle;
   final VoidCallback onBack;
-  final VoidCallback? onLock;
   final VoidCallback? onUnlock;
-  final VoidCallback? onPip;
   final bool locked;
 
   @override
@@ -1411,16 +1376,7 @@ class _GradientTop extends StatelessWidget {
                 ),
                 if (locked && onUnlock != null)
                   _PlayerIconButton(
-                      icon: Icons.lock_rounded, onTap: onUnlock!)
-                else ...[
-                  if (onPip != null)
-                    _PlayerIconButton(
-                        icon: Icons.picture_in_picture_alt_rounded,
-                        onTap: onPip!),
-                  if (onLock != null)
-                    _PlayerIconButton(
-                        icon: Icons.lock_outline_rounded, onTap: onLock!),
-                ],
+                      icon: Icons.lock_rounded, onTap: onUnlock!),
               ],
             ),
           ),
@@ -1470,58 +1426,181 @@ class _PlayerIconButtonState extends State<_PlayerIconButton> {
 }
 
 // ---------------------------------------------------------------------------
-// Bottom bar: professional seekbar (scrub bubble + commit-on-release +
-// buffered track) and the watermelon.sh Extended Toolbar secondary row
-// (speed / quality / subtitles slide out — episodes / PiP / lock / skip
-// OP-ED slide in).
+// Center cluster (Netflix): rewind-10 | play/pause | forward-10 — big,
+// round, high-contrast. The play button is a white circle with a dark
+// glyph (Netflix grammar); the 10s circles are translucent white.
+// ---------------------------------------------------------------------------
+
+class _CenterCluster extends StatelessWidget {
+  const _CenterCluster({
+    required this.playing,
+    required this.onPlayPause,
+    required this.onRewind,
+    required this.onForward,
+  });
+
+  final bool playing;
+  final VoidCallback onPlayPause;
+  final VoidCallback onRewind;
+  final VoidCallback onForward;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _CircleSeekButton(
+          icon: Icons.replay_10_rounded,
+          size: 52,
+          onTap: onRewind,
+        ),
+        const SizedBox(width: 28),
+        _NetflixPlayButton(
+          playing: playing,
+          onTap: onPlayPause,
+        ),
+        const SizedBox(width: 28),
+        _CircleSeekButton(
+          icon: Icons.forward_10_rounded,
+          size: 52,
+          onTap: onForward,
+        ),
+      ],
+    );
+  }
+}
+
+class _CircleSeekButton extends StatefulWidget {
+  const _CircleSeekButton({
+    required this.icon,
+    required this.size,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final double size;
+  final VoidCallback onTap;
+
+  @override
+  State<_CircleSeekButton> createState() => _CircleSeekButtonState();
+}
+
+class _CircleSeekButtonState extends State<_CircleSeekButton> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: _pressed ? 0.88 : 1,
+        duration: const Duration(milliseconds: 140),
+        curve: Curves.easeOutCubic,
+        child: Container(
+          width: widget.size,
+          height: widget.size,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.14),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(widget.icon,
+              size: widget.size * 0.52,
+              color: Colors.white.withValues(alpha: 0.95)),
+        ),
+      ),
+    );
+  }
+}
+
+/// The big white play/pause disc (Netflix center button grammar).
+class _NetflixPlayButton extends StatelessWidget {
+  const _NetflixPlayButton({required this.playing, required this.onTap});
+
+  final bool playing;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedSwitcher(
+        duration: heroAnimationsEnabled
+            ? const Duration(milliseconds: 180)
+            : Duration.zero,
+        switchInCurve: Curves.easeOutBack,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, anim) => ScaleTransition(
+          scale: anim,
+          child: child,
+        ),
+        child: Container(
+          key: ValueKey(playing),
+          width: 76,
+          height: 76,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+            size: 46,
+            color: Colors.black.withValues(alpha: 0.9),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Bottom bar (Netflix): full-width scrubber with drag bubble, time row,
+// then the watermelon.sh Extended Toolbar as the button row —
+// [Episodes | Next Ep | PiP | Lock] morphing to
+// [Speed | Quality | Subs | Skip OP | Skip ED] with the chevron.
+// The old three-row stack (an M3 volume slider + icon row + toolbar) was
+// cramped and clipped at the screen edge; volume is a gesture
+// (right-half vertical drag) with a HUD, like every streaming app.
 // ---------------------------------------------------------------------------
 
 class _GradientBottom extends StatefulWidget {
   const _GradientBottom({
-    required this.playing,
     required this.position,
     required this.duration,
     required this.buffered,
-    required this.volume,
     required this.speed,
     required this.qualityLabel,
     required this.subtitleLabel,
     required this.onSeek,
     required this.onSeekStart,
     required this.onSeekEnd,
-    required this.onPlayPause,
-    required this.onPrevEpisode,
-    required this.onNextEpisode,
-    required this.onVolume,
     required this.onSpeed,
     required this.onQuality,
     required this.onSubtitles,
     required this.onEpisodes,
+    required this.onNextEpisode,
     required this.onAniSkip,
     required this.onAniSkipEd,
     required this.onPip,
     required this.onLock,
   });
 
-  final bool playing;
   final Duration position;
   final Duration duration;
   final Duration buffered;
-  final double volume;
   final double speed;
   final String qualityLabel;
   final String subtitleLabel;
   final ValueChanged<Duration> onSeek;
   final VoidCallback onSeekStart;
   final VoidCallback onSeekEnd;
-  final VoidCallback onPlayPause;
-  final VoidCallback onPrevEpisode;
-  final VoidCallback onNextEpisode;
-  final ValueChanged<double> onVolume;
   final ValueChanged<double> onSpeed;
   final VoidCallback onQuality;
   final VoidCallback onSubtitles;
   final VoidCallback onEpisodes;
+  final VoidCallback onNextEpisode;
   final VoidCallback onAniSkip;
   final VoidCallback onAniSkipEd;
   final VoidCallback onPip;
@@ -1553,59 +1632,48 @@ class _GradientBottomState extends State<_GradientBottom> {
         gradient: LinearGradient(
           begin: Alignment.bottomCenter,
           end: Alignment.topCenter,
-          colors: [Colors.black.withValues(alpha: 0.85), Colors.transparent],
+          stops: const [0.0, 0.72, 1.0],
+          colors: [
+            Colors.black.withValues(alpha: 0.88),
+            Colors.black.withValues(alpha: 0.55),
+            Colors.transparent,
+          ],
         ),
       ),
       child: SafeArea(
         top: false,
+        minimum: const EdgeInsets.only(bottom: 10),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 26, 12, 8),
+          padding: const EdgeInsets.fromLTRB(20, 30, 20, 0),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // ---- Seek row with timestamp bubble while dragging ----
+              // ---- Scrubber (full width, Netflix red, fat thumb) ----
               Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  Row(
-                    children: [
-                      Text(formatDuration(_dragging
-                          ? Duration(milliseconds: _dragValue?.round() ?? 0)
-                          : widget.position),
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontFeatures: [FontFeature.tabularFigures()])),
-                      Expanded(
-                        child: _ScrubBar(
-                          value: shown / total,
-                          buffered:
-              widget.buffered.inMilliseconds.toDouble().clamp(0, total) /
-                                  total,
-                          onDragStart: () {
-                            setState(() {
-                              _dragging = true;
-                              _dragValue = shown.toDouble();
-                            });
-                            widget.onSeekStart();
-                          },
-                          onDragUpdate: (fraction) {
-                            setState(() => _dragValue = fraction * total);
-                          },
-                          onDragEnd: (fraction) {
-                            setState(() => _dragging = false);
-                            widget.onSeekEnd();
-                            widget.onSeek(
-                                Duration(milliseconds: (fraction * total).round()));
-                          },
-                        ),
-                      ),
-                      Text(formatDuration(widget.duration),
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontFeatures: [FontFeature.tabularFigures()])),
-                    ],
+                  _ScrubBar(
+                    value: shown / total,
+                    buffered: widget.buffered.inMilliseconds
+                            .toDouble()
+                            .clamp(0, total) /
+                        total,
+                    onDragStart: () {
+                      setState(() {
+                        _dragging = true;
+                        _dragValue = shown.toDouble();
+                      });
+                      widget.onSeekStart();
+                    },
+                    onDragUpdate: (fraction) {
+                      setState(() => _dragValue = fraction * total);
+                    },
+                    onDragEnd: (fraction) {
+                      setState(() => _dragging = false);
+                      widget.onSeekEnd();
+                      widget.onSeek(Duration(
+                          milliseconds: (fraction * total).round()));
+                    },
                   ),
                   // Floating bubble above the thumb while scrubbing.
                   if (_dragging)
@@ -1628,97 +1696,42 @@ class _GradientBottomState extends State<_GradientBottom> {
                                 color: Colors.white,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                fontFeatures: [FontFeature.tabularFigures()]),
+                                fontFeatures: [
+                                  FontFeature.tabularFigures()
+                                ]),
                           ),
                         ),
                       ),
                     ),
                 ],
               ),
-              const SizedBox(height: 2),
-              // ---- Main control row ----
+              // ---- Time row (current left, duration right) ----
               Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  IconButton(
-                    tooltip: 'Previous episode',
-                    icon: const Icon(Icons.skip_previous, color: Colors.white),
-                    onPressed: widget.onPrevEpisode,
-                  ),
-                  IconButton(
-                    tooltip: 'Rewind 10s',
-                    icon: const Icon(Icons.replay_10, color: Colors.white),
-                    onPressed: () => widget.onSeek(
-                        widget.position - const Duration(seconds: 10)),
-                  ),
-                  const SizedBox(width: 4),
-                  GestureDetector(
-                    onTap: widget.onPlayPause,
-                    child: Container(
-                      width: 52,
-                      height: 52,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.14),
-                        shape: BoxShape.circle,
-                      ),
-                      child: AnimatedSwitcher(
-                        duration: heroAnimationsEnabled
-                            ? const Duration(milliseconds: 180)
-                            : Duration.zero,
-                        transitionBuilder: (child, anim) => ScaleTransition(
-                          scale: anim,
-                          child: child,
-                        ),
-                        child: Icon(
-                          widget.playing
-                              ? Icons.pause
-                              : Icons.play_arrow,
-                          key: ValueKey(widget.playing),
+                  Text(
+                      formatDuration(_dragging
+                          ? Duration(
+                              milliseconds: _dragValue?.round() ?? 0)
+                          : widget.position),
+                      style: const TextStyle(
                           color: Colors.white,
-                          size: 34,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  IconButton(
-                    tooltip: 'Forward 10s',
-                    icon: const Icon(Icons.forward_10, color: Colors.white),
-                    onPressed: () => widget.onSeek(
-                        widget.position + const Duration(seconds: 10)),
-                  ),
-                  IconButton(
-                    tooltip: 'Next episode',
-                    icon: const Icon(Icons.skip_next, color: Colors.white),
-                    onPressed: widget.onNextEpisode,
-                  ),
-                  const Spacer(),
-                  // Volume (0–100 scale; media_kit contract).
-                  Icon(
-                    widget.volume <= 1
-                        ? Icons.volume_off
-                        : widget.volume < 50
-                            ? Icons.volume_down
-                            : Icons.volume_up,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                  SizedBox(
-                    width: 70,
-                    child: Slider(
-                      value: widget.volume.clamp(0.0, 100.0).toDouble(),
-                      min: 0,
-                      max: 100,
-                      onChanged: widget.onVolume,
-                      activeColor: Colors.white,
-                      inactiveColor: Colors.white24,
-                    ),
-                  ),
+                          fontSize: 12,
+                          fontFeatures: [FontFeature.tabularFigures()])),
+                  Text(formatDuration(widget.duration),
+                      style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.7),
+                          fontSize: 12,
+                          fontFeatures: [
+                            FontFeature.tabularFigures()
+                          ])),
                 ],
               ),
-              const SizedBox(height: 2),
-              // ---- Secondary row: the Extended Toolbar ----
-              // Speed is a watermelon.sh Quick Option Picker (pill → tray)
-              // — the old ChoiceChip modal sheet was a duplicate surface.
+              const SizedBox(height: 10),
+              // ---- Button row: speed picker + Extended Toolbar ----
+              // Speed is a watermelon.sh Quick Option Picker (pill -> tray,
+              // no modal sheet); the toolbar is the dark labeled Netflix
+              // cluster with Next Ep for binge flow.
               Row(
                 children: [
                   WmQuickOptionPicker<double>(
@@ -1749,21 +1762,17 @@ class _GradientBottomState extends State<_GradientBottom> {
                     child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: WmExtendedToolbar(
+                        dark: true,
+                        showLabels: true,
                         primary: [
-                          WmToolItem(
-                              icon: Icons.hd_outlined,
-                              label: widget.qualityLabel,
-                              onTap: widget.onQuality),
-                          WmToolItem(
-                              icon: Icons.subtitles_outlined,
-                              label: widget.subtitleLabel,
-                              onTap: widget.onSubtitles),
-                        ],
-                        secondary: [
                           WmToolItem(
                               icon: Icons.list_rounded,
                               label: 'Episodes',
                               onTap: widget.onEpisodes),
+                          WmToolItem(
+                              icon: Icons.skip_next_rounded,
+                              label: 'Next Ep',
+                              onTap: widget.onNextEpisode),
                           WmToolItem(
                               icon: Icons.picture_in_picture_alt_rounded,
                               label: 'PiP',
@@ -1772,6 +1781,16 @@ class _GradientBottomState extends State<_GradientBottom> {
                               icon: Icons.lock_outline_rounded,
                               label: 'Lock',
                               onTap: widget.onLock),
+                        ],
+                        secondary: [
+                          WmToolItem(
+                              icon: Icons.hd_outlined,
+                              label: widget.qualityLabel,
+                              onTap: widget.onQuality),
+                          WmToolItem(
+                              icon: Icons.subtitles_outlined,
+                              label: widget.subtitleLabel,
+                              onTap: widget.onSubtitles),
                           WmToolItem(
                               icon: Icons.fast_forward_rounded,
                               label: 'Skip OP',
@@ -1785,6 +1804,9 @@ class _GradientBottomState extends State<_GradientBottom> {
                     ),
                   ),
                 ],
+              ),
+                  ),
+                ),
               ),
             ],
           ),
@@ -1882,13 +1904,13 @@ class _ScrubBarState extends State<_ScrubBar> {
                   ),
                 ),
               ),
-              // Progress fill
+              // Progress fill (Netflix red)
               FractionallySizedBox(
                 widthFactor: fraction.clamp(0.0, 1.0),
                 child: Container(
                   height: _dragging ? 5 : 4,
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: _kPlayerAccent,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -1902,7 +1924,7 @@ class _ScrubBarState extends State<_ScrubBar> {
                   height: _dragging ? 14 : 12,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.white,
+                    color: _kPlayerAccent,
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withValues(alpha: 0.4),
@@ -1973,7 +1995,7 @@ class _SkipButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Positioned(
-      bottom: 130,
+      bottom: 190,
       right: 16,
       child: Material(
         color: LuminaTheme.seed,

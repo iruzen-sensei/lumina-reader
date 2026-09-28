@@ -276,7 +276,7 @@ class _TabItemState extends State<_TabItem> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 4),
                 // Dock selection dot — fades/scales in under the active
                 // item (the source's indicator pattern).
                 AnimatedScale(
@@ -300,7 +300,7 @@ class _TabItemState extends State<_TabItem> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 3),
                 Text(
                   d.label,
                   style: TextStyle(

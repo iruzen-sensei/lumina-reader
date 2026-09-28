@@ -203,6 +203,7 @@ dto.Note noteToDto(db.Note n, {String? mangaTitle, int? mangaId}) {
     createdAt: n.createdAt,
     color: dto.NoteColor.values[n.color.clamp(0, dto.NoteColor.values.length - 1)],
     chapterId: n.chapterId,
+    chapterName: n.chapterName,
     page: n.pageNumber,
     tags: n.tags,
   );
@@ -221,6 +222,7 @@ db.Note noteFromDto(dto.Note n, {int? existingId}) {
     createdAt: n.createdAt,
     updatedAt: DateTime.now(),
     chapterId: n.chapterId,
+    chapterName: n.chapterName,
   );
 }
 

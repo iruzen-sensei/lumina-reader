@@ -209,12 +209,15 @@ class _StaggeredCharState extends State<_StaggeredChar>
 // 1. Morphing Discovery Bar (the search button morph)
 //
 // Collapsed: [ search icon pill ] [ category pills row ]
-// Expanded:  [ search icon + input ................ ] [ X close ]
+// Expanded:  [ search icon + input ..................... ] [ X close ]
+//            (full remaining width — a 44px-wide input was unusable)
+//            + up to three Predictive-Text suggestion chips below.
 //
 // Layout springs (AnimatedSize + wmMorphSpring), the input blur-scales in,
 // the categories blur-scale out, and the close button slides in from the
-// left with a horizontal squash — the source's exact choreography.
-// ---------------------------------------------------------------------------
+// left with a horizontal squash — the source's exact choreography. The
+// category rail fades softly at the trailing screen edge (Apple edge-fade
+// treatment) instead of hard-clipping mid-chip.
 
 class WmDiscoveryCategory {
   const WmDiscoveryCategory({
@@ -237,6 +240,7 @@ class WmDiscoveryBar extends StatefulWidget {
     required this.onSearch,
     this.searchHint = 'Search',
     this.accent,
+    this.suggestionDictionary,
   });
 
   final List<WmDiscoveryCategory> categories;
@@ -247,6 +251,11 @@ class WmDiscoveryBar extends StatefulWidget {
   /// back to the theme accent (noir white).
   final Color? accent;
 
+  /// Optional Predictive-Text dictionary: while typing, up to three
+  /// prefix completions float below the morphed input (tap completes the
+  /// word). Wire the shared genre/term vocabulary here.
+  final List<String>? suggestionDictionary;
+
   @override
   State<WmDiscoveryBar> createState() => _WmDiscoveryBarState();
 }
@@ -254,6 +263,7 @@ class WmDiscoveryBar extends StatefulWidget {
 class _WmDiscoveryBarState extends State<WmDiscoveryBar> {
   final _controller = TextEditingController();
   final _focus = FocusNode();
+  final _catsController = ScrollController();
   bool _searching = false;
 
   @override
@@ -270,6 +280,7 @@ class _WmDiscoveryBarState extends State<WmDiscoveryBar> {
   void dispose() {
     _controller.dispose();
     _focus.dispose();
+    _catsController.dispose();
     super.dispose();
   }
 
@@ -298,117 +309,197 @@ class _WmDiscoveryBarState extends State<WmDiscoveryBar> {
     widget.onSearch(q);
   }
 
+  /// Predictive completions for the last word being typed (max 3).
+  List<String> get _suggestions {
+    final dict = widget.suggestionDictionary;
+    if (dict == null) return const [];
+    final text = _controller.text;
+    if (text.isEmpty || text.endsWith(' ')) return const [];
+    final last = text.split(RegExp(r'\s+')).last.toLowerCase();
+    if (last.isEmpty) return const [];
+    final seen = <String>{};
+    final out = <String>[];
+    for (final w in dict) {
+      final lw = w.toLowerCase();
+      if (lw.startsWith(last) && lw != last && seen.add(lw)) {
+        out.add(w);
+        if (out.length == 3) break;
+      }
+    }
+    return out;
+  }
+
+  void _applySuggestion(String word) {
+    final words = _controller.text.split(RegExp(r'\s+'));
+    if (words.isEmpty) return;
+    words[words.length - 1] = word;
+    _controller.text = '${words.join(' ')} ';
+    _controller.selection = TextSelection.fromPosition(
+        TextPosition(offset: _controller.text.length));
+    setState(() {});
+    HapticFeedback.selectionClick();
+  }
+
   @override
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
     final accent = widget.accent ?? h.accent;
+    final suggestions = _suggestions;
 
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        // ---- Search pill (morphs 48 -> expanded input) ----
+        LayoutBuilder(builder: (context, constraints) {
+          // Full-width morph: expanded input takes everything except the
+          // close circle (40) + gap (8).
+          final expandedW = (constraints.maxWidth - 48)
+              .clamp(120.0, double.infinity)
+              .toDouble();
+          return Row(
+            children: [
+              // ---- Search pill (morphs 44 -> full-width input) ----
+              AnimatedSize(
+                duration: heroAnimationsEnabled
+                    ? const Duration(milliseconds: 380)
+                    : Duration.zero,
+                curve: wmMorphSpring,
+                alignment: Alignment.centerLeft,
+                child: AnimatedContainer(
+                  duration: heroAnimationsEnabled
+                      ? const Duration(milliseconds: 300)
+                      : Duration.zero,
+                  curve: Curves.easeOutCubic,
+                  height: 44,
+                  width: _searching ? expandedW : 44,
+                  padding:
+                      EdgeInsets.symmetric(horizontal: _searching ? 12 : 0),
+                  decoration: BoxDecoration(
+                    color: _searching ? h.surface : Colors.transparent,
+                    borderRadius: BorderRadius.circular(HeroTokens.radiusChip),
+                    border: Border.all(
+                      color: _searching
+                          ? accent.withValues(alpha: 0.65)
+                          : h.border,
+                      width: 1.2,
+                    ),
+                  ),
+                  child: _searching
+                      ? Row(
+                          children: [
+                            Icon(Icons.search_rounded,
+                                size: 19, color: h.muted),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: TextField(
+                                controller: _controller,
+                                focusNode: _focus,
+                                textInputAction: TextInputAction.search,
+                                onSubmitted: _submit,
+                                onChanged: (_) => setState(() {}),
+                                style: HeroTokens.bodySmall
+                                    .copyWith(color: h.foreground),
+                                decoration: InputDecoration(
+                                  isDense: true,
+                                  border: InputBorder.none,
+                                  isCollapsed: true,
+                                  hintText: widget.searchHint,
+                                  hintStyle: HeroTokens.bodySmall
+                                      .copyWith(color: h.muted),
+                                ),
+                              ),
+                            ),
+                            if (_controller.text.isNotEmpty)
+                              GestureDetector(
+                                onTap: () {
+                                  _controller.clear();
+                                  setState(() {});
+                                },
+                                child: Icon(Icons.close_rounded,
+                                    size: 16, color: h.muted),
+                              ),
+                          ],
+                        )
+                      : Center(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: _open,
+                            child: Icon(Icons.search_rounded,
+                                size: 22, color: h.foreground),
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // ---- Categories / close ----
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: heroAnimationsEnabled
+                      ? const Duration(milliseconds: 300)
+                      : Duration.zero,
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, anim) => FadeTransition(
+                    opacity: anim,
+                    child: ScaleTransition(scale: anim, child: child),
+                  ),
+                  child: _searching
+                      ? Align(
+                          key: const ValueKey('close'),
+                          alignment: Alignment.centerLeft,
+                          child: _CloseCircle(onTap: _close, color: accent),
+                        )
+                      : HeroEdgeFade(
+                          key: const ValueKey('cats'),
+                          controller: _catsController,
+                          width: 20,
+                          child: SingleChildScrollView(
+                            controller: _catsController,
+                            scrollDirection: Axis.horizontal,
+                            padding: const EdgeInsets.only(right: 8),
+                            child: Row(
+                              children: [
+                                for (var i = 0;
+                                    i < widget.categories.length;
+                                    i++)
+                                  _DiscoveryChip(
+                                    cat: widget.categories[i],
+                                    accent: accent,
+                                    onTap: widget.categories[i].onTap,
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                ),
+              ),
+            ],
+          );
+        }),
+        // ---- Predictive-Text suggestions (below the input) ----
         AnimatedSize(
           duration: heroAnimationsEnabled
-              ? const Duration(milliseconds: 380)
+              ? const Duration(milliseconds: 240)
               : Duration.zero,
-          curve: wmMorphSpring,
-          alignment: Alignment.centerLeft,
-          child: AnimatedContainer(
-            duration: heroAnimationsEnabled
-                ? const Duration(milliseconds: 300)
-                : Duration.zero,
-            curve: Curves.easeOutCubic,
-            height: 44,
-            width: _searching ? 208 : 44,
-            padding: EdgeInsets.symmetric(horizontal: _searching ? 12 : 0),
-            decoration: BoxDecoration(
-              color: _searching ? h.surface : Colors.transparent,
-              borderRadius: BorderRadius.circular(HeroTokens.radiusChip),
-              border: Border.all(
-                color: _searching
-                    ? accent.withValues(alpha: 0.65)
-                    : h.border,
-                width: 1.2,
-              ),
-            ),
-            child: _searching
-                ? Row(
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topLeft,
+          child: _searching && suggestions.isNotEmpty
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Row(
                     children: [
-                      Icon(Icons.search_rounded, size: 19, color: h.muted),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: _controller,
-                          focusNode: _focus,
-                          textInputAction: TextInputAction.search,
-                          onSubmitted: _submit,
-                          onChanged: (_) => setState(() {}),
-                          style: HeroTokens.bodySmall
-                              .copyWith(color: h.foreground),
-                          decoration: InputDecoration(
-                            isDense: true,
-                            border: InputBorder.none,
-                            isCollapsed: true,
-                            hintText: widget.searchHint,
-                            hintStyle: HeroTokens.bodySmall
-                                .copyWith(color: h.muted),
+                      for (var i = 0; i < suggestions.length; i++)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: _SuggestionChip(
+                            label: suggestions[i],
+                            onTap: () => _applySuggestion(suggestions[i]),
                           ),
-                        ),
-                      ),
-                      if (_controller.text.isNotEmpty)
-                        GestureDetector(
-                          onTap: () {
-                            _controller.clear();
-                            setState(() {});
-                          },
-                          child: Icon(Icons.close_rounded,
-                              size: 16, color: h.muted),
                         ),
                     ],
-                  )
-                : Center(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: _open,
-                      child: Icon(Icons.search_rounded,
-                          size: 22, color: h.foreground),
-                    ),
                   ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        // ---- Categories / close ----
-        Expanded(
-          child: AnimatedSwitcher(
-            duration: heroAnimationsEnabled
-                ? const Duration(milliseconds: 300)
-                : Duration.zero,
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeInCubic,
-            transitionBuilder: (child, anim) => FadeTransition(
-              opacity: anim,
-              child: ScaleTransition(scale: anim, child: child),
-            ),
-            child: _searching
-                ? Align(
-                    key: const ValueKey('close'),
-                    alignment: Alignment.centerLeft,
-                    child: _CloseCircle(onTap: _close, color: accent),
-                  )
-                : SingleChildScrollView(
-                    key: const ValueKey('cats'),
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        for (var i = 0; i < widget.categories.length; i++)
-                          _DiscoveryChip(
-                            cat: widget.categories[i],
-                            accent: accent,
-                            onTap: widget.categories[i].onTap,
-                          ),
-                      ],
-                    ),
-                  ),
-          ),
+                )
+              : const SizedBox(width: double.infinity),
         ),
       ],
     );
@@ -651,10 +742,20 @@ class WmExtendedToolbar extends StatefulWidget {
     super.key,
     required this.primary,
     required this.secondary,
+    this.showLabels = false,
+    this.dark = false,
   });
 
   final List<WmToolItem> primary;
   final List<WmToolItem> secondary;
+
+  /// Player-style: icon + 10px label under it (Netflix button row). The
+  /// default compact mode shows icons only (labels stay as tooltips).
+  final bool showLabels;
+
+  /// Video-player context: translucent dark pill, white icons (the
+  /// default uses the theme surfaces).
+  final bool dark;
 
   @override
   State<WmExtendedToolbar> createState() => _WmExtendedToolbarState();
@@ -672,18 +773,20 @@ class _WmExtendedToolbarState extends State<WmExtendedToolbar> {
     const curve = HeroTokens.spring;
 
     final maxRow = math.max(widget.primary.length, widget.secondary.length);
-    const itemW = 52.0;
+    final itemW = widget.showLabels ? 64.0 : 52.0;
     final baseW = (maxRow * itemW) + 44.0;
+    final pillColor = widget.dark ? Colors.white.withValues(alpha: 0.10) : h.surface;
+    final pillBorder = widget.dark ? Colors.white.withValues(alpha: 0.16) : h.border;
 
     return AnimatedContainer(
       duration: slide,
       curve: curve,
       width: baseW,
-      height: 48,
+      height: widget.showLabels ? 58 : 48,
       decoration: BoxDecoration(
-        color: h.surface,
+        color: pillColor,
         borderRadius: BorderRadius.circular(HeroTokens.radiusChip),
-        border: Border.all(color: h.border),
+        border: Border.all(color: pillBorder),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(HeroTokens.radiusChip),
@@ -700,7 +803,12 @@ class _WmExtendedToolbarState extends State<WmExtendedToolbar> {
                 child: Row(
                   children: [
                     for (var i = 0; i < widget.primary.length; i++)
-                      _ToolButton(item: widget.primary[i], w: itemW),
+                      _ToolButton(
+                        item: widget.primary[i],
+                        w: itemW,
+                        showLabel: widget.showLabels,
+                        dark: widget.dark,
+                      ),
                   ],
                 ),
               ),
@@ -716,7 +824,12 @@ class _WmExtendedToolbarState extends State<WmExtendedToolbar> {
                 child: Row(
                   children: [
                     for (var i = 0; i < widget.secondary.length; i++)
-                      _ToolButton(item: widget.secondary[i], w: itemW),
+                      _ToolButton(
+                        item: widget.secondary[i],
+                        w: itemW,
+                        showLabel: widget.showLabels,
+                        dark: widget.dark,
+                      ),
                   ],
                 ),
               ),
@@ -732,8 +845,8 @@ class _WmExtendedToolbarState extends State<WmExtendedToolbar> {
                 },
                 child: Container(
                   width: 44,
-                  height: 48,
-                  color: h.surface,
+                  height: widget.showLabels ? 58 : 48,
+                  color: pillColor,
                   child: Center(
                     child: RotationTransition(
                       turns: AlwaysStoppedAnimation(_expanded ? 1.0 : 0.5),
@@ -742,7 +855,9 @@ class _WmExtendedToolbarState extends State<WmExtendedToolbar> {
                             ? Icons.chevron_right_rounded
                             : Icons.chevron_left_rounded,
                         size: 20,
-                        color: h.muted,
+                        color: widget.dark
+                            ? Colors.white.withValues(alpha: 0.75)
+                            : h.muted,
                       ),
                     ),
                   ),
@@ -757,23 +872,54 @@ class _WmExtendedToolbarState extends State<WmExtendedToolbar> {
 }
 
 class _ToolButton extends StatelessWidget {
-  const _ToolButton({required this.item, required this.w});
+  const _ToolButton({
+    required this.item,
+    required this.w,
+    this.showLabel = false,
+    this.dark = false,
+  });
 
   final WmToolItem item;
   final double w;
+  final bool showLabel;
+  final bool dark;
 
   @override
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
+    final iconColor = dark
+        ? (item.active ? Colors.white : Colors.white.withValues(alpha: 0.85))
+        : (item.active ? h.accent : h.muted);
+    final labelColor = dark
+        ? Colors.white.withValues(alpha: 0.8)
+        : h.muted;
     return SizedBox(
       width: w,
-      height: 48,
+      height: showLabel ? 58 : 48,
       child: IconButton(
         padding: EdgeInsets.zero,
         tooltip: item.label,
-        icon: Icon(item.icon,
-            size: 20,
-            color: item.active ? h.accent : h.muted),
+        icon: showLabel
+            ? Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(item.icon, size: 19, color: iconColor),
+                  const SizedBox(height: 2),
+                  Text(
+                    item.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: HeroTokens.fontSans,
+                      fontSize: 9.5,
+                      fontWeight: item.active ? FontWeight.w700 : FontWeight.w500,
+                      color: item.active && !dark ? h.accent : labelColor,
+                    ),
+                  ),
+                ],
+              )
+            : Icon(item.icon, size: 20, color: iconColor),
         onPressed: () {
           HapticFeedback.selectionClick();
           item.onTap();

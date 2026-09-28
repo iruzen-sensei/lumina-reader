@@ -1762,6 +1762,139 @@ class _HeroInputState extends State<HeroInput> {
 }
 
 // ---------------------------------------------------------------------------
+// HeroSegmented — iOS segmented control: pill track on gray5, white pill
+// cursor (light) / elevated pill (dark), springy cursor travel.
+// ---------------------------------------------------------------------------
+
+class HeroSegmented<T> extends StatelessWidget {
+  const HeroSegmented({
+    super.key,
+    required this.segments,
+    required this.selected,
+    required this.onChanged,
+    this.expand = false,
+  });
+
+  final List<(T, String, IconData?)> segments;
+  final T selected;
+  final ValueChanged<T> onChanged;
+  final bool expand;
+
+  @override
+  Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
+
+    Widget buildSegment(int i, bool bounded) {
+      final active = selected == segments[i].$1;
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => onChanged(segments[i].$1),
+        child: AnimatedContainer(
+          duration: heroAnimationsEnabled
+              ? HeroTokens.motionTransform
+              : Duration.zero,
+          curve: HeroTokens.springSoft,
+          padding:
+              const EdgeInsets.symmetric(horizontal: HeroTokens.space3, vertical: HeroTokens.space2),
+          decoration: BoxDecoration(
+            color: active
+                ? (h.isDark ? HeroTokens.darkSurface3 : h.surface)
+                : Colors.transparent,
+            border: active && h.isDark
+                ? Border.all(
+                    color: Colors.white.withValues(alpha: 0.10), width: 1)
+                : null,
+            borderRadius:
+                BorderRadius.circular(HeroTokens.radiusTabs - 3),
+            boxShadow: active && !h.isDark
+                ? [
+                    const BoxShadow(
+                      color: Color(0x1F000000),
+                      offset: Offset(0, 1),
+                      blurRadius: 4,
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (segments[i].$3 != null) ...[
+                Icon(
+                  segments[i].$3,
+                  size: 16,
+                  color: active ? h.foreground : h.muted,
+                ),
+                const SizedBox(width: 8),
+              ],
+              // In bounded (expand) mode the label ellipsizes instead of
+              // overflowing the segment cell.
+              bounded
+                  ? Flexible(
+                      child: Text(
+                        segments[i].$2,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: HeroTokens.fontSans,
+                          fontSize: 13,
+                          height: 1.2,
+                          fontWeight:
+                              active ? FontWeight.w600 : FontWeight.w500,
+                          color: active ? h.foreground : h.muted,
+                        ),
+                      ),
+                    )
+                  : Text(
+                      segments[i].$2,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: HeroTokens.fontSans,
+                        fontSize: 13,
+                        height: 1.2,
+                        fontWeight:
+                            active ? FontWeight.w600 : FontWeight.w500,
+                        color: active ? h.foreground : h.muted,
+                      ),
+                    ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final segmentsRow = Row(
+      mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
+      children: [
+        for (var i = 0; i < segments.length; i++) ...[
+          if (i > 0) const SizedBox(width: 2),
+          if (expand)
+            Expanded(child: buildSegment(i, true))
+          else
+            buildSegment(i, false),
+        ],
+      ],
+    );
+
+    // Unexpanded segmented controls sit at natural size and scale down
+    // gracefully when the host is narrower than the content (no overflow).
+    final body =
+        expand ? segmentsRow : FittedBox(fit: BoxFit.scaleDown, child: segmentsRow);
+
+    return Container(
+      padding: const EdgeInsets.all(HeroTokens.space1),
+      decoration: BoxDecoration(
+        color: h.dflt,
+        borderRadius: BorderRadius.circular(HeroTokens.radiusTabs),
+      ),
+      child: body,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // HeroSkeleton — shimmer sweep on the noir ladder
 // (disable via heroAnimationsEnabled)
 // ---------------------------------------------------------------------------
@@ -2436,4 +2569,241 @@ Future<bool> showHeroConfirm({
     ),
   );
   return result ?? false;
+}
+
+// ---------------------------------------------------------------------------
+// SPACING — the 8pt grid. Apple HIG: consistent multiples of 4/8 only;
+// screen content inset is ALWAYS 16 (symmetric — never the historical
+// 16/20 asymmetry). Section rhythm: 24 between blocks, 8-12 inside them.
+// ---------------------------------------------------------------------------
+
+abstract final class HeroSpacing {
+  static const double xs = 4;
+  static const double sm = 8;
+  static const double md = 12;
+  static const double lg = 16;
+  static const double xl = 20;
+  static const double xxl = 24;
+  static const double xxxl = 32;
+
+  /// The one true horizontal screen inset (symmetric).
+  static const EdgeInsets screen = EdgeInsets.symmetric(horizontal: lg);
+
+  /// Standard section padding: 16 horizontal, top from [top].
+  static EdgeInsets section({double top = lg, double bottom = 0}) =>
+      EdgeInsets.fromLTRB(lg, top, lg, bottom);
+}
+
+// ---------------------------------------------------------------------------
+// HERO EDGE FADE — Apple's soft edge treatment for horizontally scrolling
+// content: instead of hard-clipping cards at the screen edge, the last
+/// visible sliver DISSOLVES through a short gradient. The fade appears
+/// ONLY on the side where more content exists (leading fade fades in as
+/// soon as the row is scrolled; trailing fade hides at the very end) —
+/// exactly how iOS carousels behave at rest and mid-scroll.
+//
+// Usage: wrap the horizontal ListView (give it [controller]) — the widget
+// listens to the scroll position and drives two AnimatedOpacities.
+// ---------------------------------------------------------------------------
+
+class HeroEdgeFade extends StatefulWidget {
+  const HeroEdgeFade({
+    super.key,
+    required this.child,
+    this.controller,
+    this.width = 24,
+    this.axis = Axis.horizontal,
+  });
+
+  /// The scrollable child. Attach the SAME [controller] to the child's
+  /// ListView so the fade can track the offset.
+  final Widget child;
+  final ScrollController? controller;
+
+  /// Fade band width in logical px (Apple uses ~24-32 for image rails,
+  /// ~16 for control rows).
+  final double width;
+
+  /// Only horizontal fading is implemented (the only axis the app rails
+  /// on). Kept as a parameter for future vertical use.
+  final Axis axis;
+
+  @override
+  State<HeroEdgeFade> createState() => _HeroEdgeFadeState();
+}
+
+class _HeroEdgeFadeState extends State<HeroEdgeFade> {
+  double _lead = 0; // 0..1 opacity of the leading fade
+  double _trail = 1; // 0..1 opacity of the trailing fade
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller?.addListener(_update);
+    // Defer the first measurement until the child has laid out.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _update());
+  }
+
+  @override
+  void didUpdateWidget(HeroEdgeFade old) {
+    super.didUpdateWidget(old);
+    if (old.controller != widget.controller) {
+      old.controller?.removeListener(_update);
+      widget.controller?.addListener(_update);
+      _update();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller?.removeListener(_update);
+    super.dispose();
+  }
+
+  void _update() {
+    final c = widget.controller;
+    if (c == null || !c.hasClients) return;
+    final pos = c.position;
+    final max = pos.maxScrollExtent;
+    final lead = max <= 0 ? 0.0 : (pos.pixels / 48).clamp(0.0, 1.0);
+    final trail =
+        max <= 0 ? 0.0 : ((max - pos.pixels) / 48).clamp(0.0, 1.0);
+    if (lead != _lead || trail != _trail) {
+      setState(() {
+        _lead = lead;
+        _trail = trail;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
+    // The fade bands sample the CANVAS color — content under them melts
+    // into the page background (Apple's effect is a scrim, not a mask).
+    final bandColor = h.background;
+    final w = widget.width;
+
+    return Stack(
+      children: [
+        widget.child,
+        // Leading fade (left).
+        Positioned.fill(
+          child: IgnorePointer(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: AnimatedOpacity(
+                opacity: _lead,
+                duration: heroAnimationsEnabled
+                    ? const Duration(milliseconds: 180)
+                    : Duration.zero,
+                curve: Curves.easeOut,
+                child: Container(
+                  width: w,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [bandColor, bandColor.withValues(alpha: 0)],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        // Trailing fade (right).
+        Positioned.fill(
+          child: IgnorePointer(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: AnimatedOpacity(
+                opacity: _trail,
+                duration: heroAnimationsEnabled
+                    ? const Duration(milliseconds: 180)
+                    : Duration.zero,
+                curve: Curves.easeOut,
+                child: Container(
+                  width: w,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerRight,
+                      end: Alignment.centerLeft,
+                      colors: [bandColor, bandColor.withValues(alpha: 0)],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// HERO FADED RAIL — a horizontal ListView with the soft edge fades built
+// in (owns its ScrollController). The one-liner replacement for every
+// poster/chip rail in the app so no row ever hard-clips at the screen
+// edge again.
+// ---------------------------------------------------------------------------
+
+class HeroFadedRail extends StatefulWidget {
+  const HeroFadedRail({
+    super.key,
+    required this.height,
+    required this.itemCount,
+    required this.itemBuilder,
+    this.separatorBuilder,
+    this.padding = const EdgeInsets.symmetric(horizontal: HeroSpacing.lg),
+    this.fadeWidth = 24,
+  });
+
+  final double height;
+  final int itemCount;
+  final IndexedWidgetBuilder itemBuilder;
+  final IndexedWidgetBuilder? separatorBuilder;
+  final EdgeInsets padding;
+  final double fadeWidth;
+
+  @override
+  State<HeroFadedRail> createState() => _HeroFadedRailState();
+}
+
+class _HeroFadedRailState extends State<HeroFadedRail> {
+  final _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: widget.height,
+      child: HeroEdgeFade(
+        controller: _controller,
+        width: widget.fadeWidth,
+        child: widget.separatorBuilder == null
+            ? ListView.builder(
+                controller: _controller,
+                scrollDirection: Axis.horizontal,
+                padding: widget.padding,
+                itemCount: widget.itemCount,
+                itemBuilder: widget.itemBuilder,
+              )
+            : ListView.separated(
+                controller: _controller,
+                scrollDirection: Axis.horizontal,
+                padding: widget.padding,
+                itemCount: widget.itemCount,
+                separatorBuilder: widget.separatorBuilder!,
+                itemBuilder: widget.itemBuilder,
+              ),
+      ),
+    );
+  }
 }

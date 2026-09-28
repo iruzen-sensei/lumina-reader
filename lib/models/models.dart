@@ -374,6 +374,7 @@ class Note {
     required this.createdAt,
     required this.color,
     this.chapterId,
+    this.chapterName,
     this.page = 0,
     this.tags = const [],
   });
@@ -386,6 +387,10 @@ class Note {
   final DateTime createdAt;
   NoteColor color;
   final int? chapterId;
+
+  /// Human chapter label (e.g. "Chapter 12" / "Episode 3") — the raw
+  /// [chapterId] is an Isar row id and must never be shown to users.
+  final String? chapterName;
   final int page;
   final List<String> tags;
 }

@@ -17,8 +17,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/ui/lumina_ui.dart';
-import '../../core/ui/watermelon.dart';
 import 'package:lumina_reader/core/ui/hero_motion.dart';
+import '../../core/ui/watermelon.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../shared/widgets.dart';
@@ -26,10 +26,15 @@ import '../shared/widgets.dart';
 /// The notes screen.
 ///
 /// Displays user highlights and thoughts as cards with a color-coded left
-/// border (7 semantic colours: yellow / green / blue / pink / purple /
-/// orange / red). Tabs switch between All / Highlights / Thoughts; a search
-/// field and a per-book filter strip narrow the list further. Each card
-/// exposes copy, edit and delete actions.
+/// border (7 semantic colours). Tabs switch between All / Highlights /
+/// Thoughts; a search field and a per-book filter strip narrow the list
+/// further.
+///
+/// The "create note" button is a watermelon.sh Expand Details: a compact
+/// band under the header that springs open into the inline composer
+/// (type, text, colour, save) — the old FAB + modal bottom sheet is gone
+/// (one component, one place). Per-card actions fan out from a
+/// watermelon.sh Split Actions trigger instead of a three-chip row.
 class NotesScreen extends ConsumerStatefulWidget {
   const NotesScreen({super.key});
 
@@ -39,21 +44,17 @@ class NotesScreen extends ConsumerStatefulWidget {
 
 class _NotesScreenState extends ConsumerState<NotesScreen> {
   final _searchController = TextEditingController();
+  final _scrollController = ScrollController();
+  final _composerKey = GlobalKey();
 
-  @override
-  void initState() {
-    super.initState();
-    // Live filtering companion to the predictive search input.
-    _searchController.addListener(_onSearchChanged);
-  }
-
-  void _onSearchChanged() =>
-      ref.read(notesSearchProvider.notifier).state = _searchController.text;
+  /// Bumping this regenerates the composer with initiallyOpen — the
+  /// external "open the composer" trigger (empty-state button).
+  int _composerGeneration = 0;
 
   @override
   void dispose() {
-    _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -65,11 +66,13 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
 
     return Scaffold(
       body: SafeArea(
+        bottom: false,
         child: CustomScrollView(
+          controller: _scrollController,
           slivers: [
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 20, 8),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                 child: Row(
                   children: [
                     Text(
@@ -90,19 +93,26 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                // watermelon.sh Predictive Text — completions from note
-                // tags + titles; live filtering via the controller listener.
-                child: WmPredictiveInput(
+                child: HeroInput(
                   controller: _searchController,
                   hint: 'Search notes…',
-                  dictionary: [
-                    for (final n in ref.watch(notesProvider).take(100)) ...[
-                      ...n.tags,
-                      if (n.mangaTitle.isNotEmpty) n.mangaTitle,
-                    ],
-                  ],
-                  onSubmitted: (v) =>
+                  prefixIcon: Icons.search_rounded,
+                  onChanged: (v) =>
                       ref.read(notesSearchProvider.notifier).state = v,
+                ),
+              ),
+            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 12)),
+            // ---- Create note: watermelon.sh Expand Details band ----
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: KeyedSubtree(
+                  key: ValueKey('composer-$_composerGeneration'),
+                  child: _NoteComposer(
+                    key: _composerKey,
+                    initiallyOpen: _composerGeneration > 0,
+                  ),
                 ),
               ),
             ),
@@ -124,7 +134,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                           label: 'New note',
                           icon: Icons.note_add_rounded,
                           variant: HeroButtonVariant.soft,
-                          onPressed: () => _showCreateSheet(context),
+                          onPressed: _openComposer,
                         ),
                       ),
                     )
@@ -137,29 +147,125 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showCreateSheet(context),
-        icon: const Icon(Icons.note_add),
-        label: const Text('New note'),
+    );
+  }
+
+  /// Opens (and scrolls to) the inline composer — used by the empty state.
+  void _openComposer() {
+    setState(() => _composerGeneration++);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _composerKey.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(ctx,
+            duration: const Duration(milliseconds: 320),
+            curve: Curves.easeOutCubic);
+      }
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Composer — watermelon.sh Expand Details. Collapsed: a compact
+// "New note" band. Expanded: the full editor springs open in place.
+// ---------------------------------------------------------------------------
+
+class _NoteComposer extends ConsumerStatefulWidget {
+  const _NoteComposer({super.key, this.initiallyOpen = false});
+
+  final bool initiallyOpen;
+
+  @override
+  ConsumerState<_NoteComposer> createState() => _NoteComposerState();
+}
+
+class _NoteComposerState extends ConsumerState<_NoteComposer> {
+  final _controller = TextEditingController();
+  NoteType _type = NoteType.thought;
+  NoteColor _color = NoteColor.purple;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
+    return HeroCard(
+      padding: EdgeInsets.zero,
+      child: WmExpandDetails(
+        title: 'New note',
+        initiallyOpen: widget.initiallyOpen,
+        collapsed: Text(
+          'Jot down a thought or save a highlight…',
+          style: HeroTokens.bodySmall.copyWith(color: h.muted),
+        ),
+        expanded: Padding(
+          padding: const EdgeInsets.only(left: 28),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              HeroSegmented<NoteType>(
+                segments: const [
+                  (NoteType.thought, 'Thought', Icons.lightbulb_outline_rounded),
+                  (NoteType.highlight, 'Highlight', Icons.highlight_rounded),
+                ],
+                selected: _type,
+                onChanged: (t) => setState(() => _type = t),
+              ),
+              const SizedBox(height: 12),
+              HeroInput(
+                controller: _controller,
+                hint: 'Write your note…',
+                maxLines: 4,
+                autofocus: widget.initiallyOpen,
+              ),
+              const SizedBox(height: 12),
+              Text('Color', style: HeroTokens.caption.copyWith(color: h.muted)),
+              const SizedBox(height: 8),
+              _ColorPicker(
+                color: _color,
+                onPick: (c) => setState(() => _color = c),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  HeroButton(
+                    label: 'Save note',
+                    icon: Icons.check_rounded,
+                    onPressed: _save,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  void _showCreateSheet(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      // Landscape + IME: the note editor's natural height (~330dp) exceeds
-      // the visible area with the keyboard up in landscape (~180dp) —
-      // capped + scrollable instead of clipped.
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.sizeOf(context).height * 0.85,
-      ),
-      builder: (context) => const SingleChildScrollView(
-        child: _CreateNoteSheet(),
-      ),
-    );
+  Future<void> _save() async {
+    final text = _controller.text.trim();
+    if (text.isEmpty) {
+      showSnack(ref, context, 'Write something first');
+      return;
+    }
+    _controller.clear();
+    // REAL persistence — general note (mangaId 0). The notifier's Isar
+    // watch refreshes the list automatically.
+    try {
+      await ref.read(notesProvider.notifier).add(
+            mangaId: 0,
+            text: text,
+            type: _type,
+            color: _color,
+          );
+      if (mounted) showSnack(ref, context, 'Note saved');
+    } catch (e) {
+      if (mounted) showSnack(ref, context, 'Could not save note');
+    }
   }
 }
 
@@ -169,28 +275,15 @@ class _FilterTabs extends ConsumerWidget {
     final filter = ref.watch(notesFilterProvider);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        // watermelon.sh Quick Option Picker — the notes filter.
-        child: WmQuickOptionPicker<NotesFilter>(
-          trayAbove: false,
-          value: filter,
-          options: const [
-            WmPickerOption(
-                value: NotesFilter.all,
-                label: 'All',
-                icon: Icons.list_rounded),
-            WmPickerOption(
-                value: NotesFilter.highlights,
-                label: 'Highlights',
-                icon: Icons.highlight_rounded),
-            WmPickerOption(
-                value: NotesFilter.thoughts,
-                label: 'Thoughts',
-                icon: Icons.lightbulb_outline_rounded),
-          ],
-          onChanged: (f) => ref.read(notesFilterProvider.notifier).state = f,
-        ),
+      child: HeroSegmented<NotesFilter>(
+        expand: true,
+        segments: const [
+          (NotesFilter.all, 'All', Icons.list_rounded),
+          (NotesFilter.highlights, 'Highlights', Icons.highlight_rounded),
+          (NotesFilter.thoughts, 'Thoughts', Icons.lightbulb_outline_rounded),
+        ],
+        selected: filter,
+        onChanged: (f) => ref.read(notesFilterProvider.notifier).state = f,
       ),
     );
   }
@@ -205,26 +298,30 @@ class _BookFilterRow extends ConsumerWidget {
     if (bookIds.isEmpty) return const SizedBox.shrink();
     final allNotes = ref.watch(notesProvider);
     final selectedBook = ref.watch(notesBookFilterProvider);
-    String titleFor(int id) =>
-        allNotes.firstWhere((n) => n.mangaId == id).mangaTitle;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        // watermelon.sh Quick Option Picker — the book filter (replaces
-        // the horizontal custom-chip row).
-        child: WmQuickOptionPicker<int?>(
-          trayAbove: false,
-          value: selectedBook,
-          options: [
-            const WmPickerOption(
-                value: null, label: 'All books', icon: Icons.library_books_rounded),
-            for (final id in bookIds)
-              WmPickerOption(value: id, label: titleFor(id)),
-          ],
-          onChanged: (id) =>
-              ref.read(notesBookFilterProvider.notifier).state = id,
-        ),
+    return SizedBox(
+      height: 44,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        itemCount: bookIds.length + 1,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, i) {
+          if (i == 0) {
+            return StatusChip(
+              label: 'All books',
+              selected: selectedBook == null,
+              onTap: () =>
+                  ref.read(notesBookFilterProvider.notifier).state = null,
+            );
+          }
+          final id = bookIds[i - 1];
+          final title = allNotes.firstWhere((n) => n.mangaId == id).mangaTitle;
+          return StatusChip(
+            label: title,
+            selected: selectedBook == id,
+            onTap: () => ref.read(notesBookFilterProvider.notifier).state = id,
+          );
+        },
       ),
     );
   }
@@ -305,9 +402,54 @@ class _NoteCard extends ConsumerWidget {
                                     ],
                                   ),
                                 ),
+                                const Spacer(),
+                                // Card actions — watermelon.sh Split
+                                // Actions: one compact trigger fans out
+                                // Copy / Edit / Delete (the old three-chip
+                                // row dominated the card).
+                                WmSplitActions(
+                                  triggerIcon: Icons.more_horiz_rounded,
+                                  actions: [
+                                    WmSplitAction(
+                                      icon: Icons.copy_outlined,
+                                      label: 'Copy',
+                                      onTap: () async {
+                                        await Clipboard.setData(
+                                            ClipboardData(
+                                                text: note.content));
+                                        if (context.mounted) {
+                                          showSnack(
+                                              ref, context, 'Note copied');
+                                        }
+                                      },
+                                    ),
+                                    WmSplitAction(
+                                      icon: Icons.edit_outlined,
+                                      label: 'Edit',
+                                      onTap: () =>
+                                          _showEditSheet(context, ref),
+                                    ),
+                                    WmSplitAction(
+                                      icon: Icons.delete_outline,
+                                      label: 'Delete',
+                                      onTap: () async {
+                                        if (await _confirmDelete(context) &&
+                                            context.mounted) {
+                                          await ref
+                                              .read(notesProvider.notifier)
+                                              .delete(note.id);
+                                          if (context.mounted) {
+                                            showSnack(
+                                                ref, context, 'Note deleted');
+                                          }
+                                        }
+                                      },
+                                    ),
+                                  ],
+                                ),
                               ],
                             ),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 10),
                             Text(
                               note.content,
                               maxLines: 3,
@@ -317,7 +459,7 @@ class _NoteCard extends ConsumerWidget {
                                 height: 1.5,
                               ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 6),
                             Text(
                               _metaLine(),
                               maxLines: 1,
@@ -326,7 +468,7 @@ class _NoteCard extends ConsumerWidget {
                                   HeroTokens.caption.copyWith(color: h.muted),
                             ),
                             if (note.tags.isNotEmpty) ...[
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 10),
                               Wrap(
                                 spacing: 6,
                                 runSpacing: 6,
@@ -340,52 +482,6 @@ class _NoteCard extends ConsumerWidget {
                                 ],
                               ),
                             ],
-                            const SizedBox(height: 12),
-                            // watermelon.sh Split Actions — one trigger fans
-                            // out Copy / Edit / Delete (replaces the custom
-                            // three-chip action row).
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: WmSplitActions(
-                                triggerIcon: Icons.more_horiz_rounded,
-                                actions: [
-                                  WmSplitAction(
-                                    icon: Icons.copy_outlined,
-                                    label: 'Copy',
-                                    onTap: () async {
-                                      await Clipboard.setData(
-                                          ClipboardData(text: note.content));
-                                      if (context.mounted) {
-                                        showSnack(ref, context, 'Note copied');
-                                      }
-                                    },
-                                  ),
-                                  WmSplitAction(
-                                    icon: Icons.edit_outlined,
-                                    label: 'Edit',
-                                    onTap: () => _showEditSheet(context, ref),
-                                  ),
-                                  WmSplitAction(
-                                    icon: Icons.delete_outline,
-                                    label: 'Delete',
-                                    onTap: () async {
-                                      if (await _confirmDelete(context) &&
-                                          context.mounted) {
-                                        // REAL deletion — the notifier watches
-                                        // the Isar collection so the list updates.
-                                        await ref
-                                            .read(notesProvider.notifier)
-                                            .delete(note.id);
-                                        if (context.mounted) {
-                                          showSnack(
-                                              ref, context, 'Note deleted');
-                                        }
-                                      }
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ),
                           ],
                         ),
                       ),
@@ -401,10 +497,12 @@ class _NoteCard extends ConsumerWidget {
   }
 
   /// One muted caption line: manga · chapter · page · time ago.
+  /// Chapter shows the human chapter/episode NAME when present — the raw
+  /// chapterId is a database row id and was rendered as "Chapter 8234234".
   String _metaLine() {
     final parts = <String>[
       if (note.mangaTitle.isNotEmpty) note.mangaTitle,
-      if (note.chapterId != null) 'Chapter ${note.chapterId}',
+      if ((note.chapterName ?? '').trim().isNotEmpty) note.chapterName!,
       if (note.page > 0) 'Page ${note.page + 1}',
       timeAgo(note.createdAt),
     ];
@@ -417,7 +515,6 @@ class _NoteCard extends ConsumerWidget {
       title: 'Delete note?',
       message: 'This note will be permanently removed.',
       confirmLabel: 'Delete',
-      
     );
     return result;
   }
@@ -439,111 +536,6 @@ class _NoteCard extends ConsumerWidget {
   Color _darken(Color c) {
     final hsl = HSLColor.fromColor(c);
     return hsl.withLightness((hsl.lightness - 0.35).clamp(0.0, 1.0)).toColor();
-  }
-}
-
-class _CreateNoteSheet extends ConsumerStatefulWidget {
-  const _CreateNoteSheet();
-
-  @override
-  ConsumerState<_CreateNoteSheet> createState() => _CreateNoteSheetState();
-}
-
-class _CreateNoteSheetState extends ConsumerState<_CreateNoteSheet> {
-  final _controller = TextEditingController();
-  NoteType _type = NoteType.thought;
-  NoteColor _color = NoteColor.purple;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final h = HeroScope.of(context);
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-          20, 0, 20, MediaQuery.of(context).viewInsets.bottom + 20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('New note',
-              style: HeroTokens.title.copyWith(color: h.foreground)),
-          const SizedBox(height: 12),
-          // watermelon.sh Quick Option Picker — the note type chooser.
-          WmQuickOptionPicker<NoteType>(
-            trayAbove: false,
-            value: _type,
-            options: const [
-              WmPickerOption(
-                  value: NoteType.thought,
-                  label: 'Thought',
-                  icon: Icons.lightbulb_outline_rounded),
-              WmPickerOption(
-                  value: NoteType.highlight,
-                  label: 'Highlight',
-                  icon: Icons.highlight_rounded),
-            ],
-            onChanged: (t) => setState(() => _type = t),
-          ),
-          const SizedBox(height: 12),
-          HeroInput(
-            controller: _controller,
-            hint: 'Write your note…',
-            maxLines: 4,
-            autofocus: true,
-          ),
-          const SizedBox(height: 12),
-          Text('Color', style: HeroTokens.caption.copyWith(color: h.muted)),
-          const SizedBox(height: 8),
-          _ColorPicker(
-            color: _color,
-            onPick: (c) => setState(() => _color = c),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              HeroButton(
-                label: 'Cancel',
-                variant: HeroButtonVariant.light,
-                color: HeroColorRole.neutral,
-                onPressed: () => Navigator.pop(context),
-              ),
-              const SizedBox(width: 12),
-              HeroButton(
-                label: 'Save',
-                onPressed: () async {
-                  final text = _controller.text.trim();
-                  if (text.isEmpty) return;
-                  Navigator.pop(context);
-                  // REAL persistence — general note (mangaId 0). The
-                  // notifier's Isar watch refreshes the list automatically.
-                  try {
-                    await ref.read(notesProvider.notifier).add(
-                          mangaId: 0,
-                          text: text,
-                          type: _type,
-                          color: _color,
-                        );
-                    if (context.mounted) {
-                      showSnack(ref, context, 'Note saved');
-                    }
-                  } catch (e) {
-                    if (context.mounted) {
-                      showSnack(ref, context, 'Could not save note');
-                    }
-                  }
-                },
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
   }
 }
 

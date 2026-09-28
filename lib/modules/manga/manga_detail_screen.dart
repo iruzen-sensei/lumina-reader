@@ -688,7 +688,7 @@ class _ActionBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 20, 0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -699,31 +699,32 @@ class _ActionBlock extends StatelessWidget {
             size: HeroButtonSize.md,
             onPressed: onContinue,
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: HeroButton(
-                    label: inLibrary ? 'In Library' : 'Add to Library',
-                    icon: inLibrary
-                        ? Icons.bookmark_rounded
-                        : Icons.bookmark_border_rounded,
-                    variant: HeroButtonVariant.soft,
-                    size: HeroButtonSize.md,
-                    onPressed: onToggleLibrary,
+          const SizedBox(height: 12),
+          // Secondary row — BOTH actions exactly 44px tall, baseline
+          // aligned (the old mixed 34px/38px row read as broken).
+          SizedBox(
+            height: 44,
+            child: Row(
+              children: [
+                Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: HeroButton(
+                      label: inLibrary ? 'In Library' : 'Add to Library',
+                      icon: inLibrary
+                          ? Icons.bookmark_rounded
+                          : Icons.bookmark_border_rounded,
+                      variant: HeroButtonVariant.soft,
+                      size: HeroButtonSize.md,
+                      onPressed: onToggleLibrary,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              // Track — watermelon.sh Split Actions: the trigger fans out
-              // the tracker chips (MAL / AniList / MangaUpdates) which
-              // slide in centered around it with a spring cascade. The
-              // SizedBox keeps the 38px circle aligned with the 34px pill.
-              SizedBox(
-                height: 34,
-                child: Center(
+                const SizedBox(width: 12),
+                // Track — watermelon.sh Split Actions: the trigger fans out
+                // the tracker chips (MAL / AniList / MangaUpdates) which
+                // slide in centered around it with a spring cascade.
+                Center(
                   child: WmSplitActions(
                     triggerIcon: Icons.insights_outlined,
                     actions: [
@@ -745,26 +746,10 @@ class _ActionBlock extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           // Status Picker — the app's first READING-STATUS SETTER (there
           // was no way to mark something Reading / Finished / Plan before).
-          Row(
-            children: [
-              Text(
-                'STATUS',
-                style: TextStyle(
-                  fontFamily: HeroTokens.fontSans,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.9,
-                  color: h.muted,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(child: SizedBox.shrink()),
-            ],
-          ),
-          const SizedBox(height: 8),
+          // The pill is self-explanatory ("Reading ▾") — no caption label.
           WmStatusPicker(
             value: statusValue,
             onChanged: onStatusChanged,
@@ -815,7 +800,7 @@ class _SynopsisCard extends StatelessWidget {
     if (clean.isEmpty) return const SizedBox.shrink();
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 20, 0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: WmExpandDetails(
         title: 'Synopsis',
         collapsed: Text(
@@ -852,7 +837,7 @@ class _GenreChips extends StatelessWidget {
         .toList(growable: false);
     if (visible.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 20, 0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: Wrap(
         spacing: 8,
         runSpacing: 8,
@@ -895,7 +880,7 @@ class _MetaChips extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 20, 0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: Wrap(
         spacing: 8,
         runSpacing: 8,

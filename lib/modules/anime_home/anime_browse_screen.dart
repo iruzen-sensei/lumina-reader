@@ -1,10 +1,17 @@
 // Copyright 2024 Lumina Reader Contributors
 // Licensed under the Apache License, Version 2.0
 //
-// ANIME BROWSE — the Netflix-style catalog explorer. ALL filtering lives
-// in ONE surface: the Quick Option Picker filter bar (genre / season /
-// format / status / sort) under the app bar. The old tune-icon filter
-// sheet (a second, duplicated chip-wall) was removed.
+// ANIME BROWSE — the Netflix-style catalog explorer.
+//
+// ONE filter surface: the Quick Option Picker rail (Genre / Season /
+// Format / Status / Sort — tap a pill, pick from the tray that pops
+// above). The old tune-icon FilterSheet duplicated every one of these
+// controls as a second chip wall — removed wholesale.
+//
+// Search lives in the Morphing Discovery Bar (watermelon.sh) in the
+// header: tap the pill, it morphs full-width, predictive chips complete
+// genre/term words, enter applies the search as a filter (shown as a
+// dismissible chip in the rail).
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,7 +20,8 @@ import '../../core/ui/lumina_ui.dart';
 import '../../core/ui/watermelon.dart';
 import '../../providers/providers.dart';
 import '../../services/anilist.dart';
-import '../anime_home/anime_home_screen.dart' show openAniListEntry;
+import '../anime_home/anime_home_screen.dart'
+    show openAniListEntry, kNetflixRed;
 
 /// Filter state for the browse screen.
 class AnimeBrowseFilters {
@@ -205,84 +213,127 @@ class _AnimeBrowseScreenState extends ConsumerState<AnimeBrowseScreen> {
     final results = ref.watch(animeBrowseProvider(_filters));
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          _title(),
-          style: HeroTokens.title.copyWith(color: h.foreground),
-        ),
-      ),
-      body: Column(
-        children: [
-          _FilterBar(filters: _filters, onChanged: _setFilters),
-          Expanded(
-            child: results.when(
-              data: (items) => items.isEmpty
-                  ? Center(
-                      child: Text(
-                        'Nothing matches these filters.',
-                        style:
-                            HeroTokens.bodySmall.copyWith(color: h.muted),
-                      ),
-                    )
-                  : NotificationListener<ScrollNotification>(
-                      onNotification: (n) {
-                        if (n.metrics.pixels >
-                            n.metrics.maxScrollExtent - 600) {
-                          ref
-                              .read(animeBrowseProvider(_filters).notifier)
-                              .loadMore();
-                        }
-                        return false;
-                      },
-                      child: GridView.builder(
-                        padding: const EdgeInsets.fromLTRB(
-                            16, 12, 16, kBottomNavigationBarHeight + 24),
-                        gridDelegate:
-                            const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 130,
-                          childAspectRatio: 0.58,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 16,
-                        ),
-                        itemCount: items.length,
-                        itemBuilder: (context, i) => _BrowseCard(
-                            anime: items[i],
-                            showScore: _filters.sort == 'SCORE_DESC'),
-                      ),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ---- Header: back + the Morphing Discovery Bar (search) ----
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 6, 16, 4),
+              child: Row(
+                children: [
+                  HeroIconButton(
+                    tooltip: 'Back',
+                    icon: Icons.arrow_back_rounded,
+                    onPressed: () => Navigator.of(context).maybePop(),
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: WmDiscoveryBar(
+                      accent: kNetflixRed,
+                      searchHint: 'Search anime…',
+                      categories: const [],
+                      suggestionDictionary: [
+                        ...AniListService.genres.map((g) => g.toLowerCase()),
+                        ...const [
+                          'adventure', 'action', 'comedy', 'romance',
+                          'isekai', 'school', 'shounen', 'shoujo', 'seinen',
+                          'slice', 'supernatural', 'sports', 'mecha', 'music',
+                          'mystery',
+                        ],
+                      ],
+                      onSearch: (q) => _setFilters(
+                          _filters.copyWith(search: q, clearSearch: false)),
                     ),
-              loading: () => GridView.builder(
-                padding: const EdgeInsets.all(16),
-                gridDelegate:
-                    const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 130,
-                  childAspectRatio: 0.58,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 16,
-                ),
-                itemCount: 12,
-                itemBuilder: (_, __) =>
-                    const HeroSkeleton(height: 220),
+                  ),
+                ],
               ),
-              error: (e, _) => Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('AniList is unreachable.',
-                        style: HeroTokens.body
-                            .copyWith(color: h.foreground)),
-                    const SizedBox(height: 8),
-                    HeroButton(
-                      label: 'Retry',
-                      icon: Icons.refresh_rounded,
-                      onPressed: () =>
-                          setState(() => _filters = _filters.copyWith()),
-                    ),
-                  ],
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+              child: Text(
+                _title(),
+                style: HeroTokens.title.copyWith(
+                  color: h.foreground,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            // ---- THE filter surface: Quick Option Picker rail ----
+            _FilterRail(filters: _filters, onChanged: _setFilters),
+            const SizedBox(height: 4),
+            Expanded(
+              child: results.when(
+                data: (items) => items.isEmpty
+                    ? Center(
+                        child: Text(
+                          'Nothing matches these filters.',
+                          style: HeroTokens.bodySmall
+                              .copyWith(color: h.muted),
+                        ),
+                      )
+                    : NotificationListener<ScrollNotification>(
+                        onNotification: (n) {
+                          if (n.metrics.pixels >
+                              n.metrics.maxScrollExtent - 600) {
+                            ref
+                                .read(animeBrowseProvider(_filters).notifier)
+                                .loadMore();
+                          }
+                          return false;
+                        },
+                        child: GridView.builder(
+                          padding: const EdgeInsets.fromLTRB(
+                              16, 12, 16, kBottomNavigationBarHeight + 24),
+                          gridDelegate:
+                              const SliverGridDelegateWithMaxCrossAxisExtent(
+                            maxCrossAxisExtent: 130,
+                            childAspectRatio: 0.58,
+                            crossAxisSpacing: 10,
+                            mainAxisSpacing: 16,
+                          ),
+                          itemCount: items.length,
+                          itemBuilder: (context, i) => _BrowseCard(
+                              anime: items[i],
+                              showScore: _filters.sort == 'SCORE_DESC'),
+                        ),
+                      ),
+                loading: () => GridView.builder(
+                  padding: const EdgeInsets.all(16),
+                  gridDelegate:
+                      const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 130,
+                    childAspectRatio: 0.58,
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 16,
+                  ),
+                  itemCount: 12,
+                  itemBuilder: (_, __) =>
+                      const HeroSkeleton(height: 220),
+                ),
+                error: (e, _) => Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('AniList is unreachable.',
+                          style: HeroTokens.body
+                              .copyWith(color: h.foreground)),
+                      const SizedBox(height: 8),
+                      HeroButton(
+                        label: 'Retry',
+                        icon: Icons.refresh_rounded,
+                        onPressed: () =>
+                            setState(() => _filters = _filters.copyWith()),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -298,20 +349,23 @@ class _AnimeBrowseScreenState extends ConsumerState<AnimeBrowseScreen> {
 }
 
 // ---------------------------------------------------------------------------
-// Quick filter bar — watermelon.sh Quick Option Pickers: compact pills
+// Filter rail — watermelon.sh Quick Option Pickers: compact pills
 // (Genre / Season / Format / Status / Sort) that pop a tray of options
-// above with a 3D bottom-origin tilt. The ONLY filter surface on this
-// screen (the old tune-icon chip-wall sheet was a duplicate — removed).
+// above with a 3D bottom-origin tilt. ONE filter surface — the old
+// tune-icon FilterSheet duplicated all of this and is gone.
+//
+// An active search shows as a dismissible chip at the head of the rail.
 // ---------------------------------------------------------------------------
 
-class _FilterBar extends StatelessWidget {
-  const _FilterBar({required this.filters, required this.onChanged});
+class _FilterRail extends StatelessWidget {
+  const _FilterRail({required this.filters, required this.onChanged});
 
   final AnimeBrowseFilters filters;
   final ValueChanged<AnimeBrowseFilters> onChanged;
 
   @override
   Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
     final now = DateTime.now();
     final seasonOptions = <WmPickerOption<(String, int)>>[
       WmPickerOption(
@@ -338,6 +392,16 @@ class _FilterBar extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         children: [
+          // Active search — dismissible chip (the only search UI here).
+          if (filters.search?.isNotEmpty == true) ...[
+            _ActiveFilterChip(
+              label: filters.search!,
+              icon: Icons.search_rounded,
+              onClear: () =>
+                  onChanged(filters.copyWith(clearSearch: true)),
+            ),
+            const SizedBox(width: 8),
+          ],
           WmQuickOptionPicker<String>(
             hint: 'Genre',
             trayAbove: false,
@@ -369,16 +433,12 @@ class _FilterBar extends StatelessWidget {
             trayAbove: false,
             value: filters.format ?? '',
             options: [
-              const WmPickerOption(
-                  value: '',
-                  label: 'Any format',
-                  icon: Icons.apps_rounded),
+              const WmPickerOption(value: '', label: 'Any format', icon: Icons.category_rounded),
               for (final e in AniListService.formatOptions.entries)
                 WmPickerOption(value: e.value, label: e.key),
             ],
-            onChanged: (v) => onChanged(v.isEmpty
-                ? filters.copyWith(clearFormat: true)
-                : filters.copyWith(format: v)),
+            onChanged: (v) => onChanged(
+                v.isEmpty ? filters.copyWith(clearFormat: true) : filters.copyWith(format: v)),
           ),
           const SizedBox(width: 8),
           WmQuickOptionPicker<String>(
@@ -386,16 +446,12 @@ class _FilterBar extends StatelessWidget {
             trayAbove: false,
             value: filters.status ?? '',
             options: [
-              const WmPickerOption(
-                  value: '',
-                  label: 'Any status',
-                  icon: Icons.public_rounded),
+              const WmPickerOption(value: '', label: 'Any status', icon: Icons.flag_rounded),
               for (final e in AniListService.statusOptions.entries)
                 WmPickerOption(value: e.value, label: e.key),
             ],
-            onChanged: (v) => onChanged(v.isEmpty
-                ? filters.copyWith(clearStatus: true)
-                : filters.copyWith(status: v)),
+            onChanged: (v) => onChanged(
+                v.isEmpty ? filters.copyWith(clearStatus: true) : filters.copyWith(status: v)),
           ),
           const SizedBox(width: 8),
           WmQuickOptionPicker<String>(
@@ -415,7 +471,58 @@ class _FilterBar extends StatelessWidget {
             ],
             onChanged: (v) => onChanged(filters.copyWith(sort: v)),
           ),
+          const SizedBox(width: 8),
         ],
+      ),
+    );
+  }
+}
+
+/// A filter value currently applied — tap the ✕ to clear it.
+class _ActiveFilterChip extends StatelessWidget {
+  const _ActiveFilterChip({
+    required this.label,
+    required this.icon,
+    required this.onClear,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
+    return GestureDetector(
+      onTap: onClear,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: kNetflixRed.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(HeroTokens.radiusChip),
+          border: Border.all(color: kNetflixRed.withValues(alpha: 0.6), width: 1.2),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: kNetflixRed),
+            const SizedBox(width: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 90),
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: HeroTokens.caption.copyWith(
+                  color: h.foreground,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.close_rounded, size: 13, color: h.muted),
+          ],
+        ),
       ),
     );
   }
