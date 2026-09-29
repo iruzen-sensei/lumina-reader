@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
@@ -742,7 +743,6 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
             // buttons always win the gesture arena.
             if (_controlsVisible && !_inPip)
               ..._buildOverlay(),
-            if (_locked && !_inPip) _buildLockBadge(),
           ],
         ),
       ),
@@ -755,23 +755,6 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     _scheduleHide();
   }
 
-  Widget _buildLockBadge() {
-    return Positioned(
-      top: MediaQuery.of(context).padding.top + 12,
-      right: 16,
-      child: _PlayerIconButton(
-        icon: Icons.lock_rounded,
-        onTap: () {
-          setState(() {
-            _locked = false;
-            _controlsVisible = true;
-          });
-          _scheduleHide();
-        },
-      ),
-    );
-  }
-
   List<Widget> _buildOverlay() {
     if (_locked) {
       // While locked: only the top bar title + the unlock button.
@@ -781,6 +764,11 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
           subtitle: _episode?.name ?? '',
           onBack: () => Navigator.maybePop(context),
           locked: true,
+          onPip: _enterPip,
+          onLock: () => setState(() {
+            _locked = true;
+            _controlsVisible = false;
+          }),
           onUnlock: () => setState(() {
             _locked = false;
             _controlsVisible = true;
@@ -793,6 +781,11 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
         title: _manga?.title ?? '',
         subtitle: _episode?.name ?? '',
         onBack: () => Navigator.maybePop(context),
+        onPip: _enterPip,
+        onLock: () => setState(() {
+          _locked = true;
+          _controlsVisible = false;
+        }),
       ),
       // Netflix center cluster: rewind-10 | play/pause | forward-10.
       Center(
@@ -805,6 +798,31 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
               _seekTo(_position + const Duration(seconds: 10)),
         ),
       ),
+      // Floating manual skip pills (Netflix "Skip Intro" grammar): shown
+      // ABOVE the bottom bar only when AniSkip knows OP/ED ranges for this
+      // episode and the playhead is NOT already inside one (inside a
+      // range the big skip button takes over).
+      if (_manualSkipVisible) ...[
+        Positioned(
+          right: 16,
+          bottom: _skipPillsBottom(),
+          child: _SkipPill(
+            label: 'Skip Intro',
+            icon: Icons.fast_forward_rounded,
+            onTap: _skipOp,
+          ),
+        ),
+        if (_skipEdAvailable())
+          Positioned(
+            right: 16,
+            bottom: _skipPillsBottom(offset: 48),
+            child: _SkipPill(
+              label: 'Skip Outro',
+              icon: Icons.fast_rewind_rounded,
+              onTap: _skipEd,
+            ),
+          ),
+      ],
       Positioned(
         left: 0,
         right: 0,
@@ -853,16 +871,29 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
           ),
           onEpisodes: _showEpisodeSheet,
           onNextEpisode: _nextEpisode,
-          onAniSkip: _skipOp,
-          onAniSkipEd: _skipEd,
-          onPip: _enterPip,
-          onLock: () => setState(() {
-            _locked = true;
-            _controlsVisible = false;
-          }),
         ),
       ),
     ];
+  }
+
+  /// Manual skip pills show when AniSkip data exists for the CURRENT
+  /// episode, the playhead is outside every known range (the big button
+  /// covers the in-range case), and settings allow AniSkip.
+  bool get _manualSkipVisible {
+    if (!ref.read(appSettingsProvider).aniSkipEnabled) return false;
+    if (_activeSkip != null) return false;
+    final ranges = ref.read(aniSkipProvider(_currentEpisodeId));
+    return ranges.any((r) => r.type == 'op');
+  }
+
+  bool _skipEdAvailable() =>
+      ref.read(aniSkipProvider(_currentEpisodeId)).any((r) => r.type == 'ed');
+
+  /// Anchors the floating pills above the bottom control bar (scrubber +
+  /// buttons + safe-area inset).
+  double _skipPillsBottom({double offset = 0}) {
+    final inset = MediaQuery.paddingOf(context).bottom;
+    return 132 + math.max(12, inset) + offset;
   }
 
   String _qualityLabel() {
@@ -1322,6 +1353,8 @@ class _GradientTop extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.onBack,
+    required this.onPip,
+    required this.onLock,
     this.onUnlock,
     this.locked = false,
   });
@@ -1329,6 +1362,8 @@ class _GradientTop extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onBack;
+  final VoidCallback onPip;
+  final VoidCallback onLock;
   final VoidCallback? onUnlock;
   final bool locked;
 
@@ -1348,8 +1383,9 @@ class _GradientTop extends StatelessWidget {
         ),
         child: SafeArea(
           bottom: false,
+          maintainBottomViewPadding: true,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
             child: Row(
               children: [
                 IconButton(
@@ -1374,9 +1410,23 @@ class _GradientTop extends StatelessWidget {
                     ],
                   ),
                 ),
+                const SizedBox(width: 4),
+                // PiP + Lock live TOP-RIGHT (Netflix / YouTube mobile
+                // grammar) — they used to be crammed into the bottom
+                // toolbar cluster, stretching it past the screen width.
+                // While LOCKED only the unlock button remains (minimal
+                // locked-state UI).
                 if (locked && onUnlock != null)
                   _PlayerIconButton(
-                      icon: Icons.lock_rounded, onTap: onUnlock!),
+                      icon: Icons.lock_rounded, onTap: onUnlock!)
+                else ...[
+                  _PlayerIconButton(
+                      icon: Icons.picture_in_picture_alt_rounded,
+                      onTap: onPip),
+                  const SizedBox(width: 6),
+                  _PlayerIconButton(
+                      icon: Icons.lock_outline_rounded, onTap: onLock),
+                ],
               ],
             ),
           ),
@@ -1556,14 +1606,79 @@ class _NetflixPlayButton extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Bottom bar (Netflix): full-width scrubber with drag bubble, time row,
-// then the watermelon.sh Extended Toolbar as the button row —
-// [Episodes | Next Ep | PiP | Lock] morphing to
-// [Speed | Quality | Subs | Skip OP | Skip ED] with the chevron.
-// The old three-row stack (an M3 volume slider + icon row + toolbar) was
-// cramped and clipped at the screen edge; volume is a gesture
-// (right-half vertical drag) with a HUD, like every streaming app.
+// Bottom bar (Netflix mobile grammar): full-width scrubber with drag
+// bubble, the time row, then ONE responsive row of labeled control
+// buttons — Episodes | Next Ep | Speed | Quality | Subs — laid out with
+// Expanded slots so it FITS any screen width (the old fixed-width
+// Extended-Toolbar pill inside a horizontal scrollview clipped on both
+// sides). PiP/Lock moved to the top bar; volume stays a gesture with a
+// HUD.
 // ---------------------------------------------------------------------------
+
+/// One labeled control button of the bottom row (icon over 10px label,
+/// 44px+ tap target, Netflix dark-translucent grammar).
+class _PlayerControlButton extends StatefulWidget {
+  const _PlayerControlButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  State<_PlayerControlButton> createState() => _PlayerControlButtonState();
+}
+
+class _PlayerControlButtonState extends State<_PlayerControlButton> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTap: () {
+        HapticFeedback.selectionClick();
+        widget.onTap();
+      },
+      child: AnimatedScale(
+        scale: _pressed ? 0.9 : 1,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOutCubic,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                widget.icon,
+                size: 22,
+                color: Colors.white.withValues(alpha: 0.92),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                widget.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: HeroTokens.fontSans,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white.withValues(alpha: 0.78),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _GradientBottom extends StatefulWidget {
   const _GradientBottom({
@@ -1581,10 +1696,6 @@ class _GradientBottom extends StatefulWidget {
     required this.onSubtitles,
     required this.onEpisodes,
     required this.onNextEpisode,
-    required this.onAniSkip,
-    required this.onAniSkipEd,
-    required this.onPip,
-    required this.onLock,
   });
 
   final Duration position;
@@ -1601,10 +1712,6 @@ class _GradientBottom extends StatefulWidget {
   final VoidCallback onSubtitles;
   final VoidCallback onEpisodes;
   final VoidCallback onNextEpisode;
-  final VoidCallback onAniSkip;
-  final VoidCallback onAniSkipEd;
-  final VoidCallback onPip;
-  final VoidCallback onLock;
 
   @override
   State<_GradientBottom> createState() => _GradientBottomState();
@@ -1626,6 +1733,10 @@ class _GradientBottomState extends State<_GradientBottom> {
             .toDouble()
             .clamp(0.0, total)
             .toDouble();
+    // The gesture-nav inset plus breathing room — the old 10px minimum
+    // left the controls kissing the screen floor ("extreme bottom, cut
+    // off by the edge and the system bar").
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
 
     return Container(
       decoration: BoxDecoration(
@@ -1640,173 +1751,164 @@ class _GradientBottomState extends State<_GradientBottom> {
           ],
         ),
       ),
-      child: SafeArea(
-        top: false,
-        minimum: const EdgeInsets.only(bottom: 10),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 30, 20, 0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // ---- Scrubber (full width, Netflix red, fat thumb) ----
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  _ScrubBar(
-                    value: shown / total,
-                    buffered: widget.buffered.inMilliseconds
-                            .toDouble()
-                            .clamp(0, total) /
-                        total,
-                    onDragStart: () {
-                      setState(() {
-                        _dragging = true;
-                        _dragValue = shown.toDouble();
-                      });
-                      widget.onSeekStart();
-                    },
-                    onDragUpdate: (fraction) {
-                      setState(() => _dragValue = fraction * total);
-                    },
-                    onDragEnd: (fraction) {
-                      setState(() => _dragging = false);
-                      widget.onSeekEnd();
-                      widget.onSeek(Duration(
-                          milliseconds: (fraction * total).round()));
-                    },
-                  ),
-                  // Floating bubble above the thumb while scrubbing.
-                  if (_dragging)
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 26,
-                      child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.8),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            formatDuration(Duration(
-                                milliseconds: _dragValue?.round() ?? 0)),
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                fontFeatures: [
-                                  FontFeature.tabularFigures()
-                                ]),
-                          ),
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 30,
+          bottom: math.max(12, bottomInset + 6),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ---- Scrubber (full width, Netflix red, fat thumb) ----
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                _ScrubBar(
+                  value: shown / total,
+                  buffered: widget.buffered.inMilliseconds
+                          .toDouble()
+                          .clamp(0, total) /
+                      total,
+                  onDragStart: () {
+                    setState(() {
+                      _dragging = true;
+                      _dragValue = shown.toDouble();
+                    });
+                    widget.onSeekStart();
+                  },
+                  onDragUpdate: (fraction) {
+                    setState(() => _dragValue = fraction * total);
+                  },
+                  onDragEnd: (fraction) {
+                    setState(() => _dragging = false);
+                    widget.onSeekEnd();
+                    widget.onSeek(Duration(
+                        milliseconds: (fraction * total).round()));
+                  },
+                ),
+                // Floating bubble above the thumb while scrubbing.
+                if (_dragging)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 26,
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.8),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          formatDuration(Duration(
+                              milliseconds: _dragValue?.round() ?? 0)),
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              fontFeatures: [
+                                FontFeature.tabularFigures()
+                              ]),
                         ),
                       ),
                     ),
-                ],
-              ),
-              // ---- Time row (current left, duration right) ----
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                      formatDuration(_dragging
-                          ? Duration(
-                              milliseconds: _dragValue?.round() ?? 0)
-                          : widget.position),
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontFeatures: [FontFeature.tabularFigures()])),
-                  Text(formatDuration(widget.duration),
-                      style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.7),
-                          fontSize: 12,
-                          fontFeatures: const [
-                            FontFeature.tabularFigures()
-                          ])),
-                ],
-              ),
-              const SizedBox(height: 10),
-              // ---- Button row: speed picker + Extended Toolbar ----
-              // Speed is a watermelon.sh Quick Option Picker (pill -> tray,
-              // no modal sheet); the toolbar is the dark labeled Netflix
-              // cluster with Next Ep for binge flow.
-              Row(
-                children: [
-                  WmQuickOptionPicker<double>(
-                    hint: 'Speed',
-                    trayAbove: false,
-                    value: widget.speed,
-                    options: [
-                      for (final s in const [
-                        0.25,
-                        0.5,
-                        0.75,
-                        1.0,
-                        1.25,
-                        1.5,
-                        1.75,
-                        2.0
-                      ])
-                        WmPickerOption(
-                          value: s,
-                          label: s == 1.0 ? '1.0× Normal' : '${s.toStringAsFixed(2)}×',
-                          icon: Icons.speed_rounded,
-                        ),
-                    ],
-                    onChanged: widget.onSpeed,
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: WmExtendedToolbar(
-                        dark: true,
-                        showLabels: true,
-                        primary: [
-                          WmToolItem(
-                              icon: Icons.list_rounded,
-                              label: 'Episodes',
-                              onTap: widget.onEpisodes),
-                          WmToolItem(
-                              icon: Icons.skip_next_rounded,
-                              label: 'Next Ep',
-                              onTap: widget.onNextEpisode),
-                          WmToolItem(
-                              icon: Icons.picture_in_picture_alt_rounded,
-                              label: 'PiP',
-                              onTap: widget.onPip),
-                          WmToolItem(
-                              icon: Icons.lock_outline_rounded,
-                              label: 'Lock',
-                              onTap: widget.onLock),
-                        ],
-                        secondary: [
-                          WmToolItem(
-                              icon: Icons.hd_outlined,
-                              label: widget.qualityLabel,
-                              onTap: widget.onQuality),
-                          WmToolItem(
-                              icon: Icons.subtitles_outlined,
-                              label: widget.subtitleLabel,
-                              onTap: widget.onSubtitles),
-                          WmToolItem(
-                              icon: Icons.fast_forward_rounded,
-                              label: 'Skip OP',
-                              onTap: widget.onAniSkip),
-                          WmToolItem(
-                              icon: Icons.fast_rewind_rounded,
-                              label: 'Skip ED',
-                              onTap: widget.onAniSkipEd),
-                        ],
-                      ),
+              ],
+            ),
+            // ---- Time row (current left, duration right) ----
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                    formatDuration(_dragging
+                        ? Duration(milliseconds: _dragValue?.round() ?? 0)
+                        : widget.position),
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontFeatures: [FontFeature.tabularFigures()])),
+                Text(formatDuration(widget.duration),
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.7),
+                      fontSize: 12,
+                      fontFeatures: const [
+                        FontFeature.tabularFigures()
+                      ],
+                    )),
+              ],
+            ),
+            const SizedBox(height: 6),
+            // ---- Control row: Episodes | Next Ep | Speed | Quality | Subs
+            // — Expanded slots, no pill container, no horizontal scroll:
+            // every button is visible and tappable on any screen width.
+            Row(
+              children: [
+                Expanded(
+                  child: _PlayerControlButton(
+                    icon: Icons.list_rounded,
+                    label: 'Episodes',
+                    onTap: widget.onEpisodes,
+                  ),
+                ),
+                Expanded(
+                  child: _PlayerControlButton(
+                    icon: Icons.skip_next_rounded,
+                    label: 'Next Ep',
+                    onTap: widget.onNextEpisode,
+                  ),
+                ),
+                // Speed stays a watermelon.sh Quick Option Picker — the
+                // tray now pops ABOVE the pill (the old below-tray ran
+                // off the screen floor and was clipped away).
+                Expanded(
+                  child: Center(
+                    child: WmQuickOptionPicker<double>(
+                      hint: 'Speed',
+                      trayAbove: true,
+                      value: widget.speed,
+                      options: [
+                        for (final s in const [
+                          0.25,
+                          0.5,
+                          0.75,
+                          1.0,
+                          1.25,
+                          1.5,
+                          1.75,
+                          2.0
+                        ])
+                          WmPickerOption(
+                            value: s,
+                            label: s == 1.0
+                                ? '1.0× Normal'
+                                : '${s.toStringAsFixed(2)}×',
+                            icon: Icons.speed_rounded,
+                          ),
+                      ],
+                      onChanged: widget.onSpeed,
                     ),
                   ),
-                ],
-              ),
-            ],
-          ),
+                ),
+                Expanded(
+                  child: _PlayerControlButton(
+                    icon: Icons.hd_outlined,
+                    label: widget.qualityLabel,
+                    onTap: widget.onQuality,
+                  ),
+                ),
+                Expanded(
+                  child: _PlayerControlButton(
+                    icon: Icons.subtitles_outlined,
+                    label: widget.subtitleLabel,
+                    onTap: widget.onSubtitles,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -1976,6 +2078,49 @@ class _PlayerErrorCard extends StatelessWidget {
                 icon: const Icon(Icons.refresh_rounded),
                 label: const Text('Retry'),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+/// A compact floating skip pill (Netflix "Skip Intro" grammar) for MANUAL
+/// OP/ED jumps — rendered above the bottom control bar while the playhead
+/// sits outside every known AniSkip range.
+class _SkipPill extends StatelessWidget {
+  const _SkipPill({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white.withValues(alpha: 0.14),
+      borderRadius: BorderRadius.circular(24),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: Colors.white, size: 16),
+              const SizedBox(width: 6),
+              Text(label,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600)),
             ],
           ),
         ),

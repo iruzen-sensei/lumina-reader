@@ -17,7 +17,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/ui/lumina_ui.dart';
 import '../../core/ui/watermelon.dart';
-import 'package:lumina_reader/core/ui/hero_motion.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../shared/widgets.dart';
@@ -81,9 +80,9 @@ class DownloadsScreen extends ConsumerWidget {
                     )
                   : _DownloadsList(tasks: visible),
             ),
-            if (downloading.any((t) => t.state == DownloadState.downloading) ||
-                queued.isNotEmpty)
-              _BatchBar(),
+            // (The old bottom batch bar duplicated the header's
+            // Pause-all / Resume-all — removed. The Extended Toolbar in
+            // the header owns the batch actions.)
           ],
         ),
       ),
@@ -136,77 +135,80 @@ class _DownloadsHeader extends ConsumerWidget {
         : active.map((t) => t.progress).reduce((a, b) => a + b) / active.length;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 12, 8),
-      child: Row(
+      padding: const EdgeInsets.fromLTRB(16, 14, 12, 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Flexible(
-            child: Text(
-              'Downloads',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: HeroTokens.display.copyWith(color: h.foreground),
-            ),
-          ),
-          const SizedBox(width: 12),
-          if (active.isNotEmpty)
-            Expanded(
-              child: Row(
-                children: [
-                  Expanded(
-                    child: HeroProgress(
-                      value: overallProgress,
-                      height: 6,
-                    ),
+          Row(
+            children: [
+              Flexible(
+                child: Text(
+                  'Downloads',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: HeroTokens.display.copyWith(color: h.foreground),
+                ),
+              ),
+              const SizedBox(width: 12),
+              if (active.isNotEmpty)
+                Expanded(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: HeroProgress(
+                          value: overallProgress,
+                          height: 6,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${(overallProgress * 100).round()}%',
+                        style: HeroTokens.caption.copyWith(
+                          color: h.muted,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${(overallProgress * 100).round()}%',
-                    style: HeroTokens.caption.copyWith(
-                      color: h.muted,
-                      fontWeight: FontWeight.w600,
-                    ),
+                )
+              else
+                const Spacer(),
+              // watermelon.sh Extended Toolbar — the batch actions
+              // (primary: Pause all / Resume all; secondary slides in:
+              // Clear completed). This REPLACES both the 3-dot menu
+              // (whose anchor math rendered it at the screen floor) and
+              // the bottom batch bar — one component, one job, no
+              // duplicated pause/resume surfaces.
+              WmExtendedToolbar(
+                primary: [
+                  WmToolItem(
+                    icon: Icons.pause_circle_outline,
+                    label: 'Pause all',
+                    onTap: () {
+                      ref.read(downloadsProvider.notifier).pauseAll();
+                      showSnack(ref, context, 'Paused all downloads');
+                    },
+                  ),
+                  WmToolItem(
+                    icon: Icons.play_circle_outline,
+                    label: 'Resume all',
+                    onTap: () {
+                      ref.read(downloadsProvider.notifier).resumeAll();
+                      showSnack(ref, context, 'Resumed all downloads');
+                    },
                   ),
                 ],
-              ),
-            )
-          else
-            const Spacer(),
-          HeroMenuButton<String>(
-            tooltip: 'More',
-            icon: Icons.more_vert_rounded,
-            onSelected: (value) {
-              final notifier = ref.read(downloadsProvider.notifier);
-              switch (value) {
-                case 'pause_all':
-                  notifier.pauseAll();
-                  showSnack(ref, context, 'Paused all downloads');
-                  break;
-                case 'resume_all':
-                  notifier.resumeAll();
-                  showSnack(ref, context, 'Resumed all downloads');
-                  break;
-                case 'clear_completed':
-                  notifier.clearCompleted();
-                  showSnack(ref, context, 'Cleared completed downloads');
-                  break;
-              }
-            },
-            items: const [
-              HeroMenuItem(
-                value: 'pause_all',
-                label: 'Pause all',
-                icon: Icons.pause_circle_outline,
-              ),
-              HeroMenuItem(
-                value: 'resume_all',
-                label: 'Resume all',
-                icon: Icons.play_circle_outline,
-              ),
-              HeroMenuItem(
-                value: 'clear_completed',
-                label: 'Clear completed',
-                icon: Icons.cleaning_services_outlined,
-                dividerAfter: true,
+                secondary: [
+                  WmToolItem(
+                    icon: Icons.cleaning_services_outlined,
+                    label: 'Clear completed',
+                    onTap: () {
+                      ref.read(downloadsProvider.notifier).clearCompleted();
+                      showSnack(ref, context, 'Cleared completed downloads');
+                    },
+                  ),
+                ],
               ),
             ],
           ),
@@ -606,50 +608,6 @@ class _DownloadCard extends ConsumerWidget {
   }
 }
 
-class _BatchBar extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final h = HeroScope.of(context);
-    return SafeArea(
-      top: false,
-      child: Container(
-        decoration: BoxDecoration(
-          color: h.surface,
-          border: Border(top: BorderSide(color: h.border)),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Expanded(
-              child: HeroButton(
-                label: 'Pause all',
-                icon: Icons.pause_rounded,
-                variant: HeroButtonVariant.light,
-                color: HeroColorRole.neutral,
-                fullWidth: true,
-                onPressed: () {
-                  ref.read(downloadsProvider.notifier).pauseAll();
-                  showSnack(ref, context, 'Paused all');
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: HeroButton(
-                label: 'Resume all',
-                icon: Icons.play_arrow_rounded,
-                variant: HeroButtonVariant.solid,
-                color: HeroColorRole.accent,
-                fullWidth: true,
-                onPressed: () {
-                  ref.read(downloadsProvider.notifier).resumeAll();
-                  showSnack(ref, context, 'Resumed all');
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+// (The old _BatchBar — a bottom Pause-all/Resume-all pill row that
+// duplicated the header's batch actions — was removed; the watermelon.sh
+// Extended Toolbar in the header owns those actions now.)

@@ -52,26 +52,7 @@ class LibraryScreen extends ConsumerStatefulWidget {
 }
 
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
-  bool _searchVisible = false;
-  final _searchController = TextEditingController();
   final _refreshKey = GlobalKey<RefreshIndicatorState>();
-
-  @override
-  void initState() {
-    super.initState();
-    // Live filtering companion to the predictive search input.
-    _searchController.addListener(_onSearchChanged);
-  }
-
-  void _onSearchChanged() =>
-      ref.read(libraryOptionsProvider.notifier).setQuery(_searchController.text);
-
-  @override
-  void dispose() {
-    _searchController.removeListener(_onSearchChanged);
-    _searchController.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -88,23 +69,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             _LibraryHeader(
               incognito: incognito,
               downloadedOnly: downloadedOnly,
-              searchVisible: _searchVisible,
-              searchController: _searchController,
+              mediaType: options.mediaType,
               searchDictionary: [
                 for (final m in ref.watch(filteredMangaProvider).take(200))
                   m.title,
               ],
-              onSearchToggle: () {
-                setState(() {
-                  _searchVisible = !_searchVisible;
-                  if (!_searchVisible) {
-                    _searchController.clear();
-                    ref.read(libraryOptionsProvider.notifier).setQuery('');
-                  }
-                });
-              },
               onSearchChanged: (v) =>
                   ref.read(libraryOptionsProvider.notifier).setQuery(v),
+              onMediaType: (m) =>
+                  ref.read(libraryOptionsProvider.notifier).setMediaType(m),
               onToggleIncognito: () =>
                   ref.read(incognitoModeProvider.notifier).state = !incognito,
               onToggleDownloadedOnly: () => ref
@@ -112,12 +85,17 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   .state = !downloadedOnly,
               onImport: _importLocalFile,
             ),
-            _CategoryTabs(
-              categories: categories,
-              activeId: options.activeCategoryId,
-              onSelect: (id) =>
-                  ref.read(libraryOptionsProvider.notifier).setCategory(id),
-            ),
+            // The category pill only exists when the user has REAL
+            // categories — with the lone default "All" it was a dead
+            // control saying the same thing as the default state.
+            if (categories.length > 1)
+              _CategoryTabs(
+                categories: categories,
+                activeId: options.activeCategoryId,
+                onSelect: (id) => ref
+                    .read(libraryOptionsProvider.notifier)
+                    .setCategory(id),
+              ),
             _LibraryFilterBar(),
             if (selection.isNotEmpty) _SelectionBar(),
             Expanded(
@@ -242,15 +220,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 }
 
-class _LibraryHeader extends StatelessWidget implements PreferredSizeWidget {
+class _LibraryHeader extends StatelessWidget {
   const _LibraryHeader({
     required this.incognito,
     required this.downloadedOnly,
-    required this.searchVisible,
-    required this.searchController,
+    required this.mediaType,
     required this.searchDictionary,
-    required this.onSearchToggle,
     required this.onSearchChanged,
+    required this.onMediaType,
     required this.onToggleIncognito,
     required this.onToggleDownloadedOnly,
     required this.onImport,
@@ -258,86 +235,47 @@ class _LibraryHeader extends StatelessWidget implements PreferredSizeWidget {
 
   final bool incognito;
   final bool downloadedOnly;
-  final bool searchVisible;
-  final TextEditingController searchController;
+  final LibraryMediaType mediaType;
   final List<String> searchDictionary;
-  final VoidCallback onSearchToggle;
   final ValueChanged<String> onSearchChanged;
+  final ValueChanged<LibraryMediaType> onMediaType;
   final VoidCallback onToggleIncognito;
   final VoidCallback onToggleDownloadedOnly;
   final VoidCallback onImport;
 
   @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
-
-  @override
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
-    return AnimatedSize(
-      duration: const Duration(milliseconds: 200),
-      child: searchVisible
-          ? Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-              // watermelon.sh Predictive Text — completion chips built from
-              // the library's own titles; filtering stays live per keystroke
-              // via the controller listener in the state.
-              child: WmPredictiveInput(
-                controller: searchController,
-                hint: 'Search library…',
-                autofocus: true,
-                dictionary: searchDictionary,
-                onSubmitted: onSearchChanged,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 12, 2),
+          child: Stack(
+            children: [
+              // Monochrome light bloom behind the title (whisper-quiet).
+              const Positioned.fill(
+                child: HeroOrbs(opacity: 0.4, seed: 3),
               ),
-            )
-          : Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 12, 2),
-              child: Stack(
+              Row(
                 children: [
-                  // Monochrome light bloom behind the title (whisper-quiet).
-                  const Positioned.fill(
-                    child: HeroOrbs(opacity: 0.4, seed: 3),
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Wrap(
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          spacing: 8,
-                          runSpacing: 4,
-                          children: [
-                            // Weight-400 grotesk display title (Söhne-class).
-                            Text(
-                              'Library',
-                              style: HeroTokens.display.copyWith(
-                                color: h.foreground,
-                              ),
-                            ),
-                            if (incognito)
-                              _QuickBadge(
-                                icon: Icons.visibility_off_rounded,
-                                label: 'Incognito',
-                                color: LuminaTheme.unreadColor,
-                                onTap: onToggleIncognito,
-                              ),
-                            if (downloadedOnly)
-                              _QuickBadge(
-                                icon: Icons.cloud_off_outlined,
-                                label: 'Downloaded',
-                                color: LuminaTheme.readingColor,
-                                onTap: onToggleDownloadedOnly,
-                              ),
-                          ],
-                        ),
+                  Expanded(
+                    child: Text(
+                      'Library',
+                      style: HeroTokens.display.copyWith(
+                        color: h.foreground,
                       ),
+                    ),
+                  ),
                   HeroIconButton(
                     tooltip: 'Import files',
                     icon: Icons.file_upload_outlined,
                     onPressed: onImport,
                   ),
-                  // Updates bell — the feed moved off the bottom nav (it no
-                  // longer deserves a whole top-level page); the Library is
-                  // where new chapters land, so the bell lives here, with a
-                  // live unread badge.
+                  // Updates bell — the feed moved off the bottom nav; the
+                  // Library is where new chapters land, so the bell lives
+                  // here, with a live unread badge.
                   Consumer(builder: (context, ref, _) {
                     final updates = ref.watch(updatesProvider);
                     final unread = updates.where((u) => !u.isRead).length;
@@ -349,14 +287,20 @@ class _LibraryHeader extends StatelessWidget implements PreferredSizeWidget {
                       onPressed: () => context.push('/updates'),
                     );
                   }),
+                  // Incognito — a small icon that turns RED while active
+                  // (no banner, no layout shift; the old inline orange
+                  // "Incognito" badge wrapped to a second line and pushed
+                  // the whole library down).
                   HeroIconButton(
-                    tooltip: 'Incognito mode',
+                    tooltip: incognito
+                        ? 'Incognito on — tap to turn off'
+                        : 'Incognito mode',
                     icon: incognito
                         ? Icons.visibility_off_rounded
                         : Icons.visibility_outlined,
-                    color: incognito ? LuminaTheme.unreadColor : null,
+                    color: incognito ? h.danger : null,
                     variant: incognito
-                        ? HeroColorRole.warning
+                        ? HeroColorRole.danger
                         : HeroColorRole.neutral,
                     onPressed: onToggleIncognito,
                   ),
@@ -371,79 +315,52 @@ class _LibraryHeader extends StatelessWidget implements PreferredSizeWidget {
                         : HeroColorRole.neutral,
                     onPressed: onToggleDownloadedOnly,
                   ),
-                  HeroIconButton(
-                    tooltip: 'Search',
-                    icon: Icons.search_rounded,
-                    onPressed: onSearchToggle,
-                  ),
-                      Consumer(builder: (context, ref, _) {
-                        final view =
-                            ref.watch(libraryOptionsProvider.select((o) => o.view));
-                        return HeroIconButton(
-                          tooltip:
-                              view == LibraryView.grid ? 'List view' : 'Grid view',
-                          icon: view == LibraryView.grid
-                              ? Icons.view_list_rounded
-                              : Icons.grid_view_rounded,
-                          onPressed: () {
-                            ref.read(libraryOptionsProvider.notifier).setView(
-                                  view == LibraryView.grid
-                                      ? LibraryView.list
-                                      : LibraryView.grid,
-                                );
-                          },
-                        );
-                      }),
-                    ],
-                  ),
+                  Consumer(builder: (context, ref, _) {
+                    final view =
+                        ref.watch(libraryOptionsProvider.select((o) => o.view));
+                    return HeroIconButton(
+                      tooltip:
+                          view == LibraryView.grid ? 'List view' : 'Grid view',
+                      icon: view == LibraryView.grid
+                          ? Icons.view_list_rounded
+                          : Icons.grid_view_rounded,
+                      onPressed: () {
+                        ref.read(libraryOptionsProvider.notifier).setView(
+                              view == LibraryView.grid
+                                  ? LibraryView.list
+                                  : LibraryView.grid,
+                            );
+                      },
+                    );
+                  }),
                 ],
               ),
-            ),
-    );
-  }
-}
-
-class _QuickBadge extends StatelessWidget {
-  const _QuickBadge({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: color.withValues(alpha: 0.5)),
+            ],
+          ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 14, color: color),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontFamily: HeroTokens.fontSans,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: color,
-              ),
-            ),
-          ],
+        // The SAME melon-ui Morphing Discovery Bar as the anime page —
+        // search morphs live (filtering per keystroke) and the category
+        // chips switch the media type. The old search icon toggle + hidden
+        // predictive input swap stacked two search patterns; this is one.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+          child: WmDiscoveryBar(
+            searchHint: 'Search library…',
+            suggestionDictionary: searchDictionary,
+            onChanged: onSearchChanged,
+            onSearch: onSearchChanged,
+            categories: [
+              for (final m in LibraryMediaType.values)
+                WmDiscoveryCategory(
+                  icon: m.icon,
+                  label: m.label,
+                  selected: m == mediaType,
+                  onTap: () => onMediaType(m),
+                ),
+            ],
+          ),
         ),
-      ),
+      ],
     );
   }
 }
@@ -549,33 +466,40 @@ class _CategoryTabs extends ConsumerWidget {
   }
 }
 
-/// ONE compact row of watermelon.sh pickers (media / status / sort /
-/// direction) — all library filtering is inline, no hidden sheet, no
-/// duplicated surfaces. Status uses the Status Picker (colored); the rest
-/// are Quick Option Pickers.
+/// ONE compact row of watermelon.sh pickers: status + sort (direction
+/// embedded in the sort options). Media-type switching lives on the
+/// discovery bar's category chips; the separate Media and Order pills are
+/// gone — the old row showed THREE pills defaulting to "All"/"All"/more
+/// of the same, which read as pure redundancy.
 class _LibraryFilterBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final options = ref.watch(libraryOptionsProvider);
     final notifier = ref.read(libraryOptionsProvider.notifier);
 
+    // Sort options with the direction folded in: one picker, one job.
+    // (sort, descending) pairs keep the provider API unchanged.
+    final sortChoices = <(String, LibrarySort, bool)>[
+      ('Title A–Z', LibrarySort.title, false),
+      ('Title Z–A', LibrarySort.title, true),
+      ('Recently read', LibrarySort.lastRead, true),
+      ('Least recently read', LibrarySort.lastRead, false),
+      ('Recently added', LibrarySort.dateAdded, true),
+      ('Unread first', LibrarySort.unread, true),
+      ('Best progress', LibrarySort.progress, true),
+      ('Author A–Z', LibrarySort.author, false),
+    ];
+    final activeSort = sortChoices.firstWhere(
+      (c) => c.$2 == options.sort && c.$3 == options.sortDescending,
+      orElse: () => sortChoices.first,
+    );
+
     return SizedBox(
-      height: 52,
+      height: 48,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         children: [
-          WmQuickOptionPicker<LibraryMediaType>(
-            hint: 'Media',
-            trayAbove: false,
-            value: options.mediaType,
-            options: [
-              for (final m in LibraryMediaType.values)
-                WmPickerOption(value: m, label: m.label),
-            ],
-            onChanged: notifier.setMediaType,
-          ),
-          const SizedBox(width: 8),
           WmStatusPicker(
             value: LibraryFilter.values.indexOf(options.filter),
             onChanged: (i) => notifier.setFilter(LibraryFilter.values[i]),
@@ -606,16 +530,16 @@ class _LibraryFilterBar extends ConsumerWidget {
             ],
           ),
           const SizedBox(width: 8),
-          WmQuickOptionPicker<LibrarySort>(
+          WmQuickOptionPicker<int>(
             hint: 'Sort',
             trayAbove: false,
-            value: options.sort,
+            value: sortChoices.indexOf(activeSort),
             options: [
-              for (final sort in LibrarySort.values)
+              for (var i = 0; i < sortChoices.length; i++)
                 WmPickerOption(
-                  value: sort,
-                  label: sort.label,
-                  icon: switch (sort) {
+                  value: i,
+                  label: sortChoices[i].$1,
+                  icon: switch (sortChoices[i].$2) {
                     LibrarySort.title => Icons.sort_by_alpha_rounded,
                     LibrarySort.author => Icons.person_outline_rounded,
                     LibrarySort.lastRead => Icons.schedule_rounded,
@@ -625,25 +549,11 @@ class _LibraryFilterBar extends ConsumerWidget {
                   },
                 ),
             ],
-            onChanged: notifier.setSort,
-          ),
-          const SizedBox(width: 8),
-          WmQuickOptionPicker<bool>(
-            hint: 'Order',
-            trayAbove: false,
-            value: options.sortDescending,
-            options: const [
-              WmPickerOption(
-                  value: true,
-                  label: 'Descending',
-                  icon: Icons.arrow_downward_rounded),
-              WmPickerOption(
-                  value: false,
-                  label: 'Ascending',
-                  icon: Icons.arrow_upward_rounded),
-            ],
-            onChanged: (desc) => notifier
-                .setSortDirection(desc),
+            onChanged: (i) {
+              final c = sortChoices[i];
+              notifier.setSort(c.$2);
+              notifier.setSortDirection(c.$3);
+            },
           ),
         ],
       ),

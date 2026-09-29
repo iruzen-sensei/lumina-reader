@@ -646,7 +646,12 @@ class ExtensionRepoService {
         .filter()
         .idStringEqualTo(idString)
         .findFirst();
-    if (row == null) return;
+    // Silent no-ops made the install button LOOK broken (no feedback, no
+    // error). A missing row is a real failure — surface it.
+    if (row == null) {
+      throw StateError('This extension is not in any synced repository. '
+          'Refresh the repository list and try again.');
+    }
 
     // JS extension: fetch the source code.
     if (row.sourceCodeLanguage == db.SourceCodeLanguage.javascript) {

@@ -151,32 +151,48 @@ class _GlassTabBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
 
-    return HeroGlass(
-      blurSigma: 20,
-      color: h.glass,
-      border: Border(
-        top: BorderSide(
-          color: h.isDark
-              ? Colors.white.withValues(alpha: 0.07)
-              : Colors.black.withValues(alpha: 0.07),
-        ),
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 58,
-          child: Row(
-            children: [
-              for (var i = 0; i < destinations.length; i++)
-                Expanded(
-                  child: _TabItem(
-                    destination: destinations[i],
-                    selected: i == selectedIndex,
-                    onTap: () => onSelect(i),
+    // The glass layer (blur + fill + hairline) and the TAB ITEMS are
+    // separate layers. HeroGlass must ClipRect so the backdrop blur stays
+    // inside the bar — but that clip also sliced the bouncing icons at
+    // 1.3x scale + lift (the "dock animation cut off by the nav bar's
+    // own padding" report). With the items in an UNCLIPPED layer above
+    // the glass, the selection pop can overshoot the bar's top edge and
+    // draw over the content scrolling beneath (extendBody) — the exact
+    // watermelon.sh Dock behavior.
+    return SafeArea(
+      top: false,
+      child: SizedBox(
+        height: 58,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(
+              child: HeroGlass(
+                blurSigma: 20,
+                color: h.glass,
+                border: Border(
+                  top: BorderSide(
+                    color: h.isDark
+                        ? Colors.white.withValues(alpha: 0.07)
+                        : Colors.black.withValues(alpha: 0.07),
                   ),
                 ),
-            ],
-          ),
+                child: const SizedBox.expand(),
+              ),
+            ),
+            Row(
+              children: [
+                for (var i = 0; i < destinations.length; i++)
+                  Expanded(
+                    child: _TabItem(
+                      destination: destinations[i],
+                      selected: i == selectedIndex,
+                      onTap: () => onSelect(i),
+                    ),
+                  ),
+              ],
+            ),
+          ],
         ),
       ),
     );

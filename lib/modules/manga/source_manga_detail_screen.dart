@@ -93,6 +93,9 @@ class _SourceMangaDetailScreenState
             child: _PreviewHeader(
               seed: seed,
               detail: detail,
+              adding: _adding,
+              onAddToLibrary: () => _addToLibrary(mangaOrNull: detail.valueOrNull),
+              onStart: () => _startFirstFrom(detail),
             ),
           ),
           detail.when(
@@ -124,16 +127,6 @@ class _SourceMangaDetailScreenState
           const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],
       ),
-      bottomNavigationBar: detail.maybeWhen(
-        data: (manga) => _BottomActions(
-          manga: manga,
-          isAnime: seed.isAnime,
-          adding: _adding,
-          onAddToLibrary: () => _addToLibrary(manga),
-          onStart: () => _startFirst(manga),
-        ),
-        orElse: () => null,
-      ),
     );
   }
 
@@ -144,7 +137,13 @@ class _SourceMangaDetailScreenState
   /// Persists the entry (+ chapters) and continues into the full,
   /// library-backed detail screen. pushReplacement keeps the browse screen
   /// underneath on the back stack.
-  Future<void> _addToLibrary(Manga detail) async {
+  Future<void> _addToLibrary({Manga? mangaOrNull}) async {
+    final detail = mangaOrNull ??
+        ref
+            .read(sourceMangaDetailProvider((widget.manga!.sourceId,
+                widget.manga!.url)))
+            .valueOrNull;
+    if (detail == null) return;
     if (_adding) return;
     setState(() => _adding = true);
     try {
@@ -163,6 +162,32 @@ class _SourceMangaDetailScreenState
     } finally {
       if (mounted) setState(() => _adding = false);
     }
+  }
+
+  /// "Start watching" / "Start reading" from the header action row —
+  /// resolves the loaded detail (or waits for it) before opening.
+  Future<void> _startFirstFrom(AsyncValue<Manga> detailValue) async {
+    Manga? detail = detailValue.valueOrNull;
+    if (detail != null) {
+      await _startFirst(detail);
+      return;
+    }
+    // Still loading: wait briefly for the provider to land.
+    detail = await ref
+        .read(sourceMangaDetailProvider(
+                (widget.manga!.sourceId, widget.manga!.url))
+            .future)
+        .timeout(const Duration(seconds: 20))
+        .then<Manga?>((m) => m)
+        .catchError((_) => null);
+    if (detail == null) {
+      if (mounted) {
+        showSnack(ref, context,
+            'Still loading details — try again in a moment.');
+      }
+      return;
+    }
+    await _startFirst(detail);
   }
 
   /// Opens an episode/chapter — the entry is auto-added to the library
@@ -329,10 +354,16 @@ class _PreviewHeader extends ConsumerWidget {
   const _PreviewHeader({
     required this.seed,
     required this.detail,
+    required this.adding,
+    required this.onAddToLibrary,
+    required this.onStart,
   });
 
   final Manga seed;
   final AsyncValue<Manga> detail;
+  final bool adding;
+  final VoidCallback onAddToLibrary;
+  final VoidCallback onStart;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -449,16 +480,55 @@ class _PreviewHeader extends ConsumerWidget {
                     .where((g) => !RegExp(r'^(anilist|mal):\d+$')
                         .hasMatch(g.trim()))
                     .take(8))
+                  // Tags are tappable: anime entries deep-link into the
+                  // AniList browse's genre rail, manga into the Explore
+                  // genre picker (previously they were dead chips).
                   HeroChip(
                     label: tag,
                     small: true,
                     color: HeroColorRole.accent,
+                    onTap: () => context.push(isAnime
+                        ? '/animeBrowse?genre=${Uri.encodeComponent(tag)}'
+                        : '/browse?genre=${Uri.encodeComponent(tag)}'),
                   ),
               ],
             ),
           ],
+          // ---- Primary actions, directly under the title/cover block
+          // (Apple TV / Netflix detail grammar). The old floating bottom
+          // bar with a track-fan-out on the left put the buttons neither
+          // centered nor aligned — and the MAL link button was noise.
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: HeroButton(
+                  label: isAnime ? 'Start watching' : 'Start reading',
+                  icon: isAnime
+                      ? Icons.play_arrow_rounded
+                      : Icons.menu_book_outlined,
+                  variant: HeroButtonVariant.solid,
+                  size: HeroButtonSize.md,
+                  onPressed: adding ? null : onStart,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: HeroButton(
+                  label: adding ? 'Adding…' : 'Add to Library',
+                  icon: adding
+                      ? Icons.hourglass_empty_rounded
+                      : Icons.bookmark_border_rounded,
+                  variant: HeroButtonVariant.soft,
+                  size: HeroButtonSize.md,
+                  onPressed: adding ? null : onAddToLibrary,
+                ),
+              ),
+            ],
+          ),
           if (loading) ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Row(
               children: [
                 inlineLoader(context, size: 16),
@@ -696,68 +766,7 @@ class _UnitRow extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Bottom action bar — Add to library (watermelon.sh Feedback Action) +
-// Start watching / Start reading (media-aware copy + icon).
+// (The old bottom action bar — Feedback Action + Start CTA floating at the
+// screen floor — was folded into the header action row. See
+// _PreviewHeader.)
 // ---------------------------------------------------------------------------
-
-class _BottomActions extends StatelessWidget {
-  const _BottomActions({
-    required this.manga,
-    required this.isAnime,
-    required this.adding,
-    required this.onAddToLibrary,
-    required this.onStart,
-  });
-
-  final Manga manga;
-  final bool isAnime;
-  final bool adding;
-  final VoidCallback onAddToLibrary;
-  final VoidCallback onStart;
-
-  @override
-  Widget build(BuildContext context) {
-    final empty = manga.chapters.isEmpty;
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-        child: Row(
-          children: [
-            // watermelon.sh Feedback Action: the circle-to-pill morph with
-            // per-character staggered status text and a slide-in retry
-            // button on failure (the old button had only a bare spinner
-            // and snackbar errors).
-            WmFeedbackAction(
-              idleLabel: 'Add to library',
-              idleIcon: Icons.favorite_border,
-              loadingLabel: 'Adding…',
-              successLabel: 'Added',
-              errorLabel: 'Failed',
-              onAction: () async {
-                onAddToLibrary();
-                // The screen navigates away on success (pushReplacement);
-                // true keeps the pill in the success state meanwhile.
-                return true;
-              },
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              flex: 2,
-              child: HeroButton(
-                label: empty
-                    ? (isAnime ? 'No episodes' : 'No chapters')
-                    : (isAnime ? 'Start watching' : 'Start reading'),
-                icon: isAnime
-                    ? Icons.play_arrow_rounded
-                    : Icons.menu_book_outlined,
-                variant: empty ? HeroButtonVariant.soft : HeroButtonVariant.solid,
-                color: empty ? HeroColorRole.neutral : HeroColorRole.accent,
-                onPressed: adding || empty ? null : onStart,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

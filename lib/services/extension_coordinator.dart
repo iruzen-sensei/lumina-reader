@@ -108,21 +108,23 @@ class ExtensionCoordinator {
     return entries.map((e) => _mangaToDto(e, sourceId)).toList();
   }
 
+  /// Throws on failure — the caller decides (the genre-browse feed renders
+  /// the error card; global search catches per-source). Previously errors
+  /// were swallowed into an empty list, indistinguishable from "no
+  /// results" — the "source fetches nothing" reports.
   Future<List<dto.Manga>> search(int sourceId, String query,
       {int page = 1}) async {
     final service = await _serviceForSourceId(sourceId);
-    if (service == null) return const [];
-    try {
-      final entries = await service.searchManga(
-        query: query,
-        page: page,
-        filterList: const m.FilterList(filters: []),
-      );
-      return entries.map((e) => _mangaToDto(e, sourceId)).toList();
-    } catch (e) {
-      debugPrint('ExtensionCoordinator.search($sourceId, "$query"): $e');
-      return const [];
+    if (service == null) {
+      throw StateError(
+          'This source is unavailable or its format is not supported yet.');
     }
+    final entries = await service.searchManga(
+      query: query,
+      page: page,
+      filterList: const m.FilterList(filters: []),
+    );
+    return entries.map((e) => _mangaToDto(e, sourceId)).toList();
   }
 
   /// Full detail (description, author, chapters) for a catalog entry.

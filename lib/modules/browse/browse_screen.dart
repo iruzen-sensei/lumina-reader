@@ -52,7 +52,11 @@ Future<void> openSourceManga(
   try {
     final existing = await repo.getMangaBySourceUrl(manga.url);
     if (existing != null) {
-      await router.push('/mangaDetail/${existing.id}');
+      // Route by media type — anime entries previously landed on the
+      // MANGA detail screen ("Start reading" copy on an anime).
+      await router.push(existing.isAnime
+          ? '/animeDetail/${existing.id}'
+          : '/mangaDetail/${existing.id}');
     } else {
       await router.push('/sourceMangaDetail', extra: manga);
     }
@@ -65,17 +69,20 @@ Future<void> openSourceManga(
 
 /// The browse screen (Explore).
 ///
-/// ONE search surface: the watermelon.sh Morphing Discovery Bar under the
-/// app bar (collapsed pill morphs into a live search field; submits run
-/// the GLOBAL search across every installed source). The old duplicated
-/// search surfaces — the app-bar global-search dialog AND the per-source
-/// Search tab — were removed.
-///
-/// Below it, ONE pinned picker row: the active Source (Quick Option
-/// Picker) and the Popular / Latest browse mode (Quick Option Picker)
-/// driving the grid.
+/// Layout (the user-specified structure):
+///   * Morphing Discovery Bar on top — THE search surface (collapsed
+///     pill morphs into a live field; submits run the GLOBAL search
+///     across every installed source).
+///   * Below it ONE pinned picker row with THREE watermelon.sh Quick
+///     Option Pickers: the extension Source, the Popular / Latest mode,
+///     and a Genre filter. The old source-switcher chips on the discovery
+///     bar (a fourth, redundant way to change the source) are gone.
 class BrowseScreen extends ConsumerStatefulWidget {
-  const BrowseScreen({super.key});
+  const BrowseScreen({super.key, this.initialGenre});
+
+  /// Pre-selects a genre (deep links from detail-screen tag chips:
+  /// '/browse?genre=Action').
+  final String? initialGenre;
 
   @override
   ConsumerState<BrowseScreen> createState() => _BrowseScreenState();
@@ -86,6 +93,18 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
   late final TabController _tabController =
       TabController(length: 2, vsync: this);
   int _selectedSourceId = 1;
+
+  /// Active genre filter (null = Any). Changing it re-keys the feed —
+  /// the grid browses the source's catalogue filtered by the genre
+  /// through its search pipeline.
+  String? _genre;
+
+  @override
+  void initState() {
+    super.initState();
+    final g = widget.initialGenre;
+    if (g != null && g.trim().isNotEmpty) _genre = g.trim();
+  }
 
   @override
   void dispose() {
@@ -192,39 +211,32 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
                   ],
                 ),
                 // Morphing Discovery Bar (watermelon.sh) — THE search
-                // button. Collapsed: search pill + quick source categories.
-                // Expanded: morphs into a live field; submit runs the global
-                // search across every installed source.
+                // button. Pure search: the source-switcher chips that used
+                // to live here duplicated the Source picker below (two
+                // components, one function — the redundancy report).
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
                     child: WmDiscoveryBar(
                       searchHint: 'Search all sources…',
                       onSearch: _openGlobalSearchResults,
-                      categories: [
-                        for (final s in sources.take(4))
-                          WmDiscoveryCategory(
-                            icon: Icons.language_rounded,
-                            label: s.name,
-                            selected: s.id == activeSource.id,
-                            onTap: () =>
-                                setState(() => _selectedSourceId = s.id),
-                          ),
-                      ],
+                      categories: const [],
                     ),
                   ),
                 ),
                 SliverPersistentHeader(
                   pinned: true,
-                  // ONE pinned picker row: active Source + Popular/Latest
-                  // mode, both watermelon.sh Quick Option Pickers. The old
-                  // source strip + 3-way segmented control are gone.
+                  // The pinned picker row: Source + Popular/Latest + Genre
+                  // — three watermelon.sh Quick Option Pickers, one job
+                  // each, no duplicated surfaces.
                   delegate: _PickerHeaderDelegate(
                     controller: _tabController,
                     sources: sources,
                     selectedSourceId: activeSource.id,
                     onSelectSource: (id) =>
                         setState(() => _selectedSourceId = id),
+                    genre: _genre,
+                    onSelectGenre: (g) => setState(() => _genre = g),
                   ),
                 ),
               ];
@@ -236,11 +248,13 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen>
                     sourceId: activeSource.id,
                     label: 'Popular',
                     latest: false,
+                    genre: _genre,
                     source: activeSource),
                 _SourceGrid(
                     sourceId: activeSource.id,
                     label: 'Latest',
                     latest: true,
+                    genre: _genre,
                     source: activeSource),
               ],
             ),
@@ -650,35 +664,84 @@ class _ExtensionCatalogSheetState
     setState(() => _syncing = true);
     try {
       await ref.read(data.extensionRepoServiceProvider).syncAll();
-    } catch (_) {}
+    } catch (e) {
+      // Swallowing this made a failed sync look identical to a successful
+      // one — the "I added a repo but nothing appears" trap.
+      if (mounted) {
+        showSnack(ref, context, 'Repository sync failed — check your '
+            'connection and try again.');
+      }
+    }
     if (mounted) setState(() => _syncing = false);
   }
 }
 
-class _CatalogTile extends ConsumerWidget {
+class _CatalogTile extends ConsumerStatefulWidget {
   const _CatalogTile({required this.entry});
 
   final Source entry;
 
+  @override
+  ConsumerState<_CatalogTile> createState() => _CatalogTileState();
+}
+
+class _CatalogTileState extends ConsumerState<_CatalogTile> {
+  bool _busy = false;
+  String _progress = '';
+
   bool get _supported =>
       const {'madara', 'mangareader', 'mangadex', 'mangabox', 'mmrcms'}
-          .contains((entry.typeSource ?? '').toLowerCase()) ||
+          .contains((widget.entry.typeSource ?? '').toLowerCase()) ||
       // Central truth: templates, MangaDex variants, JS extensions and
       // Aniyomi/Mihon APK extensions.
       eval_lib.isRepoDtoSupported(
-        typeSource: entry.typeSource,
-        baseUrl: entry.baseUrl,
-        sourceCodeLanguage: entry.sourceCodeLanguage,
+        typeSource: widget.entry.typeSource,
+        baseUrl: widget.entry.baseUrl,
+        sourceCodeLanguage: widget.entry.sourceCodeLanguage,
       );
 
+  Future<void> _install(String idString) async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _progress = '';
+    });
+    try {
+      await ref.read(data.extensionRepoServiceProvider).install(
+        idString,
+        onProgress: (received, total) {
+          if (!mounted) return;
+          setState(() => _progress = total != null && total > 0
+              ? '${(received / 1024 / 1024).toStringAsFixed(1)} / '
+                  '${(total / 1024 / 1024).toStringAsFixed(1)} MB'
+              : '${(received / 1024 / 1024).toStringAsFixed(1)} MB');
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        showSnack(ref, context, 'Install failed: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _progress = '';
+        });
+      }
+    }
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final h = HeroScope.of(context);
+    final entry = widget.entry;
     return HeroListTile(
       leading: _iconTile(h),
       title: entry.name,
-      subtitle:
-          '${entry.lang} • v${entry.version} • ${(entry.typeSource ?? '').isEmpty ? 'unknown' : entry.typeSource}',
+      subtitle: _progress.isNotEmpty
+          ? _progress
+          : '${entry.lang} • v${entry.version} • '
+              '${(entry.typeSource ?? '').isEmpty ? 'unknown' : entry.typeSource}',
       trailing: _trailing(ref),
     );
   }
@@ -686,6 +749,7 @@ class _CatalogTile extends ConsumerWidget {
   /// Rounded-11 icon tile: the extension artwork when available, an
   /// accent-soft glyph tile otherwise.
   Widget _iconTile(HeroThemeData h) {
+    final entry = widget.entry;
     if (entry.iconUrl != null) {
       return Container(
         width: 42,
@@ -727,9 +791,9 @@ class _CatalogTile extends ConsumerWidget {
         ),
       );
     }
-    final idString = entry.idString;
+    final idString = widget.entry.idString;
     if (idString == null) return const SizedBox.shrink();
-    if (entry.isInstalled) {
+    if (widget.entry.isInstalled) {
       // Install state as a soft accent chip; uninstall stays one tap away.
       return Row(
         mainAxisSize: MainAxisSize.min,
@@ -755,31 +819,58 @@ class _CatalogTile extends ConsumerWidget {
         ],
       );
     }
+    // Stateful install: live download progress + busy state (the old
+    // bare button threw failures into the void and allowed double-taps).
     return HeroButton(
-      label: 'Install',
+      label: _busy ? 'Installing…' : 'Install',
       size: HeroButtonSize.sm,
-      onPressed: () async {
-        await ref.read(data.extensionRepoServiceProvider).install(idString);
-      },
+      onPressed: _busy ? null : () => _install(idString),
     );
   }
 }
 
-/// Pins the ONE picker row under the discovery bar: active Source
-/// (watermelon.sh Quick Option Picker) + Popular / Latest mode (Quick
-/// Option Picker driving the SAME [TabController] as the [TabBarView]).
+/// Pins the picker row under the discovery bar: active Source +
+/// Popular/Latest mode + Genre filter (watermelon.sh Quick Option
+/// Pickers driving the SAME [TabController] as the [TabBarView]).
 class _PickerHeaderDelegate extends SliverPersistentHeaderDelegate {
   _PickerHeaderDelegate({
     required this.controller,
     required this.sources,
     required this.selectedSourceId,
     required this.onSelectSource,
+    required this.genre,
+    required this.onSelectGenre,
   });
 
   final TabController controller;
   final List<Source> sources;
   final int selectedSourceId;
   final ValueChanged<int> onSelectSource;
+  final String? genre;
+  final ValueChanged<String?> onSelectGenre;
+
+  /// The shared genre vocabulary. Sources disagree on genre names; a
+  /// common list keeps the picker identical across every source (each
+  /// source resolves the genre through its own search pipeline).
+  static const List<String> genres = [
+    'Action',
+    'Adventure',
+    'Comedy',
+    'Drama',
+    'Fantasy',
+    'Horror',
+    'Mahou Shoujo',
+    'Mecha',
+    'Music',
+    'Mystery',
+    'Psychological',
+    'Romance',
+    'Sci-Fi',
+    'Slice of Life',
+    'Sports',
+    'Supernatural',
+    'Thriller',
+  ];
 
   /// Pinned-bar height. The child is forced to this exact height via
   /// SizedBox (a slimmer picker row must never make the pinned header's
@@ -852,6 +943,28 @@ class _PickerHeaderDelegate extends SliverPersistentHeaderDelegate {
                   onChanged: controller.animateTo,
                 ),
               ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: WmQuickOptionPicker<String>(
+                  hint: 'Genre',
+                  trayAbove: false,
+                  value: genre ?? '',
+                  options: [
+                    const WmPickerOption<String>(
+                      value: '',
+                      label: 'Any genre',
+                      icon: Icons.all_inclusive_rounded,
+                    ),
+                    for (final g in genres)
+                      WmPickerOption<String>(
+                        value: g,
+                        label: g,
+                        icon: Icons.category_rounded,
+                      ),
+                  ],
+                  onChanged: (g) => onSelectGenre(g.isEmpty ? null : g),
+                ),
+              ),
             ],
           ),
         ),
@@ -863,7 +976,8 @@ class _PickerHeaderDelegate extends SliverPersistentHeaderDelegate {
   bool shouldRebuild(covariant _PickerHeaderDelegate oldDelegate) =>
       controller != oldDelegate.controller ||
       selectedSourceId != oldDelegate.selectedSourceId ||
-      sources != oldDelegate.sources;
+      sources != oldDelegate.sources ||
+      genre != oldDelegate.genre;
 }
 
 class _SourceGrid extends ConsumerWidget {
@@ -872,6 +986,7 @@ class _SourceGrid extends ConsumerWidget {
     required this.label,
     required this.latest,
     required this.source,
+    this.genre,
   });
 
   final int sourceId;
@@ -879,12 +994,21 @@ class _SourceGrid extends ConsumerWidget {
   final bool latest;
   final Source source;
 
+  /// Optional genre filter — re-keys the feed (see BrowseGridNotifier).
+  final String? genre;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Keyed by (sourceId, latest) — the Latest tab previously watched the
-    // SAME provider instance as Popular, so it rendered a duplicate of the
-    // popular grid while `load(latest: true)` sat unreachable.
-    final feed = ref.watch(browseFeedProvider((sourceId, latest)));
+    // Keyed by (sourceId, latest, genre) — the Latest tab previously
+    // watched the SAME provider instance as Popular, so it rendered a
+    // duplicate of the popular grid while `load(latest: true)` sat
+    // unreachable.
+    final feed = ref.watch(browseFeedProvider((sourceId, latest, genre)));
+
+    // A genre filter hides the Popular/Latest distinction (both tabs run
+    // the same genre search) — one shared label keeps the header honest.
+    final effectiveLabel =
+        (genre == null || genre!.isEmpty) ? label : genre!;
 
     // LOADING: skeleton grid while the first page is in flight. Previously
     // the empty-state flashed here, making every slow source look dead.
@@ -922,7 +1046,7 @@ class _SourceGrid extends ConsumerWidget {
           label: 'Try again',
           icon: Icons.refresh_rounded,
           onPressed: () =>
-              ref.invalidate(browseFeedProvider((sourceId, latest))),
+              ref.invalidate(browseFeedProvider((sourceId, latest, genre))),
         ),
       );
     }
@@ -932,12 +1056,12 @@ class _SourceGrid extends ConsumerWidget {
         context: context,
         icon: Icons.inbox_outlined,
         title: 'Nothing here yet',
-        subtitle: 'No $label items came back from ${source.name}.',
+        subtitle: 'No $effectiveLabel items came back from ${source.name}.',
         action: HeroButton(
           label: 'Try again',
           icon: Icons.refresh_rounded,
           onPressed: () =>
-              ref.invalidate(browseFeedProvider((sourceId, latest))),
+              ref.invalidate(browseFeedProvider((sourceId, latest, genre))),
         ),
       );
     }
@@ -945,7 +1069,7 @@ class _SourceGrid extends ConsumerWidget {
       onNotification: (n) {
         // Infinite scroll: fetch the next page near the end of the grid.
         if (n.metrics.pixels >= n.metrics.maxScrollExtent - 400) {
-          ref.read(browseFeedProvider((sourceId, latest)).notifier).loadMore();
+          ref.read(browseFeedProvider((sourceId, latest, genre)).notifier).loadMore();
         }
         return false;
       },

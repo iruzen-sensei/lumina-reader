@@ -801,14 +801,25 @@ class HeroMenuPanel<T> extends StatelessWidget {
           route.items.length * rowH + 12; // + card padding (6 top/bottom)
 
       // Prefer below the anchor; flip above when it would overflow.
-      final belowTop = route.position.bottom + 6;
+      //
+      // RelativeRect semantics: `top` = distance from the OVERLAY top to
+      // the button top; `bottom` = distance from the BUTTON bottom to the
+      // overlay bottom. The previous code used `position.bottom` as the
+      // button's bottom-Y (it is the inverse) — for a header-anchored
+      // trigger that computed a below-slot near the screen FLOOR and the
+      // menu rendered at the very bottom, half-clipped by the nav dock
+      // (the "extreme bottom, cut off" report).
+      final buttonBottom = size.height - route.position.bottom;
+      final belowTop = buttonBottom + 6;
       final bool below = belowTop + estH <= size.height - 16;
       final double top;
       if (below) {
         top = belowTop;
       } else {
         final aboveTop = route.position.top - 6 - estH;
-        top = aboveTop >= 16 ? aboveTop : (size.height - estH).clamp(16.0, size.height - estH - 16);
+        top = aboveTop >= 16
+            ? aboveTop
+            : math.max(16.0, size.height - estH - 16);
       }
 
       final double left = route.position.left

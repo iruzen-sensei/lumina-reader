@@ -241,6 +241,7 @@ class WmDiscoveryBar extends StatefulWidget {
     this.searchHint = 'Search',
     this.accent,
     this.suggestionDictionary,
+    this.onChanged,
   });
 
   final List<WmDiscoveryCategory> categories;
@@ -250,6 +251,10 @@ class WmDiscoveryBar extends StatefulWidget {
   /// Optional accent override (e.g. Netflix red on the Anime page). Falls
   /// back to the theme accent (noir white).
   final Color? accent;
+
+  /// Optional live text callback — fires on every keystroke AND with ''
+  /// when the bar closes/clears (live filtering hosts like the Library).
+  final ValueChanged<String>? onChanged;
 
   /// Optional Predictive-Text dictionary: while typing, up to three
   /// prefix completions float below the morphed input (tap completes the
@@ -300,6 +305,7 @@ class _WmDiscoveryBarState extends State<WmDiscoveryBar> {
     _focus.unfocus();
     _controller.clear();
     setState(() => _searching = false);
+    widget.onChanged?.call('');
     HapticFeedback.selectionClick();
   }
 
@@ -396,12 +402,23 @@ class _WmDiscoveryBarState extends State<WmDiscoveryBar> {
                                 focusNode: _focus,
                                 textInputAction: TextInputAction.search,
                                 onSubmitted: _submit,
-                                onChanged: (_) => setState(() {}),
+                                onChanged: (_) {
+                                  setState(() {});
+                                  widget.onChanged?.call(_controller.text);
+                                },
                                 style: HeroTokens.bodySmall
                                     .copyWith(color: h.foreground),
+                                // Kill the THEME's OutlineInputBorder +
+                                // fill: without these overrides the theme's
+                                // focusedBorder painted a white rounded-rect
+                                // ON TOP of this pill (the "old search box
+                                // overlay" report).
                                 decoration: InputDecoration(
                                   isDense: true,
                                   border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                  filled: false,
                                   isCollapsed: true,
                                   hintText: widget.searchHint,
                                   hintStyle: HeroTokens.bodySmall
@@ -414,6 +431,7 @@ class _WmDiscoveryBarState extends State<WmDiscoveryBar> {
                                 onTap: () {
                                   _controller.clear();
                                   setState(() {});
+                                  widget.onChanged?.call('');
                                 },
                                 child: Icon(Icons.close_rounded,
                                     size: 16, color: h.muted),
@@ -618,7 +636,7 @@ class _WmExpandDetailsState extends State<WmExpandDetails>
   late final AnimationController _chev = AnimationController(
       vsync: this,
       duration: heroAnimationsEnabled
-          ? const Duration(milliseconds: 220)
+          ? const Duration(milliseconds: 240)
           : Duration.zero,
       value: widget.initiallyOpen ? 1.0 : 0.0);
 
@@ -642,26 +660,30 @@ class _WmExpandDetailsState extends State<WmExpandDetails>
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
     return AnimatedSize(
+      // EASED size animation — never a bouncy spring. The previous spring
+      // overshoot combined with the radius/border morphing decoration to
+      // paint a circular hairline flash around the band while it opened
+      // and closed (the "circle outline beneath the synopsis" report).
       duration: heroAnimationsEnabled
-          ? const Duration(milliseconds: 420)
+          ? const Duration(milliseconds: 300)
           : Duration.zero,
-      curve: HeroTokens.spring,
+      curve: Curves.easeOutCubic,
       alignment: Alignment.topCenter,
       child: Container(
-        // Collapsed = a compact hairline chip; expanded = a full card. The
-        // radius + color morph with the state (20 -> 24 in the source).
+        // A CONSTANT quiet card: surface + hairline at radius 14. The
+        // radius and border never morph states (collapsed was a pill,
+        // expanded a card — the morph was half the weirdness).
         decoration: BoxDecoration(
-          color: _open ? h.surface : Colors.transparent,
-          borderRadius: BorderRadius.circular(_open ? 14 : HeroTokens.radiusChip),
-          border: Border.all(color: _open ? h.separator : h.border),
+          color: h.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: h.border),
         ),
-        padding: EdgeInsets.symmetric(
-            horizontal: _open ? 16 : 12, vertical: _open ? 14 : 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header row: chevron + title (always visible; the FULL-WIDTH
-            // band is the tap target so the affordance is discoverable).
+            // Header row: title left, chevron right (Apple disclosure
+            // grammar). The FULL-WIDTH row is the tap target.
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _toggle,
@@ -669,19 +691,27 @@ class _WmExpandDetailsState extends State<WmExpandDetails>
                 width: double.infinity,
                 child: Row(
                   children: [
-                  RotationTransition(
-                    turns: Tween(begin: 0.75, end: 1.0).animate(
-                        CurvedAnimation(parent: _chev, curve: Curves.easeOut)),
-                    child: Icon(Icons.expand_more_rounded,
-                        size: 20, color: h.muted),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    widget.title,
-                    style: HeroTokens.body.copyWith(
-                      color: h.foreground,
-                      fontWeight: FontWeight.w600,
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 9),
+                        child: Text(
+                          widget.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: HeroTokens.body.copyWith(
+                            color: h.foreground,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
                     ),
+                    const SizedBox(width: 8),
+                    RotationTransition(
+                      turns: Tween(begin: 0.0, end: 0.25).animate(
+                          CurvedAnimation(
+                              parent: _chev, curve: Curves.easeOutCubic)),
+                      child: Icon(Icons.expand_more_rounded,
+                          size: 20, color: h.muted),
                     ),
                   ],
                 ),
@@ -689,28 +719,24 @@ class _WmExpandDetailsState extends State<WmExpandDetails>
             ),
             AnimatedSwitcher(
               duration: heroAnimationsEnabled
-                  ? const Duration(milliseconds: 300)
+                  ? const Duration(milliseconds: 260)
                   : Duration.zero,
               switchInCurve: Curves.easeOutCubic,
               switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, anim) => FadeTransition(
-                opacity: anim,
-                child: SlideTransition(
-                  position: Tween(
-                          begin: const Offset(0, 0.06), end: Offset.zero)
-                      .animate(anim),
-                  child: child,
-                ),
-              ),
+              transitionBuilder: (child, anim) =>
+                  FadeTransition(opacity: anim, child: child),
               child: _open
                   ? Padding(
                       key: const ValueKey('open'),
-                      padding: const EdgeInsets.only(top: 12),
-                      child: WmBlurFade(in_: true, dx: 12, child: widget.expanded),
+                      padding: const EdgeInsets.only(top: 2, bottom: 12),
+                      child: _CappedExpand(
+                        child: WmBlurFade(
+                            in_: true, dx: 10, child: widget.expanded),
+                      ),
                     )
                   : Padding(
                       key: const ValueKey('closed'),
-                      padding: const EdgeInsets.only(top: 8, left: 28),
+                      padding: const EdgeInsets.only(bottom: 12),
                       child: widget.collapsed,
                     ),
             ),
@@ -718,6 +744,44 @@ class _WmExpandDetailsState extends State<WmExpandDetails>
         ),
       ),
     );
+  }
+}
+
+/// Long expanded content never takes over the whole screen: the band caps
+/// at ~36% of the viewport with an internal scroll and a soft gradient
+/// fade at the bottom edge (Apple's edge-fade treatment instead of a hard
+/// cutoff) — the "synopsis opens weirdly covering the whole screen" fix.
+class _CappedExpand extends StatelessWidget {
+  const _CappedExpand({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (context, constraints) {
+      final screenH = MediaQuery.sizeOf(context).height;
+      var maxH = (screenH * 0.36).clamp(120.0, 420.0);
+      if (constraints.maxHeight.isFinite && constraints.maxHeight > 0) {
+        maxH = math.min(maxH, constraints.maxHeight);
+      }
+      return ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxH),
+        child: ShaderMask(
+          shaderCallback: (rect) => const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            stops: [0.0, 0.9, 1.0],
+            colors: [
+              Color(0xFFFFFFFF),
+              Color(0xFFFFFFFF),
+              Color(0x00FFFFFF),
+            ],
+          ).createShader(rect),
+          blendMode: BlendMode.dstIn,
+          child: SingleChildScrollView(child: child),
+        ),
+      );
+    });
   }
 }
 
@@ -1927,6 +1991,66 @@ class WmStatusPicker extends StatefulWidget {
 
 class _WmStatusPickerState extends State<WmStatusPicker> {
   bool _open = false;
+  OverlayEntry? _entry;
+  final LayerLink _link = LayerLink();
+
+  void _close() {
+    _entry?.remove();
+    _entry = null;
+    if (mounted) setState(() => _open = false);
+  }
+
+  @override
+  void dispose() {
+    _entry?.remove();
+    _entry = null;
+    super.dispose();
+  }
+
+  void _toggle() {
+    if (_open) {
+      _close();
+      return;
+    }
+    HapticFeedback.selectionClick();
+    if (mounted) setState(() => _open = true);
+    // The tray lives in the root Overlay (the same pattern as
+    // WmQuickOptionPicker): the previous INLINE tray fanned out under the
+    // pill, pushing every sibling below it down — inside a fixed-height
+    // filter row it overflowed the viewport stripe.
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) return;
+    _entry = OverlayEntry(
+      builder: (context) {
+        return Stack(
+          children: [
+            // Tap-outside barrier closes the tray.
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _close,
+                child: const SizedBox.expand(),
+              ),
+            ),
+            CompositedTransformFollower(
+              link: _link,
+              targetAnchor: Alignment.bottomLeft,
+              followerAnchor: Alignment.topLeft,
+              child: _StatusTray(
+                items: widget.items,
+                value: widget.value,
+                onSelect: (id) {
+                  widget.onChanged(id);
+                  _close();
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    overlay.insert(_entry!);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1935,108 +2059,175 @@ class _WmStatusPickerState extends State<WmStatusPicker> {
         widget.items.where((i) => i.id == widget.value).firstOrNull;
     final tint = current?.color ?? h.accent;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Collapsed pill.
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () {
-            setState(() => _open = !_open);
-            HapticFeedback.selectionClick();
-          },
-          child: AnimatedContainer(
-            duration: heroAnimationsEnabled
-                ? const Duration(milliseconds: 260)
-                : Duration.zero,
-            curve: Curves.easeOutCubic,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-            decoration: BoxDecoration(
-              color: _open ? h.surface2 : tint.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(HeroTokens.radiusChip),
-              border:
-                  Border.all(color: tint.withValues(alpha: 0.5), width: 1.1),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AnimatedSwitcher(
-                  duration: heroAnimationsEnabled
-                      ? const Duration(milliseconds: 240)
-                      : Duration.zero,
-                  switchInCurve: Curves.easeOutBack,
-                  transitionBuilder: (child, anim) => ScaleTransition(
-                    scale: anim,
-                    child: FadeTransition(opacity: anim, child: child),
-                  ),
-                  child: current == null
-                      ? Icon(Icons.radio_button_unchecked,
-                          key: const ValueKey('none'),
-                          size: 15,
-                          color: h.muted)
-                      : Icon(current.icon,
-                          key: ValueKey(current.id),
-                          size: 15,
-                          color: tint),
+    // Collapsed pill.
+    return CompositedTransformTarget(
+      link: _link,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _toggle,
+        child: AnimatedContainer(
+          duration: heroAnimationsEnabled
+              ? const Duration(milliseconds: 260)
+              : Duration.zero,
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          decoration: BoxDecoration(
+            color: _open ? h.surface2 : tint.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(HeroTokens.radiusChip),
+            border:
+                Border.all(color: tint.withValues(alpha: 0.5), width: 1.1),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedSwitcher(
+                duration: heroAnimationsEnabled
+                    ? const Duration(milliseconds: 240)
+                    : Duration.zero,
+                switchInCurve: Curves.easeOutBack,
+                transitionBuilder: (child, anim) => ScaleTransition(
+                  scale: anim,
+                  child: FadeTransition(opacity: anim, child: child),
                 ),
-                const SizedBox(width: 7),
-                AnimatedSwitcher(
-                  duration: heroAnimationsEnabled
-                      ? const Duration(milliseconds: 240)
-                      : Duration.zero,
-                  transitionBuilder: (child, anim) => FadeTransition(
-                    opacity: anim,
-                    child: SlideTransition(
-                      position: Tween(
-                              begin: const Offset(0, 0.4), end: Offset.zero)
-                          .animate(anim),
-                      child: child,
-                    ),
-                  ),
-                  child: Text(
-                    current?.name ?? 'Set status',
-                    key: ValueKey(current?.id ?? -1),
-                    style: HeroTokens.caption.copyWith(
-                      color: tint,
-                      fontWeight: FontWeight.w600,
-                    ),
+                child: current == null
+                    ? Icon(Icons.radio_button_unchecked,
+                        key: const ValueKey('none'),
+                        size: 15,
+                        color: h.muted)
+                    : Icon(current.icon,
+                        key: ValueKey(current.id),
+                        size: 15,
+                        color: tint),
+              ),
+              const SizedBox(width: 7),
+              AnimatedSwitcher(
+                duration: heroAnimationsEnabled
+                    ? const Duration(milliseconds: 240)
+                    : Duration.zero,
+                transitionBuilder: (child, anim) => FadeTransition(
+                  opacity: anim,
+                  child: SlideTransition(
+                    position: Tween(
+                            begin: const Offset(0, 0.4), end: Offset.zero)
+                        .animate(anim),
+                    child: child,
                   ),
                 ),
-              ],
+                child: Text(
+                  current?.name ?? 'Set status',
+                  key: ValueKey(current?.id ?? -1),
+                  style: HeroTokens.caption.copyWith(
+                    color: tint,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              RotationTransition(
+                turns: AlwaysStoppedAnimation(_open ? 0.5 : 0.0),
+                child:
+                    Icon(Icons.expand_more_rounded, size: 15, color: tint),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The floating status tray (overlay, tilt + blur-in entrance, staggered
+/// option cascade — the source's choreography, now without pushing the
+/// layout around).
+class _StatusTray extends StatefulWidget {
+  const _StatusTray({
+    required this.items,
+    required this.value,
+    required this.onSelect,
+  });
+
+  final List<WmStatusItem> items;
+  final int value;
+  final ValueChanged<int> onSelect;
+
+  @override
+  State<_StatusTray> createState() => _StatusTrayState();
+}
+
+class _StatusTrayState extends State<_StatusTray>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration:
+        heroAnimationsEnabled ? const Duration(milliseconds: 300) : Duration.zero,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _c.forward();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final h = HeroScope.of(context);
+    return FadeTransition(
+      opacity: CurvedAnimation(parent: _c, curve: Curves.easeOutCubic),
+      child: AnimatedBuilder(
+        animation: _c,
+        builder: (context, kid) {
+          final t = _c.value.clamp(0.0, 1.0);
+          final tilt = (1 - Curves.easeOutCubic.transform(t)) * 0.45;
+          return Transform(
+            alignment: Alignment.topCenter,
+            transform: Matrix4.identity()
+              ..setEntry(3, 2, 0.002)
+              ..rotateX(tilt),
+            child: kid,
+          );
+        },
+        child: Material(
+          color: Colors.transparent,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 320),
+            child: Container(
+              // Bounded width so the option rows' Expanded label works
+              // (an intrinsically-sized Column would hand the Row
+              // unbounded width).
+              width: 300,
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: h.surface2,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: h.border),
+                boxShadow: h.overlayShadow,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = 0; i < widget.items.length; i++)
+                    _StatusOption(
+                      item: widget.items[i],
+                      selected: widget.items[i].id == widget.value,
+                      delay: i * 0.03,
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        widget.onSelect(widget.items[i].id);
+                      },
+                    ),
+                ],
+              ),
             ),
           ),
         ),
-        // Option tray — fans out under the pill.
-        AnimatedSize(
-          duration: heroAnimationsEnabled
-              ? const Duration(milliseconds: 280)
-              : Duration.zero,
-          curve: Curves.easeOutCubic,
-          alignment: Alignment.topLeft,
-          child: _open
-              ? Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      for (var i = 0; i < widget.items.length; i++)
-                        _StatusOption(
-                          item: widget.items[i],
-                          selected: widget.items[i].id == widget.value,
-                          delay: i * 0.03,
-                          onTap: () {
-                            widget.onChanged(widget.items[i].id);
-                            setState(() => _open = false);
-                          },
-                        ),
-                    ],
-                  ),
-                )
-              : const SizedBox.shrink(),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -2090,39 +2281,39 @@ class _StatusOptionState extends State<_StatusOption>
     return FadeTransition(
       opacity: _a,
       child: ScaleTransition(
-        scale: Tween(begin: 0.7, end: 1.0).animate(_a),
+        scale: Tween(begin: 0.88, end: 1.0).animate(_a),
+        alignment: Alignment.centerLeft,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: () {
-            HapticFeedback.selectionClick();
-            widget.onTap();
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          onTap: widget.onTap,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
             decoration: BoxDecoration(
-              color:
-                  widget.selected ? tint.withValues(alpha: 0.16) : h.surface,
-              borderRadius: BorderRadius.circular(HeroTokens.radiusChip),
-              border: Border.all(
-                  color: widget.selected
-                      ? tint.withValues(alpha: 0.6)
-                      : h.border,
-                  width: 1.1),
+              color: widget.selected
+                  ? tint.withValues(alpha: 0.16)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(widget.item.icon, size: 14, color: tint),
-                const SizedBox(width: 6),
-                Text(
-                  widget.item.name,
-                  style: HeroTokens.caption.copyWith(
-                    color: widget.selected ? tint : h.foreground,
-                    fontWeight:
-                        widget.selected ? FontWeight.w600 : FontWeight.w500,
+                Icon(widget.item.icon, size: 16, color: tint),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    widget.item.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: HeroTokens.caption.copyWith(
+                      color: widget.selected ? tint : h.foreground,
+                      fontWeight:
+                          widget.selected ? FontWeight.w600 : FontWeight.w500,
+                    ),
                   ),
                 ),
+                if (widget.selected)
+                  Icon(Icons.check_rounded, size: 16, color: tint),
               ],
             ),
           ),
@@ -2259,6 +2450,9 @@ class _WmSplitToEditState extends State<WmSplitToEdit> {
                                 isDense: true,
                                 isCollapsed: true,
                                 border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                filled: false,
                                 contentPadding:
                                     EdgeInsets.symmetric(horizontal: 12),
                               ),

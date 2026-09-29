@@ -11,8 +11,6 @@
 
 import 'package:lumina_reader/core/ui/watermelon.dart';
 import 'package:flutter/material.dart' show TextField;
-import 'package:lumina_reader/providers/providers.dart'
-    show LibraryMediaType;
 import 'package:lumina_reader/router/router.dart' show routerProvider;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumina_reader/modules/anime_home/anime_home_screen.dart';
@@ -73,30 +71,29 @@ void main() {
     c;
   }, timeout: const Timeout(Duration(minutes: 6)));
 
-  testWidgets('flow: inline picker changes the media filter', (tester) async {
+  testWidgets('flow: discovery bar chips change the media filter', (tester) async {
     // The shared Isar from the previous test is reused (single-open rule).
     final c = await bootApp(tester, warmUp: true);
     c.read(routerProvider).go('/library');
     await flush(tester, rounds: 8);
 
-    // The media filter is a watermelon.sh Quick Option Picker: the pill
-    // shows the active option; tapping it pops the option tray.
-    final mediaPicker = find.byWidgetPredicate(
-        (w) => w is WmQuickOptionPicker<LibraryMediaType>);
-    expect(mediaPicker, findsOneWidget);
+    // The media filter now lives on the watermelon.sh Morphing Discovery
+    // Bar's category chips (the same search surface as the anime page) —
+    // the old standalone Media picker pill was redundant.
+    expect(find.byType(WmDiscoveryBar), findsOneWidget);
 
-    // Open the tray and switch to Novel → the novel entry is visible,
-    // manga entries are not.
-    await tester.tap(mediaPicker.first);
-    await flush(tester, rounds: 4);
-    await tester.tap(find.text('Novel').last);
+    // Tap the 'Novel' chip → the novel entry is visible, manga entries
+    // are not. (Scoped to the discovery bar: the status pill also shows
+    // 'All', so the finder must not be ambiguous.)
+    final bar = find.byType(WmDiscoveryBar);
+    await tester.tap(
+        find.descendant(of: bar, matching: find.text('Novel')));
     await flush(tester, rounds: 6);
     expect(find.text('Ocean of Stars'), findsWidgets);
 
-    // Re-open and switch back to All → everything renders again.
-    await tester.tap(mediaPicker.first);
-    await flush(tester, rounds: 4);
-    await tester.tap(find.text('All').last);
+    // Switch back to the 'All' chip → everything renders again.
+    await tester
+        .tap(find.descendant(of: bar, matching: find.text('All')));
     await flush(tester, rounds: 6);
     expect(find.text('Blade of the Immortal Wind'), findsWidgets);
 

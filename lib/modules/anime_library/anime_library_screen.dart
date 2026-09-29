@@ -42,12 +42,9 @@ class AnimeLibraryScreen extends ConsumerStatefulWidget {
 }
 
 class _AnimeLibraryScreenState extends ConsumerState<AnimeLibraryScreen> {
-  bool _searchVisible = false;
-  final _searchController = TextEditingController();
 
   @override
   void dispose() {
-    _searchController.dispose();
     super.dispose();
   }
 
@@ -129,20 +126,52 @@ class _AnimeLibraryScreenState extends ConsumerState<AnimeLibraryScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            _AnimeAppBar(
-              searchVisible: _searchVisible,
-              searchController: _searchController,
-              onSearchToggle: () {
-                setState(() {
-                  _searchVisible = !_searchVisible;
-                  if (!_searchVisible) {
-                    _searchController.clear();
-                    ref.read(libraryOptionsProvider.notifier).setQuery('');
-                  }
-                });
-              },
-              onSearchChanged: (v) =>
-                  ref.read(libraryOptionsProvider.notifier).setQuery(v),
+            // The SAME melon-ui Morphing Discovery Bar as every other
+            // library surface — one search pattern app-wide (the old
+            // icon-toggle + hidden HeroInput swap was a second pattern).
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Anime',
+                      style: Theme.of(context)
+                          .textTheme
+                          .headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  Consumer(builder: (context, ref, _) {
+                    final view = ref
+                        .watch(libraryOptionsProvider.select((o) => o.view));
+                    return IconButton(
+                      tooltip:
+                          view == LibraryView.grid ? 'List view' : 'Grid view',
+                      icon: Icon(view == LibraryView.grid
+                          ? Icons.view_list_rounded
+                          : Icons.grid_view_rounded),
+                      onPressed: () {
+                        ref.read(libraryOptionsProvider.notifier).setView(
+                            view == LibraryView.grid
+                                ? LibraryView.list
+                                : LibraryView.grid);
+                      },
+                    );
+                  }),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+              child: WmDiscoveryBar(
+                searchHint: 'Search anime…',
+                onChanged: (v) =>
+                    ref.read(libraryOptionsProvider.notifier).setQuery(v),
+                onSearch: (v) =>
+                    ref.read(libraryOptionsProvider.notifier).setQuery(v),
+                categories: const [],
+              ),
             ),
             _CategoryTabs(
               categories: categories,
@@ -162,123 +191,6 @@ class _AnimeLibraryScreenState extends ConsumerState<AnimeLibraryScreen> {
               onPressed: _importVideo,
               icon: const Icon(Icons.video_file_outlined),
               label: const Text('Import'),
-            ),
-    );
-  }
-}
-
-class _AnimeAppBar extends StatelessWidget implements PreferredSizeWidget {
-  const _AnimeAppBar({
-    required this.searchVisible,
-    required this.searchController,
-    required this.onSearchToggle,
-    required this.onSearchChanged,
-  });
-
-  final bool searchVisible;
-  final TextEditingController searchController;
-  final VoidCallback onSearchToggle;
-  final ValueChanged<String> onSearchChanged;
-
-  @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedSize(
-      duration: const Duration(milliseconds: 200),
-      child: searchVisible
-          ? Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-              // HeroInput (single hairline border) — the raw TextField here
-              // stacked its own OutlineInputBorder on top of the theme's
-              // filled OutlineInputBorder, rendering TWO outlines around
-              // the field.
-              child: HeroInput(
-                controller: searchController,
-                autofocus: true,
-                hint: 'Search anime…',
-                prefixIcon: Icons.search_rounded,
-                onChanged: onSearchChanged,
-                suffix: HeroIconButton(
-                  icon: Icons.close_rounded,
-                  iconSize: 19,
-                  size: 32,
-                  onPressed: onSearchToggle,
-                ),
-              ),
-            )
-          : Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 12, 4),
-              child: Row(
-                children: [
-                  Text(
-                    'Anime',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    tooltip: 'Search',
-                    icon: const Icon(Icons.search),
-                    onPressed: onSearchToggle,
-                  ),
-                  Consumer(builder: (context, ref, _) {
-                    final view =
-                        ref.watch(libraryOptionsProvider.select((o) => o.view));
-                    return IconButton(
-                      tooltip:
-                          view == LibraryView.grid ? 'List view' : 'Grid view',
-                      icon: Icon(view == LibraryView.grid
-                          ? Icons.view_list_rounded
-                          : Icons.grid_view_rounded),
-                      onPressed: () {
-                        ref.read(libraryOptionsProvider.notifier).setView(
-                            view == LibraryView.grid
-                                ? LibraryView.list
-                                : LibraryView.grid);
-                      },
-                    );
-                  }),
-                  Consumer(builder: (context, ref, _) {
-                    return Builder(builder: (context) {
-                      final options = ref.watch(libraryOptionsProvider);
-                      return HeroMenuButton<String>(
-                        tooltip: 'Sort',
-                        icon: Icons.sort_rounded,
-                        onSelected: (value) {
-                          final notifier =
-                              ref.read(libraryOptionsProvider.notifier);
-                          if (value == 'desc') {
-                            notifier.toggleSortDirection();
-                          } else {
-                            final sort = LibrarySort.values.firstWhere(
-                                (s) => s.name == value,
-                                orElse: () => LibrarySort.title);
-                            notifier.setSort(sort);
-                          }
-                        },
-                        items: [
-                          for (final s in LibrarySort.values)
-                            HeroMenuItem(
-                              value: s.name,
-                              label: s.label,
-                              checked: options.sort == s,
-                              dividerAfter:
-                                  s == LibrarySort.values.last,
-                            ),
-                          HeroMenuItem(
-                            value: 'desc',
-                            label: 'Descending',
-                            checked: options.sortDescending,
-                          ),
-                        ],
-                      );
-                    });
-                  }),
-                ],
-              ),
             ),
     );
   }

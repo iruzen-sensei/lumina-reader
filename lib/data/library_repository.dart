@@ -162,6 +162,19 @@ class LibraryRepository {
     await removeFromLibraryMany([mangaId]);
   }
 
+  /// Marks (or unmarks) a persisted entry as a favorite — the "Add to
+  /// Library" action for rows that reached the DB through the watch/read
+  /// flow with isFavorite=false (previously the detail-screen button only
+  /// handled the REMOVE direction).
+  Future<void> setFavorite(int mangaId, bool favorite) async {
+    await _isar.writeTxn(() async {
+      final m = await _isar.mangas.get(mangaId);
+      if (m == null) return;
+      m.isFavorite = favorite;
+      await _isar.mangas.put(m);
+    });
+  }
+
   /// Removes entries AND everything they own: chapter rows, download-queue
   /// rows, downloaded page files on disk and the imported source file for
   /// local books. Returns the number of entries actually removed.

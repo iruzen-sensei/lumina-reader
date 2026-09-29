@@ -1743,6 +1743,12 @@ class _HeroInputState extends State<HeroInput> {
               decoration: InputDecoration(
                 isCollapsed: true,
                 border: InputBorder.none,
+                // Same hardening as WmDiscoveryBar: without these the
+                // THEME's OutlineInputBorder/fill stacks a second outline
+                // around fields that draw their own container.
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                filled: false,
                 hintText: widget.hint,
                 hintStyle: HeroTokens.body.copyWith(
                   color: h.muted,

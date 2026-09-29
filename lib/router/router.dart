@@ -77,7 +77,9 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/browse',
             name: 'browse',
-            builder: (context, state) => const BrowseScreen(),
+            builder: (context, state) => BrowseScreen(
+              initialGenre: state.uri.queryParameters['genre'],
+            ),
           ),
           // Downloads (manga + anime)
           GoRoute(

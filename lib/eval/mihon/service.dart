@@ -30,6 +30,7 @@ class MihonExtensionService extends BaseExtensionService {
   /// lazily on the first call (server start takes a moment).
   final ExtensionServerRuntime _server;
 
+
   String? _cachedUrl;
 
   Future<String> get _serverUrl async =>
@@ -87,36 +88,19 @@ class MihonExtensionService extends BaseExtensionService {
 
   // ------------------------------------------------------------- catalogue
 
-  List<MManga> _listFromPageJson(dynamic json) {
-    if (json is! Map) return const [];
-    final list = json['list'] ?? json['mangaList'] ?? json['animeList'];
-    if (list is! List) return const [];
-    return [
-      for (final e in list)
-        if (e is Map)
-          MManga(
-            name: e['title']?.toString() ?? e['name']?.toString(),
-            link: e['url']?.toString(),
-            imageUrl: e['thumbnailUrl']?.toString() ?? e['imageUrl']?.toString(),
-            description: e['description']?.toString(),
-            author: e['author']?.toString(),
-            artist: e['artist']?.toString(),
-            status: e['status'] is int ? e['status'].toString() : e['status']?.toString(),
-            genre: e['genre'] is List
-                ? (e['genre'] as List).join(', ')
-                : e['genre']?.toString(),
-          )
-    ];
-  }
+  /// Parses a page response from the /dalvik bridge (see
+  /// [parseMihonPage] — the public, testable core).
+  List<MManga> _listFromPageJson(dynamic json) =>
+      parseMihonPage(json, displayName: source.displayName, isAnime: _isAnime);
 
   @override
   Future<List<MManga>> getPopular(int page) async => _listFromPageJson(
-      await _post({..._baseBody('getPopular$_kind'), 'page': page + 1, 'search': ''}));
+      await _post({..._baseBody('getPopular$_kind'), 'page': page, 'search': ''}));
 
   @override
   Future<List<MManga>> getLatestUpdates(int page) async =>
       _listFromPageJson(await _post(
-          {..._baseBody('getLatest$_kind'), 'page': page + 1, 'search': ''}));
+          {..._baseBody('getLatest$_kind'), 'page': page, 'search': ''}));
 
   @override
   Future<List<MManga>> searchManga({
@@ -132,11 +116,16 @@ class MihonExtensionService extends BaseExtensionService {
       ..._baseBody('getDetails$_kind'),
       if (_isAnime) 'animeData': {'url': url} else 'mangaData': {'url': url},
     });
-    if (data is! Map) return MManga(name: url, link: url);
+    if (data is! Map) {
+      throw Exception(
+          'Extension "${source.displayName}" returned an unreadable '
+          'details response.');
+    }
     final chapters = await getChapterList(url);
+    final link = stripMihonMemo(data['url']?.toString() ?? '');
     return MManga(
       name: data['title']?.toString(),
-      link: data['url']?.toString() ?? url,
+      link: link.isNotEmpty ? link : url,
       imageUrl: data['thumbnail_url']?.toString() ??
           data['thumbnailUrl']?.toString(),
       description: data['description']?.toString(),
@@ -147,6 +136,7 @@ class MihonExtensionService extends BaseExtensionService {
           ? (data['genre'] as List).join(', ')
           : data['genre']?.toString(),
       chapters: chapters,
+      isAnime: _isAnime,
     );
   }
 
@@ -156,15 +146,24 @@ class MihonExtensionService extends BaseExtensionService {
       ..._baseBody(_isAnime ? 'getEpisodeList' : 'getChapterList'),
       if (_isAnime) 'animeData': {'url': url} else 'mangaData': {'url': url},
     });
-    if (data is! List) return const [];
+    if (data is! List) {
+      throw Exception(
+          'Extension "${source.displayName}" returned an unreadable '
+          '${_isAnime ? 'episode' : 'chapter'} list.');
+    }
     return [
       for (final e in data)
         if (e is Map)
           MChapter(
             name: e['name']?.toString(),
-            url: e['url']?.toString(),
+            url: stripMihonMemo(e['url']?.toString() ?? ''),
             dateUpload: (e['date_upload'] ?? e['dateUpload'])?.toString(),
             scanlator: e['scanlator']?.toString(),
+            // The bridge serializes JChapter.chapter_number /
+            // JEpisode.episode_number as floats — feeding them through
+            // directly keeps ordering stable (no keyword recovery).
+            chapterNumber: (e['chapter_number'] ?? e['episode_number'])
+                ?.toString(),
           )
     ];
   }
@@ -175,7 +174,11 @@ class MihonExtensionService extends BaseExtensionService {
       ..._baseBody('getPageList'),
       'chapterData': {'url': url},
     });
-    if (data is! List) return const [];
+    if (data is! List) {
+      throw Exception(
+          'Extension "${source.displayName}" returned an unreadable '
+          'page list.');
+    }
     return [
       for (final e in data)
         if (e is Map) (e['imageUrl'] ?? e['url'] ?? '').toString()
@@ -188,7 +191,11 @@ class MihonExtensionService extends BaseExtensionService {
       ..._baseBody('getVideoList'),
       'episodeData': {'url': url},
     });
-    if (data is! List) return const [];
+    if (data is! List) {
+      throw Exception(
+          'Extension "${source.displayName}" returned an unreadable '
+          'video list.');
+    }
     final out = <MVideo>[];
     for (final e in data) {
       if (e is! Map) continue;
@@ -241,4 +248,76 @@ class MihonExtensionService extends BaseExtensionService {
     _client?.close();
     _client = null;
   }
+}
+
+/// The m_extension_server bridge appends `|mangayomi-memo|<base64>` to
+/// URLs that carry TachiyomiX 1.6 memo metadata. The bridge keeps its own
+/// copy of that metadata (MihonMetadataCache, keyed by the RAW url), so
+/// stripping the suffix client-side keeps URLs STABLE — the library
+/// dedupes entries by source URL and the memo payload changes between
+/// calls, which would have re-added the same entry twice.
+String stripMihonMemo(String raw) {
+  if (raw.isEmpty) return raw;
+  final i = raw.indexOf('|mangayomi-memo|');
+  return i < 0 ? raw : raw.substring(0, i);
+}
+
+/// Parses a /dalvik catalogue page.
+///
+/// WIRE FORMAT (m_extension_server ResponseModels.kt): manga lists are
+/// serialized under `mangas`, anime lists under `animes`, and the entry
+/// fields are `url` / `title` / `author` / `artist` / `description` /
+/// `genre` (comma string) / `status` (int) / `thumbnail_url`. The old
+/// parser looked for `list`/`mangaList`/`animeList` + `thumbnailUrl` —
+/// keys that NEVER occur on this wire — so every APK extension browse
+/// silently returned an EMPTY list (the "keiyoushi / NSFW / anime
+/// extensions fetch nothing" report).
+List<MManga> parseMihonPage(
+  dynamic json, {
+  required String displayName,
+  required bool isAnime,
+}) {
+  if (json is! Map) {
+    throw Exception(
+        'Extension "$displayName" returned an unreadable catalogue '
+        'response.');
+  }
+  final list = json['mangas'] ??
+      json['animes'] ??
+      json['list'] ??
+      json['mangaList'] ??
+      json['animeList'];
+  if (list == null) {
+    throw Exception(
+        'Extension "$displayName" sent a catalogue response without a '
+        'result list.');
+  }
+  if (list is! List) {
+    throw Exception(
+        'Extension "$displayName" sent a malformed result list.');
+  }
+  return [
+    for (final e in list)
+      if (e is Map)
+        MManga(
+          name: e['title']?.toString() ?? e['name']?.toString(),
+          link: stripMihonMemo(e['url']?.toString() ?? ''),
+          imageUrl: e['thumbnail_url']?.toString() ??
+              e['thumbnailUrl']?.toString() ??
+              e['imageUrl']?.toString(),
+          description: e['description']?.toString(),
+          author: e['author']?.toString(),
+          artist: e['artist']?.toString(),
+          status:
+              e['status'] is int ? e['status'].toString() : e['status']?.toString(),
+          genre: e['genre'] is List
+              ? (e['genre'] as List).join(', ')
+              : e['genre']?.toString(),
+          // CRITICAL: without this, anime APK extensions are typed as
+          // MANGA downstream (the coordinator keys off MManga.isAnime),
+          // so episodes opened the IMAGE reader with zero pages and the
+          // CTA said "Start reading".
+          isAnime: isAnime,
+        )
+  ];
 }

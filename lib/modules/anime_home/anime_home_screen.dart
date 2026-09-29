@@ -803,10 +803,9 @@ class _AniListRow extends ConsumerWidget {
         items.when(
           data: (list) => SliverToBoxAdapter(
             child: HeroFadedRail(
-              height: numbered ? 210 : 214,
+              height: 214,
               itemCount: list.length,
-              separatorBuilder: (_, __) =>
-                  SizedBox(width: numbered ? 4 : 10),
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
               itemBuilder: (context, i) {
                 final anime = list[i];
                 return numbered
@@ -958,8 +957,11 @@ class _PosterCard extends ConsumerWidget {
   }
 }
 
-/// Netflix-style numbered Top-10 card: giant outlined numeral behind the
-/// poster, poster offset to the right.
+/// Netflix-style Top-10 card: the SAME poster card as every other rail
+/// (consistent sizing), with a compact rank badge fused to the poster's
+/// top-left — the Netflix "TOP 10" badge grammar. The previous design
+/// (a 96px outlined numeral behind an offset poster) overflowed its rail,
+/// misaligned titles and read as noise.
 class _NumberedCard extends ConsumerWidget {
   const _NumberedCard({required this.rank, required this.anime});
 
@@ -972,53 +974,108 @@ class _NumberedCard extends ConsumerWidget {
     return HeroScaleTap(
       onTap: () => openAniListEntry(context, ref, anime),
       child: SizedBox(
-        width: 150,
-        height: 200,
-        child: Stack(
-          clipBehavior: Clip.none,
+        width: 118,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Positioned(
-              left: -6,
-              bottom: -8,
-              child: Text(
-                '$rank',
-                style: TextStyle(
-                  fontFamily: HeroTokens.fontSans,
-                  fontSize: 96,
-                  fontWeight: FontWeight.w800,
-                  height: 0.9,
-                  foreground: Paint()
-                    ..style = PaintingStyle.stroke
-                    ..strokeWidth = 2.5
-                    ..color = h.muted.withValues(alpha: 0.55),
+            Stack(
+              children: [
+                Container(
+                  width: 118,
+                  height: 160,
+                  clipBehavior: Clip.antiAlias,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(HeroTokens.radiusCard),
+                    color: h.surface2,
+                  ),
+                  child: (anime.coverUrl ?? '').isNotEmpty
+                      ? Image.network(anime.coverUrl!,
+                          fit: BoxFit.cover,
+                          frameBuilder:
+                              (context, child, frame, wasSync) => wasSync
+                                  ? child
+                                  : AnimatedOpacity(
+                                      opacity: frame == null ? 0 : 1,
+                                      duration:
+                                          const Duration(milliseconds: 260),
+                                      child: child,
+                                    ),
+                          errorBuilder: (_, __, ___) =>
+                              const SizedBox.shrink())
+                      : const SizedBox.shrink(),
                 ),
+                // Rank badge — a small crimson tab fused to the top-left
+                // corner (rank number + TOP 10 eyebrow).
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
+                    decoration: const BoxDecoration(
+                      color: kNetflixRed,
+                      borderRadius: BorderRadius.only(
+                        topRight: Radius.circular(10),
+                        bottomRight: Radius.circular(10),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Text(
+                          '$rank',
+                          style: const TextStyle(
+                            fontFamily: HeroTokens.fontSans,
+                            fontSize: 15,
+                            height: 1,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'TOP 10',
+                          style: TextStyle(
+                            fontFamily: HeroTokens.fontSans,
+                            fontSize: 8,
+                            height: 1.1,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.6,
+                            color: Colors.white.withValues(alpha: 0.92),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              anime.bestTitle,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: HeroTokens.caption.copyWith(
+                color: h.foreground,
+                fontWeight: FontWeight.w600,
+                height: 1.2,
               ),
             ),
-            Positioned(
-              right: 0,
-              child: Container(
-                width: 112,
-                height: 152,
-                clipBehavior: Clip.antiAlias,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(HeroTokens.radiusCard),
-                  color: h.surface2,
+            if (anime.seasonYear != null)
+              Text(
+                [
+                  if (anime.format != null) anime.format!,
+                  '${anime.seasonYear}',
+                ].join(' · '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: HeroTokens.caption.copyWith(
+                  color: h.muted,
+                  fontSize: 11,
+                  height: 1.2,
                 ),
-                child: (anime.coverUrl ?? '').isNotEmpty
-                    ? Image.network(anime.coverUrl!,
-                        fit: BoxFit.cover,
-                        frameBuilder: (context, child, frame, wasSync) => wasSync
-                            ? child
-                            : AnimatedOpacity(
-                                opacity: frame == null ? 0 : 1,
-                                duration: const Duration(milliseconds: 260),
-                                child: child,
-                              ),
-                        errorBuilder: (_, __, ___) =>
-                            const SizedBox.shrink())
-                    : const SizedBox.shrink(),
               ),
-            ),
           ],
         ),
       ),

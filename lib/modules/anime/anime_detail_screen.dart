@@ -79,15 +79,11 @@ class _AnimeDetailScreenState extends ConsumerState<AnimeDetailScreen> {
           SliverToBoxAdapter(
             child: _HeroHeader(
               manga: manga,
+              continueLabel: _continueLabel(manga),
+              inLibrary: manga.favorite,
               onBack: () => Navigator.maybePop(context),
               onOpenInBrowser: () => _openInBrowser(manga),
               onShare: () => _share(manga),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: _ActionBlock(
-              continueLabel: _continueLabel(manga),
-              inLibrary: manga.favorite,
               onContinue: () {
                 if (manga.chapters.isEmpty) {
                   showSnack(ref, context, 'No episodes available yet');
@@ -95,29 +91,13 @@ class _AnimeDetailScreenState extends ConsumerState<AnimeDetailScreen> {
                 }
                 _openEpisode(manga, _nextUnread(manga.chapters));
               },
+              onToggleLibrary: () => _toggleFavorite(manga),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: _StatusRow(
               statusValue: manga.userStatus,
               onStatusChanged: (v) => _setUserStatus(manga, v),
-              trackLinks: [
-                (
-                  'MAL',
-                  Icons.tv_rounded,
-                  'https://myanimelist.net/search/all?q='
-                      '${Uri.encodeComponent(manga.title)}'
-                ),
-                (
-                  'AniList',
-                  Icons.auto_awesome_rounded,
-                  'https://anilist.co/search/anime?search='
-                      '${Uri.encodeComponent(manga.title)}'
-                ),
-                (
-                  'Kitsu',
-                  Icons.pets_rounded,
-                  'https://kitsu.app/anime?text='
-                      '${Uri.encodeComponent(manga.title)}'
-                ),
-              ],
-              onToggleLibrary: () => _toggleFavorite(manga),
             ),
           ),
           SliverToBoxAdapter(
@@ -181,23 +161,38 @@ class _AnimeDetailScreenState extends ConsumerState<AnimeDetailScreen> {
     return best ?? chapters.first;
   }
 
-  /// REAL remove-from-library (the button truly deletes the entry, its
-  /// downloads and history, then pops back).
-  Future<void> _toggleFavorite(Manga manga) async {
+  /// REAL add/remove-from-library. When the entry is not yet favorited
+  /// (watch-flow entries land in the DB with favorite=false) it is ADDED —
+  /// the old code ALWAYS ran the remove-confirm, so "Add to Library"
+  /// asked "Remove from library?" and did nothing (the dead-button
+  /// report).
+  Future<bool> _toggleFavorite(Manga manga) async {
+    final repo = ref.read(data.libraryRepositoryProvider);
+    if (!manga.favorite) {
+      try {
+        await repo.setFavorite(manga.id, true);
+        ref.invalidate(mangaDetailProvider(manga.id));
+        if (mounted) showSnack(ref, context, 'Added "${manga.title}" to library');
+        return true;
+      } catch (e) {
+        if (mounted) showSnack(ref, context, 'Could not add: $e');
+        return false;
+      }
+    }
     final confirmed = await showHeroDeleteConfirm(
       context: context,
       title: 'Remove from library?',
       message:
           '"${manga.title}" and its episodes, downloads and history will be deleted. This cannot be undone.',
       confirmLabel: 'Remove',
-      
     );
-    if (!confirmed) return;
-    await ref.read(data.libraryRepositoryProvider).removeFromLibrary(manga.id);
+    if (!confirmed) return false;
+    await repo.removeFromLibrary(manga.id);
     if (mounted) {
       showSnack(ref, context, 'Removed "${manga.title}" from library');
       context.pop();
     }
+    return true;
   }
 
   /// Opens the entry's web page in the external browser (top-right header
@@ -277,9 +272,13 @@ class _AnimeDetailScreenState extends ConsumerState<AnimeDetailScreen> {
 class _HeroHeader extends StatelessWidget {
   const _HeroHeader({
     required this.manga,
+    required this.continueLabel,
+    required this.inLibrary,
     required this.onBack,
     required this.onOpenInBrowser,
     required this.onShare,
+    required this.onContinue,
+    required this.onToggleLibrary,
   });
 
   /// Backdrop height excluding the status bar (~200-230 total on device).
@@ -291,9 +290,16 @@ class _HeroHeader extends StatelessWidget {
   static const double _overlap = 70;
 
   final Manga manga;
+  final String continueLabel;
+  final bool inLibrary;
   final VoidCallback onBack;
   final VoidCallback onOpenInBrowser;
   final VoidCallback onShare;
+  final VoidCallback onContinue;
+
+  /// Runs the add/remove action; resolves true on success (the Feedback
+  /// Action morphs to its success/error state from this).
+  final Future<bool> Function() onToggleLibrary;
 
   @override
   Widget build(BuildContext context) {
@@ -406,6 +412,44 @@ class _HeroHeader extends StatelessWidget {
                     _StatusRatingRow(
                       status: manga.status,
                       rating: manga.rating,
+                    ),
+                    const SizedBox(height: 12),
+                    // Watch + Library actions, directly beside the cover /
+                    // under the title (Apple TV detail grammar) — the old
+                    // placement floated a full-width CTA + a track fan-out
+                    // further down the page, disconnected from the title.
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Row(
+                        children: [
+                          HeroButton(
+                            label: continueLabel,
+                            icon: Icons.play_arrow_rounded,
+                            variant: HeroButtonVariant.solid,
+                            size: HeroButtonSize.sm,
+                            onPressed: onContinue,
+                          ),
+                          const SizedBox(width: 8),
+                          // watermelon.sh Feedback Action — real add/remove
+                          // with loading/success/error states (previously a
+                          // dead button: watch-flow rows are persisted with
+                          // favorite=false and the tap only ever ran the
+                          // REMOVE confirm).
+                          WmFeedbackAction(
+                            idleLabel: inLibrary
+                                ? 'In Library'
+                                : 'Add to Library',
+                            idleIcon: inLibrary
+                                ? Icons.bookmark_rounded
+                                : Icons.bookmark_border_rounded,
+                            loadingLabel: inLibrary ? 'Removing…' : 'Adding…',
+                            successLabel: inLibrary ? 'Removed' : 'Added',
+                            errorLabel: 'Failed',
+                            onAction: onToggleLibrary,
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -566,122 +610,52 @@ class _StatusRatingRow extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Action block — primary continue-watching CTA + library / track pills.
+// Status row — the watermelon.sh Status Picker (watching-status setter),
+// aligned with the page content. The full-width CTA + track fan-out that
+// used to live here moved into the hero header beside the title.
 // ---------------------------------------------------------------------------
 
-class _ActionBlock extends StatelessWidget {
-  const _ActionBlock({
-    required this.continueLabel,
-    required this.inLibrary,
+class _StatusRow extends StatelessWidget {
+  const _StatusRow({
     required this.statusValue,
     required this.onStatusChanged,
-    required this.trackLinks,
-    required this.onContinue,
-    required this.onToggleLibrary,
   });
 
-  final String continueLabel;
-  final bool inLibrary;
-
-  /// 0 = Watching, 1 = Finished, 2 = Plan (Status Picker).
+  /// 0 = Watching, 1 = Finished, 2 = Plan to watch (Status Picker).
   final int statusValue;
   final ValueChanged<int> onStatusChanged;
-
-  /// (label, icon, url) tracker entries for the Split Actions fan-out.
-  final List<(String, IconData, String)> trackLinks;
-
-  final VoidCallback onContinue;
-  final VoidCallback onToggleLibrary;
 
   @override
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          HeroButton(
-            label: continueLabel,
-            icon: Icons.play_arrow_rounded,
-            variant: HeroButtonVariant.solid,
-            size: HeroButtonSize.md,
-            onPressed: onContinue,
-          ),
-          const SizedBox(height: 12),
-          // Secondary row — BOTH actions exactly 44px tall, baseline
-          // aligned (the old mixed 34px/40px row read as broken).
-          SizedBox(
-            height: 44,
-            child: Row(
-              children: [
-                Expanded(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: HeroButton(
-                      label: inLibrary ? 'In Library' : 'Add to Library',
-                      icon: inLibrary
-                          ? Icons.bookmark_rounded
-                          : Icons.bookmark_border_rounded,
-                      variant: HeroButtonVariant.soft,
-                      size: HeroButtonSize.md,
-                      onPressed: onToggleLibrary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                // Track — watermelon.sh Split Actions fan-out.
-                Center(
-                  child: WmSplitActions(
-                    triggerIcon: Icons.insights_outlined,
-                    actions: [
-                      for (final (label, icon, url) in trackLinks)
-                        WmSplitAction(
-                          icon: icon,
-                          label: label,
-                          onTap: () async {
-                            final uri = Uri.tryParse(url);
-                            if (uri != null) {
-                              await launchUrl(uri,
-                                  mode: LaunchMode.externalApplication);
-                            }
-                          },
-                        ),
-                    ],
-                  ),
-                ),
-              ],
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: WmStatusPicker(
+          value: statusValue,
+          onChanged: onStatusChanged,
+          items: [
+            WmStatusItem(
+              id: 0,
+              icon: Icons.play_circle_outline_rounded,
+              name: 'Watching',
+              color: h.accent,
             ),
-          ),
-          const SizedBox(height: 16),
-          // Status Picker — watching-status setter. The pill is
-          // self-explanatory ("Watching ▾"); the old uppercase caption
-          // label above it added noise, not hierarchy.
-          WmStatusPicker(
-            value: statusValue,
-            onChanged: onStatusChanged,
-            items: [
-              WmStatusItem(
-                id: 0,
-                icon: Icons.play_circle_outline_rounded,
-                name: 'Watching',
-                color: h.accent,
-              ),
-              WmStatusItem(
-                id: 1,
-                icon: Icons.check_circle_outline_rounded,
-                name: 'Finished',
-                color: h.success,
-              ),
-              WmStatusItem(
-                id: 2,
-                icon: Icons.schedule_rounded,
-                name: 'Plan to watch',
-                color: h.warning,
-              ),
-            ],
-          ),
-        ],
+            WmStatusItem(
+              id: 1,
+              icon: Icons.check_circle_outline_rounded,
+              name: 'Finished',
+              color: h.success,
+            ),
+            WmStatusItem(
+              id: 2,
+              icon: Icons.schedule_rounded,
+              name: 'Plan to watch',
+              color: h.warning,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -747,11 +721,15 @@ class _GenreChips extends StatelessWidget {
         runSpacing: 8,
         children: [
           for (final genre in visible)
+            // Tappable: jumps into the AniList browse's genre rail
+            // (previously dead display-only chips).
             HeroChip(
               label: genre,
               variant: HeroChipVariant.soft,
               color: HeroColorRole.accent,
               small: true,
+              onTap: () => context.push(
+                  '/animeBrowse?genre=${Uri.encodeComponent(genre)}'),
             ),
         ],
       ),

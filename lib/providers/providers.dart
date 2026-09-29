@@ -1668,7 +1668,9 @@ class BrowseGridNotifier extends StateNotifier<BrowseFeedState> {
     this._sourceId,
     this._coordinator, {
     bool latest = false,
+    String? genre,
   })  : _latest = latest,
+        _genre = genre,
         super(const BrowseFeedState(loading: true)) {
     _load();
   }
@@ -1676,6 +1678,11 @@ class BrowseGridNotifier extends StateNotifier<BrowseFeedState> {
   final int _sourceId;
   final bool _latest;
   final ExtensionCoordinator _coordinator;
+
+  /// Optional genre filter: when set, the feed browses by genre through
+  /// the source's own search pipeline (every source exposes search; only
+  /// some expose native genre endpoints — search is the universal path).
+  final String? _genre;
   int _page = 1;
   bool _hasMore = true;
   bool _loadingMore = false;
@@ -1684,13 +1691,20 @@ class BrowseGridNotifier extends StateNotifier<BrowseFeedState> {
 
   Future<void> _load() => load();
 
+  Future<List<Manga>> _fetch(int page) {
+    final genre = _genre;
+    if (genre != null && genre.isNotEmpty) {
+      return _coordinator.search(_sourceId, genre, page: page);
+    }
+    return _latest
+        ? _coordinator.latest(_sourceId, page: page)
+        : _coordinator.popular(_sourceId, page: page);
+  }
+
   Future<void> load({bool latest = false, int page = 1}) async {
     state = BrowseFeedState(items: state.items, loading: true);
     try {
-      final useLatest = latest || _latest;
-      final items = useLatest
-          ? await _coordinator.latest(_sourceId, page: page)
-          : await _coordinator.popular(_sourceId, page: page);
+      final items = await _fetch(page);
       _page = page;
       _hasMore = items.length >= 20; // sources page in twenties
       state = BrowseFeedState(items: items);
@@ -1707,9 +1721,7 @@ class BrowseGridNotifier extends StateNotifier<BrowseFeedState> {
     if (_loadingMore || !_hasMore) return;
     _loadingMore = true;
     try {
-      final next = _latest
-          ? await _coordinator.latest(_sourceId, page: _page + 1)
-          : await _coordinator.popular(_sourceId, page: _page + 1);
+      final next = await _fetch(_page + 1);
       _page = _page + 1;
       _hasMore = next.length >= 20;
       if (next.isNotEmpty) {
@@ -1747,10 +1759,11 @@ class BrowseGridNotifier extends StateNotifier<BrowseFeedState> {
 final browseFeedProvider = StateNotifierProvider.autoDispose.family<
     BrowseGridNotifier,
     BrowseFeedState,
-    (int, bool)>((ref, key) => BrowseGridNotifier(
+    (int, bool, String?)>((ref, key) => BrowseGridNotifier(
       key.$1,
       ref.watch(extensionCoordinatorProvider),
       latest: key.$2,
+      genre: key.$3,
     ));
 
 /// Search ONE source. Keyed by (sourceId, query) — previously the
