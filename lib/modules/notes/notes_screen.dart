@@ -46,10 +46,6 @@ class NotesScreen extends ConsumerStatefulWidget {
 class _NotesScreenState extends ConsumerState<NotesScreen> {
   final _searchController = TextEditingController();
   final _scrollController = ScrollController();
-  final _composerKey = GlobalKey();
-
-  /// Bumping this regenerates the composer with initiallyOpen.
-  int _composerGeneration = 0;
 
   @override
   void dispose() {
@@ -107,16 +103,10 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 12)),
             // ---- THE single create affordance: Expand Details band ----
-            SliverToBoxAdapter(
+            const SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: KeyedSubtree(
-                  key: ValueKey('composer-$_composerGeneration'),
-                  child: _NoteComposer(
-                    key: _composerKey,
-                    initiallyOpen: _composerGeneration > 0,
-                  ),
-                ),
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: _NoteComposer(),
               ),
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 12)),
@@ -166,9 +156,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
 // ---------------------------------------------------------------------------
 
 class _NoteComposer extends ConsumerStatefulWidget {
-  const _NoteComposer({super.key, this.initiallyOpen = false});
-
-  final bool initiallyOpen;
+  const _NoteComposer();
 
   @override
   ConsumerState<_NoteComposer> createState() => _NoteComposerState();
@@ -194,7 +182,6 @@ class _NoteComposerState extends ConsumerState<_NoteComposer> {
     final targets = ref.watch(noteTargetsProvider);
     return WmExpandDetails(
       title: 'New note',
-      initiallyOpen: widget.initiallyOpen,
       collapsed: Text(
         'Jot down a thought or save a highlight…',
         style: HeroTokens.bodySmall.copyWith(color: h.muted),
@@ -217,7 +204,6 @@ class _NoteComposerState extends ConsumerState<_NoteComposer> {
               controller: _controller,
               hint: 'Write your note…',
               maxLines: 4,
-              autofocus: widget.initiallyOpen,
             ),
             const SizedBox(height: 12),
             // ---- Attach to a title (manga / anime / novel / book) ----
@@ -228,7 +214,7 @@ class _NoteComposerState extends ConsumerState<_NoteComposer> {
               trayAbove: false,
               value: _target,
               options: [
-                WmPickerOption<_NoteTarget?>(
+                const WmPickerOption<_NoteTarget?>(
                   value: null,
                   label: 'General note',
                   icon: Icons.notes_rounded,
@@ -390,9 +376,9 @@ class _TitleFilterPicker extends ConsumerWidget {
           trayAbove: false,
           value: selected ?? -1,
           options: [
-            WmPickerOption<int>(
+            const WmPickerOption<int>(
                 value: -1, label: 'All notes', icon: Icons.notes_rounded),
-            WmPickerOption<int>(
+            const WmPickerOption<int>(
                 value: 0, label: 'General', icon: Icons.notes_rounded),
             for (final title in titles)
               WmPickerOption<int>(
