@@ -393,6 +393,12 @@ class LibraryRepository {
     await _isar.writeTxn(() async {
       final m = await _isar.mangas.get(mangaId);
       if (m == null) return;
+      // Persist the EXPLICIT status. The old write only flipped
+      // isFinished, and the UI derived the status back from
+      // isFinished/readCount — so "Watching" (0) never stuck for an entry
+      // with zero watched episodes: the derived value immediately snapped
+      // the pill back to "Plan to watch".
+      m.userStatusOverride = status;
       switch (status) {
         case 1:
           m.isFinished = true;

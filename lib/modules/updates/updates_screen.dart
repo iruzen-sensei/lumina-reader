@@ -410,40 +410,37 @@ class _UpdateTileState extends ConsumerState<_UpdateTile> {
         ),
       );
     }
+    if (_isDownloaded) {
+      // Downloaded → the rare-ui Delete Button morph: tap the bin, it
+      // expands with ✓ (delete) / ✗ (keep) circles inside the component —
+      // the app-wide delete affordance (replaces the toggle + modal).
+      return HeroDeleteButton(
+        size: 36,
+        onConfirm: () async {
+          final item = widget.item;
+          if (item.chapterId == null) return;
+          await ref
+              .read(downloadsProvider.notifier)
+              .deleteChapterFiles(item.chapterId!);
+          if (mounted) {
+            setState(() => _isDownloaded = false);
+            showSnack(ref, context, 'Download deleted');
+          }
+        },
+      );
+    }
     return HeroIconButton(
-      tooltip: _isDownloaded ? 'Delete download' : 'Download',
-      icon:
-          _isDownloaded ? Icons.check_circle_rounded : Icons.download_outlined,
+      tooltip: 'Download',
+      icon: Icons.download_outlined,
       size: 36,
       iconSize: 20,
-      variant: _isDownloaded ? HeroColorRole.success : HeroColorRole.neutral,
+      variant: HeroColorRole.neutral,
       onPressed: _toggleDownload,
     );
   }
 
   Future<void> _toggleDownload() async {
     final item = widget.item;
-    if (_isDownloaded) {
-      // REAL delete — removes the downloaded files + queue rows and
-      // resets the chapter flag (previously "flip visual state only").
-      if (item.chapterId == null) return;
-      final confirmed = await showHeroDeleteConfirm(
-        context: context,
-        title: 'Delete download?',
-        message:
-            'The downloaded files for "${item.chapterName}" will be removed from this device.',
-        confirmLabel: 'Delete',
-      );
-      if (!confirmed) return;
-      await ref
-          .read(downloadsProvider.notifier)
-          .deleteChapterFiles(item.chapterId!);
-      if (mounted) {
-        setState(() => _isDownloaded = false);
-        showSnack(ref, context, 'Download deleted');
-      }
-      return;
-    }
     if (item.chapterId == null) {
       showSnack(ref, context, 'Chapter unavailable for download');
       return;

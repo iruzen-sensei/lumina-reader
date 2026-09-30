@@ -15,6 +15,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:io' show Platform;
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -654,97 +655,157 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
       });
     }
 
+    // YouTube-style layout: in PORTRAIT the video is a ROUNDED CARD with
+    // compact controls overlaid INSIDE it and the episode list scrolling
+    // BELOW it (user directive: "built like YouTube's video player — the
+    // video playing section is a rounded rectangle with the playing
+    // buttons on it, and below the rounded rectangular component is the
+    // list of episodes"). In LANDSCAPE the full-bleed cinema chrome
+    // (top gradient + center cluster + Extended Toolbar) stays — that IS
+    // the YouTube fullscreen behaviour.
+    final portrait =
+        MediaQuery.of(context).orientation == Orientation.portrait;
+
+    if (portrait) {
+      return Scaffold(
+        backgroundColor: _kPlayerPageBg,
+        body: SafeArea(
+          bottom: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // ---- The rounded video card ----
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 6, 10, 0),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: _buildVideoStack(media, compact: true),
+                  ),
+                ),
+              ),
+              // ---- Everything below the card ----
+              Expanded(
+                child: _EpisodeListPanel(
+                  manga: _manga,
+                  currentEpisodeId: _currentEpisodeId,
+                  currentEpisodeName: _episode?.name ?? '',
+                  onPick: _switchToEpisode,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.black,
-      body: _PlayerGestures(
-        // Gesture layer UNDER the controls overlay: taps on visible control
-        // buttons hit the buttons (they are front-most in the Stack), taps
-        // on the video hit this layer.
-        onSingleTap: _locked ? _revealLockUi : _toggleControls,
-        onDoubleTapSide: (side) {
-          if (side != 0) _doubleTapSeek(side);
-        },
-        onHorizontalDragStart: () {
-          setState(() {
-            _scrubbing = true;
-            _scrubTarget = _position;
-          });
-          _hideTimer?.cancel();
-        },
-        onHorizontalDragUpdate: (dx) {
-          // ~1.2 screen widths = full seek span (comfortable precision).
-          final width = MediaQuery.of(context).size.width;
-          final span =
-              _duration.inMilliseconds.toDouble().clamp(1, double.infinity);
-          final delta = dx / (width * 1.2) * span;
-          setState(() {
-            _scrubTarget = Duration(
-                milliseconds:
-                    (_scrubTarget.inMilliseconds + delta).clamp(0, span).round());
-          });
-        },
-        onHorizontalDragEnd: () {
-          final target = _scrubTarget;
-          setState(() => _scrubbing = false);
-          unawaited(_seekTo(target));
-          _scheduleHide();
-        },
-        onVerticalDragStart: () {
-          setState(() {
-            _volumeDragging = true;
-            _volumeDragStart = _volume;
-          });
-          _hideTimer?.cancel();
-        },
-        onVerticalDragUpdate: (dy) {
-          // Full height drag = 0→100% volume (right-half drags only).
-          final height = MediaQuery.of(context).size.height;
-          _setVolume(_volumeDragStart - dy / height * 100);
-        },
-        onVerticalDragEnd: () {
-          setState(() => _volumeDragging = false);
-          _scheduleHide();
-        },
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Center(
-              child: Video(
-                controller: _controller,
-                fit: BoxFit.contain,
-                controls: null,
-              ),
+      body: _buildVideoStack(media, compact: false),
+    );
+  }
+
+  /// The complete playback surface (video + gestures + indicators +
+  /// overlay chrome). Shared by the portrait card (compact chrome) and
+  /// the landscape full-bleed cinema layout — the only difference is
+  /// which overlay set [compact] selects.
+  Widget _buildVideoStack(EpisodeMediaState media, {required bool compact}) {
+    return _PlayerGestures(
+      // Gesture layer UNDER the controls overlay: taps on visible control
+      // buttons hit the buttons (they are front-most in the Stack), taps
+      // on the video hit this layer.
+      onSingleTap: _locked ? _revealLockUi : _toggleControls,
+      onDoubleTapSide: (side) {
+        if (side != 0) _doubleTapSeek(side);
+      },
+      onHorizontalDragStart: () {
+        setState(() {
+          _scrubbing = true;
+          _scrubTarget = _position;
+        });
+        _hideTimer?.cancel();
+      },
+      onHorizontalDragUpdate: (dx) {
+        // ~1.2 screen widths = full seek span (comfortable precision).
+        final width = MediaQuery.of(context).size.width;
+        final span =
+            _duration.inMilliseconds.toDouble().clamp(1, double.infinity);
+        final delta = dx / (width * 1.2) * span;
+        setState(() {
+          _scrubTarget = Duration(
+              milliseconds:
+                  (_scrubTarget.inMilliseconds + delta).clamp(0, span).round());
+        });
+      },
+      onHorizontalDragEnd: () {
+        final target = _scrubTarget;
+        setState(() => _scrubbing = false);
+        unawaited(_seekTo(target));
+        _scheduleHide();
+      },
+      onVerticalDragStart: () {
+        setState(() {
+          _volumeDragging = true;
+          _volumeDragStart = _volume;
+        });
+        _hideTimer?.cancel();
+      },
+      onVerticalDragUpdate: (dy) {
+        // Full height drag = 0→100% volume (right-half drags only).
+        final height = MediaQuery.of(context).size.height;
+        _setVolume(_volumeDragStart - dy / height * 100);
+      },
+      onVerticalDragEnd: () {
+        setState(() => _volumeDragging = false);
+        _scheduleHide();
+      },
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Center(
+            child: Video(
+              controller: _controller,
+              fit: BoxFit.contain,
+              controls: null,
             ),
-            if (_isLoading && _playerError == null && !_inPip)
-              const Center(child: CircularProgressIndicator()),
-            if (_playerError != null ||
-                (!media.loading && media.sources.isEmpty))
-              _PlayerErrorCard(
-                message: _playerError ??
-                    media.error ??
-                    'No stream available for this episode.',
-                onRetry: _retryOpen,
-              ),
-            // Indicators — purely visual, never intercept touches.
-            IgnorePointer(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  _DoubleTapIndicator(side: _doubleTapSide),
-                  if (_volumeDragging) _VolumeHud(volume: _volume),
-                  if (_scrubbing)
-                    _ScrubBubble(target: _scrubTarget, duration: _duration),
-                ],
-              ),
+          ),
+          if (_isLoading && _playerError == null && !_inPip)
+            const Center(child: CircularProgressIndicator()),
+          if (_playerError != null ||
+              (!media.loading && media.sources.isEmpty))
+            _PlayerErrorCard(
+              message: _playerError ??
+                  media.error ??
+                  'No stream available for this episode.',
+              onRetry: _retryOpen,
             ),
-            if (_activeSkip != null && !_locked)
-              _SkipButton(range: _activeSkip!, onSkip: _skipCurrent),
-            // Controls overlay — ON TOP of the gesture layer so its
-            // buttons always win the gesture arena.
-            if (_controlsVisible && !_inPip)
-              ..._buildOverlay(),
-          ],
-        ),
+          // Indicators — purely visual, never intercept touches.
+          IgnorePointer(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                _DoubleTapIndicator(side: _doubleTapSide),
+                if (_volumeDragging) _VolumeHud(volume: _volume),
+                if (_scrubbing)
+                  _ScrubBubble(target: _scrubTarget, duration: _duration),
+              ],
+            ),
+          ),
+          if (_activeSkip != null && !_locked)
+            _SkipButton(
+              range: _activeSkip!,
+              onSkip: _skipCurrent,
+              // In the portrait card the skip pill must clear the compact
+              // bottom bar (~46px); in landscape it clears the tall
+              // Extended Toolbar cluster.
+              bottomOffset: compact ? 56 : 190,
+            ),
+          // Controls overlay — ON TOP of the gesture layer so its
+          // buttons always win the gesture arena.
+          if (_controlsVisible && !_inPip) ..._buildOverlay(compact: compact),
+          if (_locked && !_inPip) _buildLockBadge(),
+        ],
       ),
     );
   }
@@ -755,7 +816,70 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     _scheduleHide();
   }
 
-  List<Widget> _buildOverlay() {
+  Widget _buildLockBadge() {
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 12,
+      right: 16,
+      child: _PlayerIconButton(
+        icon: Icons.lock_rounded,
+        onTap: () {
+          setState(() {
+            _locked = false;
+            _controlsVisible = true;
+          });
+          _scheduleHide();
+        },
+      ),
+    );
+  }
+
+  List<Widget> _buildOverlay({required bool compact}) {
+    if (compact) {
+      // ---- YouTube portrait chrome: a minimal top row + one compact
+      // control bar pinned to the CARD's bottom edge (never the screen's)
+      // ----
+      if (_locked) {
+        return [
+          _CompactTopBar(
+            onBack: () => Navigator.maybePop(context),
+            locked: true,
+            onUnlock: () => setState(() {
+              _locked = false;
+              _controlsVisible = true;
+            }),
+          ),
+        ];
+      }
+      return [
+        _CompactTopBar(
+          onBack: () => Navigator.maybePop(context),
+          title: _manga?.title ?? '',
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: _CompactBottomBar(
+            playing: _player.state.playing,
+            position: _position,
+            duration: _duration,
+            buffered: _buffered,
+            onPlayPause: _togglePlay,
+            onNext: _nextEpisode,
+            onSeek: (d) => _seekTo(d),
+            onSeekStart: () {
+              _seeking = true;
+              _hideTimer?.cancel();
+            },
+            onSeekEnd: () {
+              _seeking = false;
+              _scheduleHide();
+            },
+            onMore: _showSettingsSheet,
+          ),
+        ),
+      ];
+    }
     if (_locked) {
       // While locked: only the top bar title + the unlock button.
       return [
@@ -906,6 +1030,158 @@ class _AnimePlayerScreenState extends ConsumerState<AnimePlayerScreen>
     final tracks = ref.read(subtitleTracksProvider(_currentEpisodeId));
     if (tracks.isEmpty || _subtitleIndex >= tracks.length) return 'Off';
     return tracks[_subtitleIndex].label;
+  }
+
+  /// The portrait card's ⋯ menu — every secondary control that does not
+  /// fit the compact bar lives here (Speed, Quality, Subs, Skip OP/ED,
+  /// PiP, Lock). Landscape keeps everything inline in the Extended
+  /// Toolbar, so this sheet is only reachable from the compact bar.
+  void _showSettingsSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF17171D),
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 4, 20, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Playback settings',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.speed_rounded,
+                    color: Colors.white70),
+                title: Text(
+                    _speed == 1.0 ? 'Speed' : 'Speed · ${_speed.toStringAsFixed(2)}×',
+                    style: const TextStyle(color: Colors.white)),
+                trailing: const Icon(Icons.chevron_right_rounded,
+                    color: Colors.white38),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showSelector(
+                    title: 'Speed',
+                    items: const [
+                      '0.25×', '0.5×', '0.75×', '1.0× Normal',
+                      '1.25×', '1.5×', '1.75×', '2.0×'
+                    ],
+                    selectedIndex: const [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
+                        .indexOf(_speed)
+                        .clamp(0, 7),
+                    onSelect: (i) {
+                      _setSpeed(const [
+                        0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0
+                      ][i]);
+                      Navigator.pop(context);
+                    },
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.hd_outlined, color: Colors.white70),
+                title: Text('Quality · ${_qualityLabel()}',
+                    style: const TextStyle(color: Colors.white)),
+                trailing: const Icon(Icons.chevron_right_rounded,
+                    color: Colors.white38),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showSelector(
+                    title: 'Quality',
+                    items: ref
+                        .read(videoSourcesProvider(_currentEpisodeId))
+                        .sources
+                        .map((q) => q.label)
+                        .toList(),
+                    selectedIndex: _qualityIndex,
+                    onSelect: (i) {
+                      _setQuality(i);
+                      Navigator.pop(context);
+                    },
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.subtitles_outlined,
+                    color: Colors.white70),
+                title: Text('Subtitles · ${_subtitleLabel()}',
+                    style: const TextStyle(color: Colors.white)),
+                trailing: const Icon(Icons.chevron_right_rounded,
+                    color: Colors.white38),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showSelector(
+                    title: 'Subtitles',
+                    items: ref
+                        .read(subtitleTracksProvider(_currentEpisodeId))
+                        .map((s) => s.label)
+                        .toList(),
+                    selectedIndex: _subtitleIndex,
+                    onSelect: (i) {
+                      _setSubtitle(i);
+                      Navigator.pop(context);
+                    },
+                  );
+                },
+              ),
+              ListTile(
+                leading:
+                    const Icon(Icons.fast_forward_rounded, color: Colors.white70),
+                title:
+                    const Text('Skip opening', style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _skipOp();
+                },
+              ),
+              ListTile(
+                leading:
+                    const Icon(Icons.fast_rewind_rounded, color: Colors.white70),
+                title: const Text('Skip ending',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _skipEd();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.picture_in_picture_alt_rounded,
+                    color: Colors.white70),
+                title: const Text('Picture-in-picture',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _enterPip();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.lock_outline_rounded,
+                    color: Colors.white70),
+                title:
+                    const Text('Lock controls', style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  setState(() {
+                    _locked = true;
+                    _controlsVisible = false;
+                  });
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   void _showEpisodeSheet() {
@@ -2130,14 +2406,23 @@ class _SkipPill extends StatelessWidget {
 }
 
 class _SkipButton extends StatelessWidget {
-  const _SkipButton({required this.range, required this.onSkip});
+  const _SkipButton({
+    required this.range,
+    required this.onSkip,
+    this.bottomOffset = 190,
+  });
   final SkipRange range;
   final VoidCallback onSkip;
+
+  /// Distance from the host's bottom edge — smaller inside the portrait
+  /// video card (compact bar ≈ 46px), larger in the landscape full-bleed
+  /// layout (tall Extended Toolbar cluster).
+  final double bottomOffset;
 
   @override
   Widget build(BuildContext context) {
     return Positioned(
-      bottom: 190,
+      bottom: bottomOffset,
       right: 16,
       child: Material(
         color: LuminaTheme.seed,
@@ -2160,6 +2445,447 @@ class _SkipButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// YouTube-style portrait chrome (compact card layout)
+//
+// The portrait video card gets the MINIMAL YouTube mobile overlay: a tiny
+// top row (back + title) and ONE compact control bar pinned to the CARD's
+// bottom edge — [play/pause | next | time | scrubber | ⋯]. Everything
+// secondary (speed / quality / subs / skip OP-ED / PiP / lock) opens from
+// the ⋯ sheet. The episode list lives BELOW the card (see
+// _EpisodeListPanel), exactly like YouTube's "Up next".
+// ---------------------------------------------------------------------------
+
+/// Page background for the portrait player — a near-black video-app
+/// neutral, slightly lifted from pure black so the rounded card reads as
+/// a card.
+const Color _kPlayerPageBg = Color(0xFF0E0E12);
+
+class _CompactTopBar extends StatelessWidget {
+  const _CompactTopBar({
+    required this.onBack,
+    this.title = '',
+    this.locked = false,
+    this.onUnlock,
+  });
+
+  final VoidCallback onBack;
+  final String title;
+  final bool locked;
+  final VoidCallback? onUnlock;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.black.withValues(alpha: 0.62),
+              Colors.transparent,
+            ],
+          ),
+        ),
+        padding: const EdgeInsets.fromLTRB(4, 2, 4, 14),
+        child: Row(
+          children: [
+            _PlayerIconButton(icon: Icons.arrow_back_ios_new_rounded, onTap: onBack),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: locked ? 0.0 : 0.95),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            if (locked && onUnlock != null)
+              _PlayerIconButton(icon: Icons.lock_rounded, onTap: onUnlock!),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactBottomBar extends StatefulWidget {
+  const _CompactBottomBar({
+    required this.playing,
+    required this.position,
+    required this.duration,
+    required this.buffered,
+    required this.onPlayPause,
+    required this.onNext,
+    required this.onSeek,
+    required this.onSeekStart,
+    required this.onSeekEnd,
+    required this.onMore,
+  });
+
+  final bool playing;
+  final Duration position;
+  final Duration duration;
+  final Duration buffered;
+  final VoidCallback onPlayPause;
+  final VoidCallback onNext;
+  final ValueChanged<Duration> onSeek;
+  final VoidCallback onSeekStart;
+  final VoidCallback onSeekEnd;
+  final VoidCallback onMore;
+
+  @override
+  State<_CompactBottomBar> createState() => _CompactBottomBarState();
+}
+
+class _CompactBottomBarState extends State<_CompactBottomBar> {
+  double? _dragValue;
+  bool _dragging = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = widget.duration.inMilliseconds
+        .toDouble()
+        .clamp(1, double.infinity)
+        .toDouble();
+    final shown = _dragging
+        ? (_dragValue ?? 0)
+        : widget.position.inMilliseconds
+            .toDouble()
+            .clamp(0.0, total)
+            .toDouble();
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.bottomCenter,
+          end: Alignment.topCenter,
+          stops: const [0.0, 0.8, 1.0],
+          colors: [
+            Colors.black.withValues(alpha: 0.82),
+            Colors.black.withValues(alpha: 0.45),
+            Colors.transparent,
+          ],
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(6, 22, 6, 4),
+      child: Row(
+        children: [
+          // Play / pause
+          GestureDetector(
+            onTap: widget.onPlayPause,
+            child: Icon(
+              widget.playing
+                  ? Icons.pause_rounded
+                  : Icons.play_arrow_rounded,
+              size: 28,
+              color: Colors.white.withValues(alpha: 0.95),
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Next episode
+          GestureDetector(
+            onTap: widget.onNext,
+            child: Icon(
+              Icons.skip_next_rounded,
+              size: 26,
+              color: Colors.white.withValues(alpha: 0.95),
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Current time
+          Text(
+            '${formatDuration(_dragging ? Duration(milliseconds: _dragValue?.round() ?? 0) : widget.position)} / ${formatDuration(widget.duration)}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Scrubber
+          Expanded(
+            child: _ScrubBar(
+              value: shown / total,
+              buffered: widget.buffered.inMilliseconds
+                      .toDouble()
+                      .clamp(0, total) /
+                  total,
+              onDragStart: () {
+                setState(() {
+                  _dragging = true;
+                  _dragValue = shown.toDouble();
+                });
+                widget.onSeekStart();
+              },
+              onDragUpdate: (fraction) {
+                setState(() => _dragValue = fraction * total);
+              },
+              onDragEnd: (fraction) {
+                setState(() => _dragging = false);
+                widget.onSeekEnd();
+                widget.onSeek(
+                    Duration(milliseconds: (fraction * total).round()));
+              },
+            ),
+          ),
+          const SizedBox(width: 6),
+          // More (speed / quality / subs / skip / PiP / lock)
+          GestureDetector(
+            onTap: widget.onMore,
+            child: const Icon(
+              Icons.more_vert_rounded,
+              size: 24,
+              color: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The episode list BELOW the video card (portrait). YouTube's "Up next"
+// placement: title row (anime + current episode), then the full episode
+// list with watched / in-progress / playing states, auto-scrolled to the
+// current episode.
+// ---------------------------------------------------------------------------
+
+class _EpisodeListPanel extends StatefulWidget {
+  const _EpisodeListPanel({
+    required this.manga,
+    required this.currentEpisodeId,
+    required this.currentEpisodeName,
+    required this.onPick,
+  });
+
+  final Manga? manga;
+  final int currentEpisodeId;
+  final String currentEpisodeName;
+  final ValueChanged<Chapter> onPick;
+
+  @override
+  State<_EpisodeListPanel> createState() => _EpisodeListPanelState();
+}
+
+class _EpisodeListPanelState extends State<_EpisodeListPanel> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Scroll the CURRENT episode into view on first layout — YouTube
+    // opens "Up next" already showing what's playing.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || widget.manga == null) return;
+      final idx = widget.manga!.chapters
+          .indexWhere((c) => c.id == widget.currentEpisodeId);
+      if (idx > 0 && _controller.hasClients) {
+        _controller.jumpTo((idx * 68.0).clamp(
+            0.0, math.max(0.0, _controller.position.maxScrollExtent)));
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final manga = widget.manga;
+    if (manga == null) return const SizedBox.shrink();
+
+    return ListView.builder(
+      controller: _controller,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+      itemCount: manga.chapters.length + 1,
+      itemBuilder: (context, i) {
+        if (i == 0) {
+          // ---- Header: title + current episode + list caption ----
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 0, 4, 2),
+                child: Text(
+                  manga.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    height: 1.25,
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
+                child: Text(
+                  'Now playing · ${widget.currentEpisodeName}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.55),
+                    fontSize: 12.5,
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                child: Row(
+                  children: [
+                    const Text(
+                      'Episodes',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: Text(
+                        '${manga.chapters.length}',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.7),
+                          fontSize: 11.5,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        }
+        final ch = manga.chapters[i - 1];
+        final current = ch.id == widget.currentEpisodeId;
+        final watched = ch.isRead;
+        final progress =
+            ch.totalPages > 0 ? ch.lastPageRead / ch.totalPages : 0.0;
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Material(
+            color: current
+                ? const Color(0xFF23232B)
+                : Colors.white.withValues(alpha: 0.045),
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: current
+                  ? null
+                  : () => widget.onPick(ch),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: Row(
+                  children: [
+                    // Leading state badge
+                    SizedBox(
+                      width: 34,
+                      height: 34,
+                      child: current
+                          ? Container(
+                              decoration: const BoxDecoration(
+                                color: _kPlayerAccent,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.graphic_eq_rounded,
+                                size: 18,
+                                color: Colors.white,
+                              ),
+                            )
+                          : watched
+                              ? const Icon(
+                                  Icons.check_circle_rounded,
+                                  size: 22,
+                                  color: Color(0xFF6BD18A),
+                                )
+                              : progress > 0.05
+                                  ? const Icon(
+                                      Icons.play_circle_fill_rounded,
+                                      size: 22,
+                                      color: Colors.white54,
+                                    )
+                                  : const Icon(
+                                      Icons.circle_outlined,
+                                      size: 18,
+                                      color: Colors.white24,
+                                    ),
+                    ),
+                    const SizedBox(width: 12),
+                    // Episode name + progress line
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            ch.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: current
+                                  ? Colors.white
+                                  : Colors.white.withValues(alpha: 0.85),
+                              fontWeight: current
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              fontSize: 14,
+                            ),
+                          ),
+                          if (progress > 0.05 && progress < 1) ...[
+                            const SizedBox(height: 6),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(3),
+                              child: LinearProgressIndicator(
+                                value: progress.clamp(0.0, 1.0),
+                                minHeight: 3,
+                                backgroundColor:
+                                    Colors.white.withValues(alpha: 0.14),
+                                valueColor:
+                                    const AlwaysStoppedAnimation(_kPlayerAccent),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    if (!current && progress >= 1)
+                      const Icon(Icons.check_rounded,
+                          size: 18, color: Color(0xFF6BD18A)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

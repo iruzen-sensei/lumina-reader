@@ -156,7 +156,10 @@ class _AnimeHomeScreenState extends ConsumerState<AnimeHomeScreen> {
             // + a close circle.
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                // 14px of breathing room below the bar — the carousel's
+                // top cards used to touch the search pill (0 bottom
+                // padding read as "slightly touching").
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
                 child: WmDiscoveryBar(
                   accent: kNetflixRed,
                   searchHint: 'Search anime…',

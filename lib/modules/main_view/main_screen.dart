@@ -150,6 +150,14 @@ class _GlassTabBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
+    // The system-navigation inset (Android 3-button / gesture bar). The
+    // interactive strip stays FROSTED, but the zone behind the system
+    // buttons gets an OPAQUE canvas backing: with extendBody, page content
+    // scrolls under the bar and previously showed through the translucent
+    // glass BEHIND the Android buttons — the "anime visible below the nav
+    // bar, transparent with a white tint" artifact. Solid there, frost
+    // only where the blur belongs.
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
 
     // The glass layer (blur + fill + hairline) and the TAB ITEMS are
     // separate layers. HeroGlass must ClipRect so the backdrop blur stays
@@ -159,42 +167,53 @@ class _GlassTabBar extends StatelessWidget {
     // the glass, the selection pop can overshoot the bar's top edge and
     // draw over the content scrolling beneath (extendBody) — the exact
     // watermelon.sh Dock behavior.
-    return SafeArea(
-      top: false,
-      child: SizedBox(
-        height: 58,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Positioned.fill(
-              child: HeroGlass(
-                blurSigma: 20,
-                color: h.glass,
-                border: Border(
-                  top: BorderSide(
-                    color: h.isDark
-                        ? Colors.white.withValues(alpha: 0.07)
-                        : Colors.black.withValues(alpha: 0.07),
-                  ),
-                ),
-                child: const SizedBox.expand(),
-              ),
-            ),
-            Row(
-              children: [
-                for (var i = 0; i < destinations.length; i++)
-                  Expanded(
-                    child: _TabItem(
-                      destination: destinations[i],
-                      selected: i == selectedIndex,
-                      onTap: () => onSelect(i),
+    //
+    // Below the 58pt interactive strip sits an OPAQUE canvas strip for
+    // the Android system-navigation zone: with extendBody, page content
+    // scrolls under the bar and previously showed through the translucent
+    // glass BEHIND the system buttons — the "anime visible below the nav
+    // bar, transparent with a white tint" artifact. Solid there, frost
+    // only where the blur belongs.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          height: 58,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned.fill(
+                child: HeroGlass(
+                  blurSigma: 20,
+                  color: h.glass,
+                  border: Border(
+                    top: BorderSide(
+                      color: h.isDark
+                          ? Colors.white.withValues(alpha: 0.07)
+                          : Colors.black.withValues(alpha: 0.07),
                     ),
                   ),
-              ],
-            ),
-          ],
+                  child: const SizedBox.expand(),
+                ),
+              ),
+              Row(
+                children: [
+                  for (var i = 0; i < destinations.length; i++)
+                    Expanded(
+                      child: _TabItem(
+                        destination: destinations[i],
+                        selected: i == selectedIndex,
+                        onTap: () => onSelect(i),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
         ),
-      ),
+        if (bottomInset > 0)
+          Container(height: bottomInset, color: h.background),
+      ],
     );
   }
 }

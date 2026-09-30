@@ -326,55 +326,67 @@ class _ConfirmPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
-    // Panel opacity rides the END of the morph so it appears once the
-    // container has actually grown around it (and fades early on reverse).
-    final t = const Interval(0.10, 0.45, curve: Curves.easeOut)
-        .transform(morph.value);
 
-    return Opacity(
-      opacity: t,
-      child: Stack(clipBehavior: Clip.none, children: [
-        Positioned.fill(
-          child: DecoratedBox(
-            decoration: BoxDecoration(color: h.surface3),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _CircleAction(
-                  controller: circle1,
-                  scale: scale,
-                  color: h.danger,
-                  icon: Icons.check_rounded,
-                  tooltip: 'Confirm delete',
-                  onTap: onConfirm,
+    // The panel REBUILDS as the morph runs (AnimatedBuilder on the
+    // controller). Previously the opacity below was computed ONCE at build
+    // time — morph.value was still 0 at that moment, so the confirm/cancel
+    // circles stayed at opacity 0 FOREVER and every delete confirm in the
+    // app looked dead ("the tick and cross aren't there").
+    return AnimatedBuilder(
+      animation: morph,
+      builder: (context, _) {
+        // Panel opacity rides the END of the morph so it appears once the
+        // container has actually grown around it (and fades early on
+        // reverse).
+        final t = const Interval(0.10, 0.45, curve: Curves.easeOut)
+            .transform(morph.value);
+
+        return Opacity(
+          opacity: t,
+          child: Stack(clipBehavior: Clip.none, children: [
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(color: h.surface3),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _CircleAction(
+                      controller: circle1,
+                      scale: scale,
+                      color: h.danger,
+                      icon: Icons.check_rounded,
+                      tooltip: 'Confirm delete',
+                      onTap: onConfirm,
+                    ),
+                    SizedBox(width: 8 * scale),
+                    _CircleAction(
+                      controller: circle2,
+                      scale: scale,
+                      color: h.muted,
+                      icon: Icons.close_rounded,
+                      tooltip: 'Keep',
+                      onTap: onCancel,
+                    ),
+                  ],
                 ),
-                SizedBox(width: 8 * scale),
-                _CircleAction(
-                  controller: circle2,
-                  scale: scale,
-                  color: h.muted,
-                  icon: Icons.close_rounded,
-                  tooltip: 'Keep',
-                  onTap: onCancel,
+              ),
+            ),
+            // The notch: a small triangle pointing at the trigger tile.
+            Positioned(
+              left: -6 * scale,
+              top: 0,
+              bottom: 0,
+              width: 7 * scale,
+              child: Center(
+                child: CustomPaint(
+                  size: Size(7 * scale, 10 * scale),
+                  painter: _NotchPainter(color: h.surface3),
                 ),
-              ],
+              ),
             ),
-          ),
-        ),
-        // The notch: a small triangle pointing at the trigger tile.
-        Positioned(
-          left: -6 * scale,
-          top: 0,
-          bottom: 0,
-          width: 7 * scale,
-          child: Center(
-            child: CustomPaint(
-              size: Size(7 * scale, 10 * scale),
-              painter: _NotchPainter(color: h.surface3),
-            ),
-          ),
-        ),
-      ]),
+          ]),
+        );
+      },
     );
   }
 }
@@ -433,7 +445,6 @@ class _CircleActionState extends State<_CircleAction>
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
     final d = _kCircle * widget.scale;
-    final t = Curves.easeOut.transform(widget.controller.value);
 
     return Tooltip(
       message: widget.tooltip,
@@ -443,31 +454,41 @@ class _CircleActionState extends State<_CircleAction>
         onTapUp: (_) => _springTo(1.0),
         onTapCancel: () => _springTo(1.0),
         onTap: widget.onTap,
-        child: Opacity(
-          opacity: t,
-          child: Transform.translate(
-            offset: Offset(-6 * widget.scale * (1 - t), 0),
-            child: AnimatedBuilder(
-              animation: _press,
-              builder: (_, __) => Transform.scale(
-                scale: _press.value.clamp(0.5, 1.3),
-                child: Container(
-                  width: d,
-                  height: d,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: h.surface,
-                    border: Border.all(color: h.border),
-                  ),
-                  child: Icon(
-                    widget.icon,
-                    size: 15 * widget.scale,
-                    color: widget.color,
+        // The entrance REBUILDS as its controller runs (AnimatedBuilder).
+        // Like the panel above, the entrance values were previously
+        // computed once at build time — the circle controller was still at 0
+        // then, so the action circles never faded in.
+        child: AnimatedBuilder(
+          animation: widget.controller,
+          builder: (context, _) {
+            final t = Curves.easeOut.transform(widget.controller.value);
+            return Opacity(
+              opacity: t,
+              child: Transform.translate(
+                offset: Offset(-6 * widget.scale * (1 - t), 0),
+                child: AnimatedBuilder(
+                  animation: _press,
+                  builder: (_, __) => Transform.scale(
+                    scale: _press.value.clamp(0.5, 1.3),
+                    child: Container(
+                      width: d,
+                      height: d,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: h.surface,
+                        border: Border.all(color: h.border),
+                      ),
+                      child: Icon(
+                        widget.icon,
+                        size: 15 * widget.scale,
+                        color: widget.color,
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ),
+            );
+          },
         ),
       ),
     );
@@ -833,63 +854,71 @@ class HeroMenuPanel<T> extends StatelessWidget {
               .clamp(0.0, 1.0);
       final origin = Alignment(-1 + 2 * originX, below ? -1.0 : 1.0);
 
-      return Stack(children: [
-        Positioned(
-          left: left,
-          top: top,
-          width: menuW,
-          child: AnimatedBuilder(
-            animation: animation,
-            builder: (_, __) {
-              final t = animation.value;
-              // Forward: .97 -> 1 on the house decel. Reverse: recede to
-              // .99 — the exit never shrinks toward the viewer.
-              final double scale;
-              if (animation.status == AnimationStatus.reverse) {
-                scale = lerpDouble(HeroMotion.closingScale, 1.0, t)!;
-              } else {
-                scale = lerpDouble(
-                    HeroMotion.preScale, 1.0, HeroMotion.easeOut.transform(t))!;
-              }
-              return Transform.scale(
-                scale: scale,
-                alignment: origin,
-                child: Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: h.surface,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: h.border),
-                    boxShadow: h.overlayShadow,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (var i = 0; i < route.items.length; i++) ...[
-                        _HeroMenuRow(
-                          item: route.items[i],
-                          entrance: Interval(
-                            (i * 0.09).clamp(0.0, 0.8),
-                            1.0,
-                            curve: HeroMotion.easeOut,
-                          ).transform(HeroMotion.easeOut.transform(t)),
-                          onTap: () =>
-                              Navigator.of(context).pop(route.items[i].value),
-                        ),
-                        if (route.items[i].dividerAfter)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 12),
-                            child: HeroSeparator(),
+      // Material ancestor for the route content: a PopupRoute renders in
+      // the root Overlay, and Text without a Material ancestor falls back
+      // to the error typography — the infamous YELLOW DOUBLE UNDERLINE on
+      // every menu row. A transparent Material provides the real text
+      // theme while keeping our own painted container.
+      return Material(
+        type: MaterialType.transparency,
+        child: Stack(children: [
+          Positioned(
+            left: left,
+            top: top,
+            width: menuW,
+            child: AnimatedBuilder(
+              animation: animation,
+              builder: (_, __) {
+                final t = animation.value;
+                // Forward: .97 -> 1 on the house decel. Reverse: recede to
+                // .99 — the exit never shrinks toward the viewer.
+                final double scale;
+                if (animation.status == AnimationStatus.reverse) {
+                  scale = lerpDouble(HeroMotion.closingScale, 1.0, t)!;
+                } else {
+                  scale = lerpDouble(
+                      HeroMotion.preScale, 1.0, HeroMotion.easeOut.transform(t))!;
+                }
+                return Transform.scale(
+                  scale: scale,
+                  alignment: origin,
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: h.surface,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: h.border),
+                      boxShadow: h.overlayShadow,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (var i = 0; i < route.items.length; i++) ...[
+                          _HeroMenuRow(
+                            item: route.items[i],
+                            entrance: Interval(
+                              (i * 0.09).clamp(0.0, 0.8),
+                              1.0,
+                              curve: HeroMotion.easeOut,
+                            ).transform(HeroMotion.easeOut.transform(t)),
+                            onTap: () =>
+                                Navigator.of(context).pop(route.items[i].value),
                           ),
+                          if (route.items[i].dividerAfter)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 12),
+                              child: HeroSeparator(),
+                            ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
-        ),
-      ]);
+        ]),
+      );
     });
   }
 }

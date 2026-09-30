@@ -133,7 +133,8 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
                 }
                 _openChapter(manga, _nextUnread(manga.chapters));
               },
-              onToggleLibrary: () => _toggleFavorite(manga),
+              onAddToLibrary: () => _addToLibrary(manga),
+              onRemoveFromLibrary: () => _removeFromLibrary(manga),
             ),
           ),
           SliverToBoxAdapter(
@@ -226,18 +227,25 @@ class _MangaDetailScreenState extends ConsumerState<MangaDetailScreen> {
     return null;
   }
 
-  /// REAL remove-from-library with confirmation. The button truly deletes
-  /// the entry (chapters, downloads, history, notes) and pops back.
-  Future<void> _toggleFavorite(Manga manga) async {
-    final confirmed = await showHeroDeleteConfirm(
-      context: context,
-      title: 'Remove from library?',
-      message:
-          '"${manga.title}" and its chapters, downloads, history and notes will be deleted. This cannot be undone.',
-      confirmLabel: 'Remove',
-      
-    );
-    if (!confirmed) return;
+  /// REAL add-to-library: flips the favorite bit on the DB row (the
+  /// provider watch refreshes the pill immediately). Previously the
+  /// "Add to Library" button ran the REMOVE dialog for every tap.
+  Future<void> _addToLibrary(Manga manga) async {
+    try {
+      await ref
+          .read(data.libraryRepositoryProvider)
+          .toggleFavorite(manga.id);
+      if (mounted) {
+        showSnack(ref, context, 'Added "${manga.title}" to library');
+      }
+    } catch (e) {
+      if (mounted) showSnack(ref, context, 'Could not add to library');
+    }
+  }
+
+  /// REAL remove-from-library — fires from the rare-ui Delete Button
+  /// morph's ✓ (the morph itself is the confirmation; no dialog).
+  Future<void> _removeFromLibrary(Manga manga) async {
     await ref.read(data.libraryRepositoryProvider).removeFromLibrary(manga.id);
     if (mounted) {
       showSnack(ref, context, 'Removed "${manga.title}" from library');
@@ -667,7 +675,8 @@ class _ActionBlock extends StatelessWidget {
     required this.onStatusChanged,
     required this.trackLinks,
     required this.onContinue,
-    required this.onToggleLibrary,
+    required this.onAddToLibrary,
+    required this.onRemoveFromLibrary,
   });
 
   final String continueLabel;
@@ -682,7 +691,13 @@ class _ActionBlock extends StatelessWidget {
   final List<(String, IconData, String)> trackLinks;
 
   final VoidCallback onContinue;
-  final VoidCallback onToggleLibrary;
+
+  /// Fires when the entry is NOT in the library yet (adds it).
+  final VoidCallback onAddToLibrary;
+
+  /// Fires from the rare-ui Delete Button morph confirm (removes the
+  /// entry + everything it owns).
+  final VoidCallback onRemoveFromLibrary;
 
   @override
   Widget build(BuildContext context) {
@@ -696,31 +711,39 @@ class _ActionBlock extends StatelessWidget {
             label: continueLabel,
             icon: isAnime ? Icons.play_arrow_rounded : Icons.menu_book_rounded,
             variant: HeroButtonVariant.solid,
-            size: HeroButtonSize.md,
+            size: HeroButtonSize.lg,
             onPressed: onContinue,
           ),
           const SizedBox(height: 12),
-          // Secondary row — BOTH actions exactly 44px tall, baseline
-          // aligned (the old mixed 34px/38px row read as broken).
-          SizedBox(
-            height: 44,
-            child: Row(
-              children: [
-                Expanded(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: HeroButton(
-                      label: inLibrary ? 'In Library' : 'Add to Library',
-                      icon: inLibrary
-                          ? Icons.bookmark_rounded
-                          : Icons.bookmark_border_rounded,
-                      variant: HeroButtonVariant.soft,
-                      size: HeroButtonSize.md,
-                      onPressed: onToggleLibrary,
-                    ),
+          // Secondary row — BOTH actions the SAME lg (40px) capsule as the
+          // CTA above (matches the anime detail screen's unified sizing).
+          Row(
+            children: [
+              Expanded(
+                child: HeroButton(
+                  label: inLibrary ? 'In Library' : 'Add to Library',
+                  icon: inLibrary
+                      ? Icons.bookmark_rounded
+                      : Icons.bookmark_border_rounded,
+                  variant: HeroButtonVariant.soft,
+                  size: HeroButtonSize.lg,
+                  // In library → state pill (removal lives in the rare-ui
+                  // delete morph next to it); not in library → adds.
+                  onPressed: inLibrary ? null : onAddToLibrary,
+                ),
+              ),
+              if (inLibrary) ...[
+                const SizedBox(width: 12),
+                // rare-ui Delete Button morph — the app-wide delete
+                // component: bin expands in place, ✓ removes from the
+                // library, ✗ keeps it.
+                Center(
+                  child: HeroDeleteButton(
+                    size: 40,
+                    onConfirm: onRemoveFromLibrary,
                   ),
                 ),
-                const SizedBox(width: 12),
+              ],
                 // Track — watermelon.sh Split Actions: the trigger fans out
                 // the tracker chips (MAL / AniList / MangaUpdates) which
                 // slide in centered around it with a spring cascade.
@@ -743,8 +766,7 @@ class _ActionBlock extends StatelessWidget {
                     ],
                   ),
                 ),
-              ],
-            ),
+            ],
           ),
           const SizedBox(height: 16),
           // Status Picker — the app's first READING-STATUS SETTER (there

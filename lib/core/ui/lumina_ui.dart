@@ -1709,9 +1709,13 @@ class _HeroInputState extends State<HeroInput> {
         // clean white + hairline on light.
         color: h.isDark ? h.surface2 : h.surface,
         borderRadius: BorderRadius.circular(HeroTokens.radiusField),
+        // Soft focus ring, not a stark frame: the noir accent is PURE
+        // WHITE, and a full-opacity 2px white rectangle around a focused
+        // field read as an outline artifact ("the rectangular white
+        // outline"). 55% + 1.5px keeps the focus affordance subtle.
         border: Border.all(
-          color: _focused ? h.accent : h.border,
-          width: _focused ? 2 : 1.2,
+          color: _focused ? h.accent.withValues(alpha: 0.55) : h.border,
+          width: _focused ? 1.5 : 1.2,
         ),
       ),
       child: Row(

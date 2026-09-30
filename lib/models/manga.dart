@@ -51,6 +51,13 @@ class Manga {
   bool isFinished;
   int readCount;
 
+  /// Explicit user-set status (0=Reading/Watching, 1=Finished, 2=Plan).
+  /// NULL = derive from isFinished/readCount (legacy rows). This column
+  /// exists because the derived value could never represent "Watching"
+  /// for an entry with 0 read episodes — setting Watching snapped back to
+  /// "Plan to watch" on the next build.
+  int? userStatusOverride;
+
   // Library category/shelf
   String? category;
 
@@ -83,6 +90,7 @@ class Manga {
     this.progress = 0.0,
     this.isFinished = false,
     this.readCount = 0,
+    this.userStatusOverride,
     this.category,
   });
 }

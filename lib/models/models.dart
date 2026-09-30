@@ -146,6 +146,7 @@ class Manga {
     this.totalChapters = 0,
     this.lastChapterRead = 0,
     this.isFinished = false,
+    this.userStatusOverride,
     this.sourceError,
   });
 
@@ -173,6 +174,10 @@ class Manga {
   /// The user's "Finished" flag (db Manga.isFinished) — drives the Status
   /// Picker's Finished state and the Library Finished filter.
   bool isFinished;
+
+  /// Explicit user-set status (0=Reading/Watching, 1=Finished, 2=Plan).
+  /// NULL = derive (legacy rows / fresh browse items).
+  final int? userStatusOverride;
 
   /// When the metadata loaded but the chapter/episode list failed (e.g.
   /// provider unreachable), the partial error text — the detail screen
@@ -220,7 +225,15 @@ class Manga {
 
   /// The user's status for the Status Picker:
   ///   1 = Finished, 2 = Plan to read/watch, 0 = Reading.
+  /// The explicit override wins when set; otherwise the value derives
+  /// from progress. Without the override, "Watching" could never stick
+  /// for an entry with zero watched episodes — the derived value kept
+  /// snapping the pill back to "Plan to watch".
   int get userStatus {
+    // The explicit override wins when set (kept in sync with isFinished
+    // by the repository on write).
+    final override = userStatusOverride;
+    if (override != null) return override;
     if (isFinished) return 1;
     if (readCount == 0) return 2;
     return 0;

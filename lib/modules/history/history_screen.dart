@@ -95,12 +95,12 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                     if (!_searchVisible) _searchController.clear();
                   }),
                 ),
-                HeroIconButton(
-                  tooltip: 'Clear history',
-                  icon: Icons.delete_sweep_outlined,
-                  variant: HeroColorRole.danger,
-                  onPressed: () => _confirmClear(),
-                ),
+                // NOTE: no "Clear history" action anymore — the sweep
+                // button opened a confirm whose ✓/✗ icons were invisible
+                // (morph-timing bug), so it read as a dead button. Per-entry
+                // deletion now uses the rare-ui HeroDeleteButton morph on
+                // each tile; a bulk-clear belongs in Settings if ever
+                // needed.
               ],
             ),
             if (_searchVisible)
@@ -157,27 +157,6 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     }
     final sortedKeys = map.keys.toList()..sort((a, b) => b.compareTo(a));
     return {for (final k in sortedKeys) k: map[k]!};
-  }
-
-  Future<void> _confirmClear() async {
-    final confirmed = await showHeroDeleteConfirm(
-      context: context,
-      title: 'Clear history?',
-      message: 'This permanently removes your reading and watching history. '
-          'This action cannot be undone.',
-      confirmLabel: 'Clear',
-      
-    );
-    if (!confirmed || !mounted) return;
-    // REAL clear — previously a snackbar-only stub.
-    try {
-      await ref.read(historyProvider.notifier).clearAll();
-      if (!mounted) return;
-      showSnack(ref, context, 'History cleared');
-    } catch (e) {
-      if (!mounted) return;
-      showSnack(ref, context, 'Could not clear history');
-    }
   }
 }
 
@@ -242,92 +221,93 @@ class _HistoryTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final h = HeroScope.of(context);
-    return Dismissible(
-      key: ValueKey(entry.id),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
-        color: h.dangerSoft,
-        child: Icon(Icons.delete_outline_rounded, color: h.danger),
-      ),
-      onDismissed: (_) async {
-        // REAL removal — the Isar watch drops the row (previously the
-        // snackbar fired but the entry resurrected on the next DB event).
-        try {
-          await ref.read(historyProvider.notifier).remove(entry.id);
-        } catch (_) {}
-        if (context.mounted) {
-          showSnack(ref, context, 'Removed from history');
-        }
-      },
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => _resume(context),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            children: [
-              BookCover(
-                manga: Manga(
-                  id: entry.mangaId,
-                  title: entry.mangaTitle,
-                  sourceId: 0,
-                  url: '',
-                  itemType: entry.isAnime ? ItemType.anime : ItemType.manga,
-                  thumbnailUrl: entry.thumbnailUrl,
-                ),
-                width: 48,
-                height: 68,
-                radius: 8,
-                showTitle: false,
-                showProgress: false,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _resume(context),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            BookCover(
+              manga: Manga(
+                id: entry.mangaId,
+                title: entry.mangaTitle,
+                sourceId: 0,
+                url: '',
+                itemType: entry.isAnime ? ItemType.anime : ItemType.manga,
+                thumbnailUrl: entry.thumbnailUrl,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      entry.mangaTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: HeroTokens.body.copyWith(
-                        color: h.foreground,
-                        fontWeight: FontWeight.w600,
-                      ),
+              width: 48,
+              height: 68,
+              radius: 8,
+              showTitle: false,
+              showProgress: false,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    entry.mangaTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: HeroTokens.body.copyWith(
+                      color: h.foreground,
+                      fontWeight: FontWeight.w600,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${entry.chapterName} · ${timeAgo(entry.readAt)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: HeroTokens.caption.copyWith(color: h.muted),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${entry.chapterName} · ${timeAgo(entry.readAt)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: HeroTokens.caption.copyWith(color: h.muted),
+                  ),
+                  if (entry.progress > 0) ...[
+                    const SizedBox(height: 8),
+                    HeroProgress(
+                      value: entry.progress,
+                      height: 4,
+                      color: entry.progress >= 1 ? h.success : h.accent,
                     ),
-                    if (entry.progress > 0) ...[
-                      const SizedBox(height: 8),
-                      HeroProgress(
-                        value: entry.progress,
-                        height: 4,
-                        color: entry.progress >= 1 ? h.success : h.accent,
-                      ),
-                    ],
                   ],
-                ),
+                  const SizedBox(height: 10),
+                  // rare-ui Delete Button morph — the app-wide delete
+                  // component: tap the bin, it expands in place, ✓ removes
+                  // the entry, ✗ keeps it. Aligned LEFT so the expanded
+                  // panel can never clip the screen edge.
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: HeroDeleteButton(
+                      size: 32,
+                      onConfirm: () async {
+                        try {
+                          await ref
+                              .read(historyProvider.notifier)
+                              .remove(entry.id);
+                        } catch (_) {}
+                        if (context.mounted) {
+                          showSnack(ref, context, 'Removed from history');
+                        }
+                      },
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 4),
-              HeroIconButton(
-                tooltip:
-                    entry.isAnime ? 'Continue watching' : 'Continue reading',
-                icon: Icons.play_arrow_rounded,
-                iconSize: 24,
-                size: 40,
-                variant: HeroColorRole.accent,
-                backgroundColor: h.accentSoft,
-                onPressed: () => _resume(context),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 8),
+            HeroIconButton(
+              tooltip:
+                  entry.isAnime ? 'Continue watching' : 'Continue reading',
+              icon: Icons.play_arrow_rounded,
+              iconSize: 24,
+              size: 40,
+              variant: HeroColorRole.accent,
+              backgroundColor: h.accentSoft,
+              onPressed: () => _resume(context),
+            ),
+          ],
         ),
       ),
     );

@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/ui/lumina_ui.dart';
 import '../../core/ui/watermelon.dart';
+import 'package:lumina_reader/core/ui/hero_motion.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../shared/widgets.dart';
@@ -546,13 +547,10 @@ class _DownloadCard extends ConsumerWidget {
             variant: HeroColorRole.warning,
             onPressed: () => notifier.pause(task.id),
           ),
-          HeroIconButton(
-            tooltip: 'Remove',
-            icon: Icons.delete_outline_rounded,
+          // rare-ui Delete Button morph — the app-wide delete component.
+          HeroDeleteButton(
             size: 34,
-            iconSize: 19,
-            variant: HeroColorRole.danger,
-            onPressed: () => notifier.removeWithFiles(task.id),
+            onConfirm: () => notifier.removeWithFiles(task.id),
           ),
         ];
       case DownloadState.failed:
@@ -565,24 +563,16 @@ class _DownloadCard extends ConsumerWidget {
             variant: HeroColorRole.accent,
             onPressed: () => notifier.retry(task.id),
           ),
-          HeroIconButton(
-            tooltip: 'Remove',
-            icon: Icons.delete_outline_rounded,
+          HeroDeleteButton(
             size: 34,
-            iconSize: 19,
-            variant: HeroColorRole.danger,
-            onPressed: () => notifier.removeWithFiles(task.id),
+            onConfirm: () => notifier.removeWithFiles(task.id),
           ),
         ];
       case DownloadState.completed:
         return [
-          HeroIconButton(
-            tooltip: 'Remove',
-            icon: Icons.delete_outline_rounded,
+          HeroDeleteButton(
             size: 34,
-            iconSize: 19,
-            variant: HeroColorRole.danger,
-            onPressed: () => notifier.removeWithFiles(task.id),
+            onConfirm: () => notifier.removeWithFiles(task.id),
           ),
         ];
       case DownloadState.cancelled:
@@ -595,13 +585,9 @@ class _DownloadCard extends ConsumerWidget {
             variant: HeroColorRole.accent,
             onPressed: () => notifier.retry(task.id),
           ),
-          HeroIconButton(
-            tooltip: 'Remove',
-            icon: Icons.delete_outline_rounded,
+          HeroDeleteButton(
             size: 34,
-            iconSize: 19,
-            variant: HeroColorRole.danger,
-            onPressed: () => notifier.removeWithFiles(task.id),
+            onConfirm: () => notifier.removeWithFiles(task.id),
           ),
         ];
     }

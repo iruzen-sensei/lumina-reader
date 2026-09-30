@@ -26,6 +26,7 @@ import 'dart:async' show Timer, unawaited;
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart' show TapGestureRecognizer, kTouchSlop;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/physics.dart';
@@ -367,9 +368,12 @@ class _WmDiscoveryBarState extends State<WmDiscoveryBar> {
               // ---- Search pill (morphs 44 -> full-width input) ----
               AnimatedSize(
                 duration: heroAnimationsEnabled
-                    ? const Duration(milliseconds: 380)
+                    ? const Duration(milliseconds: 420)
                     : Duration.zero,
-                curve: wmMorphSpring,
+                // The Apple-style spring: a sampled underdamped spring with
+                // a small overshoot — the morph visibly BOUNCES into place
+                // (easeOutBack barely moved and read as flat).
+                curve: const WmBounceCurve(),
                 alignment: Alignment.centerLeft,
                 child: AnimatedContainer(
                   duration: heroAnimationsEnabled
@@ -383,10 +387,13 @@ class _WmDiscoveryBarState extends State<WmDiscoveryBar> {
                   decoration: BoxDecoration(
                     color: _searching ? h.surface : Colors.transparent,
                     borderRadius: BorderRadius.circular(HeroTokens.radiusChip),
+                    // HAIRLINE, not a stark accent frame: the expanded
+                    // field used to carry a 65%-accent (pure white in the
+                    // noir theme) rectangle that read as an outline
+                    // artifact. The surface fill + morph already carry the
+                    // affordance.
                     border: Border.all(
-                      color: _searching
-                          ? accent.withValues(alpha: 0.65)
-                          : h.border,
+                      color: _searching ? h.border : h.border,
                       width: 1.2,
                     ),
                   ),
@@ -439,11 +446,9 @@ class _WmDiscoveryBarState extends State<WmDiscoveryBar> {
                           ],
                         )
                       : Center(
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
+                          child: _BouncySearchIcon(
                             onTap: _open,
-                            child: Icon(Icons.search_rounded,
-                                size: 22, color: h.foreground),
+                            color: h.foreground,
                           ),
                         ),
                 ),
@@ -520,6 +525,62 @@ class _WmDiscoveryBarState extends State<WmDiscoveryBar> {
               : const SizedBox(width: double.infinity),
         ),
       ],
+    );
+  }
+}
+
+/// The collapsed search glyph with the Apple press-then-pop spring:
+/// touch dips to 0.88, release overshoots to ~1.18 and settles on the
+/// sampled watermelon spring — the icon itself bounces when tapped
+/// (previously only the container width morphed, which read as flat).
+class _BouncySearchIcon extends StatefulWidget {
+  const _BouncySearchIcon({required this.onTap, required this.color});
+
+  final VoidCallback onTap;
+  final Color color;
+
+  @override
+  State<_BouncySearchIcon> createState() => _BouncySearchIconState();
+}
+
+class _BouncySearchIconState extends State<_BouncySearchIcon>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController.unbounded(vsync: this)
+    ..value = 1.0;
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  void _pop() {
+    if (!heroAnimationsEnabled) return;
+    _c.animateWith(
+      SpringSimulation(
+        const SpringDescription(mass: 1.0, stiffness: 550, damping: 15),
+        0.72, // pressed depth as the release point
+        1.0,
+        6.5, // upward velocity — the deliberate overshoot
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => _c.value = 0.72,
+      onTapUp: (_) => _pop(),
+      onTapCancel: () => _c.value = 1.0,
+      onTap: widget.onTap,
+      child: AnimatedBuilder(
+        animation: _c,
+        builder: (_, __) => Transform.scale(
+          scale: _c.value.clamp(0.5, 1.4),
+          child: Icon(Icons.search_rounded, size: 22, color: widget.color),
+        ),
+      ),
     );
   }
 }
@@ -1359,7 +1420,85 @@ class _SuggestionChip extends StatelessWidget {
 // pops a horizontal option tray ABOVE it with a 3D bottom-origin tilt +
 // blur (rotateX -70 -> 0 in the source). Selecting closes the tray and
 // morphs the pill label.
+//
+// Overlay mechanics (shared with Split Actions):
+//   * The tray lives in the root Overlay, positioned from the pill's
+//     MEASURED screen rect and CLAMPED inside the screen — an anchored
+//     tray near a screen edge can never run off-screen (the Explore
+//     source picker used to cover half the display).
+//   * The dismiss scrim is TAP-ONLY and translucent: drags fall through
+//     to the page's scrollable underneath, so the page keeps scrolling
+//     while a tray is open (an opaque full-screen GestureDetector used to
+//     freeze all scrolling on the anime browse page).
 // ---------------------------------------------------------------------------
+
+/// A tap-only dismiss scrim for overlay popups: translucent + a single
+/// TapGestureRecognizer, so DRAG gestures fall through to the scrollable
+/// underneath (the page keeps scrolling while the popup is open). A drag
+/// beyond touch slop also dismisses the popup — the natural "scroll
+/// dismisses the menu" behaviour.
+class WmTapDismissBarrier extends StatefulWidget {
+  const WmTapDismissBarrier({super.key, required this.onDismiss});
+
+  final VoidCallback onDismiss;
+
+  @override
+  State<WmTapDismissBarrier> createState() => _WmTapDismissBarrierState();
+}
+
+class _WmTapDismissBarrierState extends State<WmTapDismissBarrier> {
+  Offset? _down;
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (e) => _down = e.position,
+      onPointerMove: (e) {
+        if (_down != null && (e.position - _down!).distance > kTouchSlop) {
+          _down = null;
+          widget.onDismiss();
+        }
+      },
+      child: RawGestureDetector(
+        behavior: HitTestBehavior.translucent,
+        gestures: {
+          TapGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
+            () => TapGestureRecognizer(),
+            (instance) => instance.onTap = widget.onDismiss,
+          ),
+        },
+        child: const SizedBox.expand(),
+      ),
+    );
+  }
+}
+
+/// Resolves the anchor's rect relative to the root overlay, for clamped
+/// popup placement. Returns null when the anchor is not yet laid out.
+Rect? wmAnchorRect(BuildContext anchorContext, BuildContext overlayContext) {
+  final rb = anchorContext.findRenderObject();
+  final overlayRb = overlayContext.findRenderObject();
+  if (rb is! RenderBox || overlayRb is! RenderBox || !rb.attached) {
+    return null;
+  }
+  return rb.localToGlobal(Offset.zero, ancestor: overlayRb) & rb.size;
+}
+
+/// Clamps a popup rect fully inside the screen with an 8px margin.
+Rect wmClampToScreen(Rect rect, Size screen) {
+  const margin = 8.0;
+  final w = math.min(rect.width, screen.width - margin * 2);
+  final h = math.min(rect.height, screen.height - margin * 2);
+  final left = rect.left
+      .clamp(margin, math.max(margin, screen.width - w - margin))
+      .toDouble();
+  final top = rect.top
+      .clamp(margin, math.max(margin, screen.height - h - margin))
+      .toDouble();
+  return Rect.fromLTWH(left, top, w, h);
+}
 
 class WmPickerOption<T> {
   const WmPickerOption({required this.value, required this.label, this.icon});
@@ -1396,7 +1535,7 @@ class WmQuickOptionPicker<T> extends StatefulWidget {
 class _WmQuickOptionPickerState<T> extends State<WmQuickOptionPicker<T>> {
   bool _open = false;
   OverlayEntry? _entry;
-  final LayerLink _link = LayerLink();
+  final GlobalKey _pillKey = GlobalKey();
 
   void _close() {
     _entry?.remove();
@@ -1418,45 +1557,61 @@ class _WmQuickOptionPickerState<T> extends State<WmQuickOptionPicker<T>> {
     }
     HapticFeedback.selectionClick();
     if (mounted) setState(() => _open = true);
-    // The tray lives in the root Overlay so it can float ABOVE the pill's
-    // own bounds (a Stack-Positioned tray is drawn but NOT hit-testable
-    // outside the Stack — taps fell through, found by the widget tests).
+    // The tray lives in the root Overlay, positioned from the pill's
+    // MEASURED rect and clamped to the screen — the old
+    // CompositedTransformFollower centered the tray on the pill, so a
+    // picker near a screen edge (the Explore source picker) ran half the
+    // tray off the display.
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null) return;
     _entry = OverlayEntry(
-      builder: (context) {
-        return Stack(
-          children: [
-            // Tap-outside barrier closes the tray (the source's
-            // click-outside handler).
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: _close,
-                child: const SizedBox.expand(),
-              ),
+      builder: (overlayContext) {
+        final screen = MediaQuery.sizeOf(overlayContext);
+        final anchor = wmAnchorRect(_pillKey.currentContext ?? context, overlayContext) ??
+            Rect.fromLTWH(screen.width / 2 - 40, screen.height / 2, 80, 40);
+
+        // Vertical preference: trayAbove flips the tray over the pill,
+        // but the side with more room wins when one would clip. The height
+        // is an ESTIMATE for the flip decision; the panel sizes itself and
+        // scrolls when the cap kicks in (long source lists).
+        final trayW = math.min(300.0, screen.width - 16);
+        final maxH = screen.height * 0.55;
+        final estH = math.min(widget.options.length * 42.0 + 12.0, maxH);
+        double top;
+        if (widget.trayAbove) {
+          final aboveTop = anchor.top - 6 - estH;
+          top = aboveTop >= 8
+              ? aboveTop
+              : math.min(anchor.bottom + 6, screen.height - estH - 8);
+        } else {
+          final belowTop = anchor.bottom + 6;
+          top = belowTop + estH <= screen.height - 8
+              ? belowTop
+              : math.max(8, anchor.top - 6 - estH);
+        }
+        final left =
+            (anchor.center.dx - trayW / 2).clamp(8.0, screen.width - trayW - 8);
+
+        return Stack(children: [
+          // Tap-outside closes the tray; drags pass through so the page
+          // keeps scrolling (see WmTapDismissBarrier).
+          Positioned.fill(child: WmTapDismissBarrier(onDismiss: _close)),
+          Positioned(
+            left: left,
+            top: top,
+            width: trayW,
+            child: _TrayPanel<T>(
+              options: widget.options,
+              value: widget.value,
+              trayAbove: top + estH / 2 < anchor.top,
+              maxHeight: maxH,
+              onSelect: (v) {
+                widget.onChanged(v);
+                _close();
+              },
             ),
-            // The tray, anchored to the pill (above or below).
-            CompositedTransformFollower(
-              link: _link,
-              targetAnchor: widget.trayAbove
-                  ? Alignment.topCenter
-                  : Alignment.bottomCenter,
-              followerAnchor: widget.trayAbove
-                  ? Alignment.bottomCenter
-                  : Alignment.topCenter,
-              child: _TrayPanel<T>(
-                options: widget.options,
-                value: widget.value,
-                trayAbove: widget.trayAbove,
-                onSelect: (v) {
-                  widget.onChanged(v);
-                  _close();
-                },
-              ),
-            ),
-          ],
-        );
+          ),
+        ]);
       },
     );
     overlay.insert(_entry!);
@@ -1468,8 +1623,8 @@ class _WmQuickOptionPickerState<T> extends State<WmQuickOptionPicker<T>> {
     final selected =
         widget.options.where((o) => o.value == widget.value).firstOrNull;
 
-    return CompositedTransformTarget(
-      link: _link,
+    return KeyedSubtree(
+      key: _pillKey,
       child: GestureDetector(
         onTap: _toggle,
         child: AnimatedContainer(
@@ -1541,12 +1696,17 @@ class _TrayPanel<T> extends StatefulWidget {
     required this.value,
     required this.trayAbove,
     required this.onSelect,
+    this.maxHeight = double.infinity,
   });
 
   final List<WmPickerOption<T>> options;
   final T value;
   final bool trayAbove;
   final ValueChanged<T> onSelect;
+
+  /// Cap for long option lists (e.g. the Explore source picker) — the
+  /// list scrolls inside the tray instead of running off-screen.
+  final double maxHeight;
 
   @override
   State<_TrayPanel<T>> createState() => _TrayPanelState<T>();
@@ -1594,35 +1754,37 @@ class _TrayPanelState<T> extends State<_TrayPanel<T>>
             child: kid,
           );
         },
+        // Material ancestor: overlay content without one renders Text in
+        // the error typography (yellow double underline).
         child: Material(
           color: Colors.transparent,
-          // Max width: an anchored tray near a screen edge must never run
-          // off-screen; long labels ellipsize inside instead.
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 300),
+            constraints: BoxConstraints(maxHeight: widget.maxHeight),
             child: Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: h.surface2,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: h.border),
-              boxShadow: h.overlayShadow,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final o in widget.options)
-                  _TrayOption<T>(
-                    option: o,
-                    selected: o.value == widget.value,
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      widget.onSelect(o.value);
-                    },
-                  ),
-              ],
-            ),
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: h.surface2,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: h.border),
+                boxShadow: h.overlayShadow,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final o in widget.options)
+                      _TrayOption<T>(
+                        option: o,
+                        selected: o.value == widget.value,
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          widget.onSelect(o.value);
+                        },
+                      ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
@@ -1714,7 +1876,7 @@ class _WmSplitActionsState extends State<WmSplitActions>
     with SingleTickerProviderStateMixin {
   bool _open = false;
   OverlayEntry? _entry;
-  final LayerLink _link = LayerLink();
+  final GlobalKey _triggerKey = GlobalKey();
 
   void _close() {
     _entry?.remove();
@@ -1739,32 +1901,66 @@ class _WmSplitActionsState extends State<WmSplitActions>
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null) return;
     _entry = OverlayEntry(
-      builder: (context) {
-        return Stack(
-          children: [
-            // Tap-outside closes the fan.
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: _close,
-                child: const SizedBox.expand(),
-              ),
+      builder: (overlayContext) {
+        final screen = MediaQuery.sizeOf(overlayContext);
+        final anchor =
+            wmAnchorRect(_triggerKey.currentContext ?? context, overlayContext) ??
+                Rect.fromLTWH(screen.width / 2 - 20, screen.height / 2, 40, 40);
+
+        // Horizontal fan when it fits on screen (centered on the trigger,
+        // clamped), otherwise a VERTICAL stack under the trigger — the old
+        // fixed-width fan centered on a right-edge trigger (the note card's
+        // three-dots) ran off the screen corner and the chips there were
+        // unreachable.
+        const chipW = 96.0;
+        final n = widget.actions.length;
+        final fanW = (n - 1) * chipW + 170;
+        final horizontal = fanW <= screen.width - 16;
+
+        Widget rail;
+        if (horizontal) {
+          final left = (anchor.center.dx - fanW / 2)
+              .clamp(8.0, screen.width - fanW - 8);
+          final top = (anchor.center.dy - 22)
+              .clamp(8.0, screen.height - 52 - 8);
+          rail = Positioned(
+            left: left,
+            top: top,
+            width: fanW,
+            height: 44,
+            child: _FanRail(
+              actions: widget.actions,
+              axis: Axis.horizontal,
+              onDone: _close,
             ),
-            // The fan, anchored + centered on the trigger. Lives in the
-            // root overlay so the chips can extend past the trigger's own
-            // bounds (a Stack-positioned fan would clip to the trigger's
-            // 38px width — the widget-test overflow catch).
-            CompositedTransformFollower(
-              link: _link,
-              targetAnchor: Alignment.center,
-              followerAnchor: Alignment.center,
-              child: _FanRail(
-                actions: widget.actions,
-                onDone: _close,
-              ),
+          );
+        } else {
+          final colH = n * 48.0 + 8;
+          final left =
+              (anchor.right - 168).clamp(8.0, screen.width - 176 - 8);
+          var top = anchor.bottom + 6;
+          if (top + colH > screen.height - 8) {
+            top = (anchor.top - 6 - colH).clamp(8.0, screen.height - colH - 8);
+          }
+          rail = Positioned(
+            left: left,
+            top: top,
+            width: 168,
+            height: colH,
+            child: _FanRail(
+              actions: widget.actions,
+              axis: Axis.vertical,
+              onDone: _close,
             ),
-          ],
-        );
+          );
+        }
+
+        return Stack(children: [
+          // Tap-outside closes the fan; drags pass through so the page
+          // keeps scrolling while it is open.
+          Positioned.fill(child: WmTapDismissBarrier(onDismiss: _close)),
+          rail,
+        ]);
       },
     );
     overlay.insert(_entry!);
@@ -1774,8 +1970,8 @@ class _WmSplitActionsState extends State<WmSplitActions>
   Widget build(BuildContext context) {
     final h = HeroScope.of(context);
     final accent = widget.accent ?? h.accent;
-    return CompositedTransformTarget(
-      link: _link,
+    return KeyedSubtree(
+      key: _triggerKey,
       child: GestureDetector(
         onTap: _toggle,
         child: AnimatedSwitcher(
@@ -1816,23 +2012,26 @@ class _WmSplitActionsState extends State<WmSplitActions>
 }
 
 /// The fanned action chips (overlay rail): chips slide out from the
-/// trigger's center with a spring cascade.
+/// trigger's center with a spring cascade — horizontally when there is
+/// room, stacked vertically (menu-style) when the trigger sits near a
+/// screen edge. Wrapped in a Material so overlay Text never falls back
+/// to the yellow-underline error typography.
 class _FanRail extends StatelessWidget {
-  const _FanRail({required this.actions, required this.onDone});
+  const _FanRail({
+    required this.actions,
+    required this.axis,
+    required this.onDone,
+  });
 
   final List<WmSplitAction> actions;
+  final Axis axis;
   final VoidCallback onDone;
 
   @override
   Widget build(BuildContext context) {
-    // The rail is sized for the FULL fan span so every translated chip
-    // stays inside a hit-testable box (transforms outside a parent's
-    // bounds are invisible to hit testing).
     final n = actions.length;
-    final width = (n - 1) * 96.0 + 170;
-    return SizedBox(
-      width: width,
-      height: 44,
+    return Material(
+      type: MaterialType.transparency,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -1840,7 +2039,11 @@ class _FanRail extends StatelessWidget {
             Positioned.fill(
               child: _FanChip(
                 action: actions[i],
-                dx: (i - (n - 1) / 2) * 96,
+                axis: axis,
+                // First chip sits ON the trigger; the rest cascade out.
+                offset: axis == Axis.horizontal
+                    ? (i - (n - 1) / 2) * 96.0
+                    : i * 48.0,
                 delay: i * 0.04,
                 onClose: onDone,
               ),
@@ -1854,13 +2057,17 @@ class _FanRail extends StatelessWidget {
 class _FanChip extends StatefulWidget {
   const _FanChip({
     required this.action,
-    required this.dx,
+    required this.axis,
+    required this.offset,
     required this.delay,
     required this.onClose,
   });
 
   final WmSplitAction action;
-  final double dx;
+  final Axis axis;
+
+  /// Horizontal: dx from the rail's center. Vertical: dy from the top.
+  final double offset;
   final double delay;
   final VoidCallback onClose;
 
@@ -1901,14 +2108,17 @@ class _FanChipState extends State<_FanChip>
       animation: _a,
       builder: (context, _) {
         final t = _a.value.clamp(0.0, 1.0);
-        // Translate a FULL-SIZE layer (the chip centers inside it): the
-        // transform stays within the rail's hit-testable bounds.
+        final offset = widget.axis == Axis.horizontal
+            ? Offset(widget.offset * t, 0)
+            : Offset(0, widget.offset * t);
         return Transform.translate(
-          offset: Offset(widget.dx * t, 0),
+          offset: offset,
           child: Opacity(
             opacity: t,
             child: Align(
-              alignment: Alignment.center,
+              alignment: widget.axis == Axis.horizontal
+                  ? Alignment.center
+                  : Alignment.topLeft,
               child: Transform.scale(
                 scale: 0.6 + 0.4 * t,
                 child: GestureDetector(
@@ -1922,7 +2132,8 @@ class _FanChipState extends State<_FanChip>
                         horizontal: 12, vertical: 9),
                     decoration: BoxDecoration(
                       color: h.surface2,
-                      borderRadius: BorderRadius.circular(HeroTokens.radiusChip),
+                      borderRadius:
+                          BorderRadius.circular(HeroTokens.radiusChip),
                       border: Border.all(color: h.border, width: 1.1),
                       boxShadow: h.overlayShadow,
                     ),
